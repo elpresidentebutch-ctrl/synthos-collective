@@ -28,7 +28,7 @@ This is the **next gate after incubator acceptance**: moving from “credible pr
 
 ### 3. Distribution & governance (EVM)
 
-- [ ] **SYNToken** supply and buckets match **every** public document (source: `contracts/synthos/SYNToken.sol`).
+- [ ] **SYNToken** supply and buckets match **every** public document (source: `contracts/src/synthos/SYNToken.sol`).
 - [ ] **SYNTHOSTimelock** `minDelay` and **admin** (multisig) defined for production; rehearse role grants/revocations on testnet.
 - [ ] **RewardDistributor.approveToken** (and similar **onlyGovernance** calls) planned as **governance/timelock** actions, not deployer EOA shortcuts in production.
 - [ ] **Vesting / treasury** flows (`SYNTHOSVestingVault.sol`, `SYNTHOSTreasury.sol`) wired in a **testnet dress rehearsal** before mainnet.

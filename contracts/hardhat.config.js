@@ -29,7 +29,8 @@ module.exports = {
     },
   },
   paths: {
-    sources: ".",
+    // Must not be "." — HH1006 if Hardhat walks node_modules/@openzeppelin as "local" sources.
+    sources: "./src",
     tests: "./test",
     cache: "./cache",
     artifacts: "./artifacts",

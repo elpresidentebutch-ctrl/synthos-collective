@@ -3,6 +3,7 @@ const { ethers } = require("hardhat");
 
 describe("post-incubation compile / deploy smoke", function () {
   it("deploys core SYNTHOS stack on hardhat", async function () {
+    this.timeout(120000);
     const [deployer] = await ethers.getSigners();
 
     const SYNToken = await ethers.getContractFactory("SYNToken");

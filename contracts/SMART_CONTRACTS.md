@@ -10,7 +10,7 @@ This document covers the complete smart contract suite for SYNTHOS and Gemini Me
 
 ### 1. SYNToken (ERC-20)
 
-**File**: `contracts/synthos/SYNToken.sol`  
+**File**: `contracts/src/synthos/SYNToken.sol`  
 **Network**: SYNTHOS Chain  
 **Total Supply**: 1 billion SYN tokens
 
@@ -71,7 +71,7 @@ synToken.allocateTokens(
 
 ### 2. SYNTHOSGovernance (DAO)
 
-**File**: `contracts/synthos/SYNTHOSGovernance.sol`  
+**File**: `contracts/src/synthos/SYNTHOSGovernance.sol`  
 **Network**: SYNTHOS Chain  
 **Governance Model**: Delegative democracy with vote delegation
 
@@ -176,7 +176,7 @@ governance.executeProposal(proposalId);
 
 ### 3. SYNTHOSStaking
 
-**File**: `contracts/synthos/SYNTHOSStaking.sol`  
+**File**: `contracts/src/synthos/SYNTHOSStaking.sol`  
 **Network**: SYNTHOS Chain  
 **Model**: Delegated Proof-of-Stake (DPoS)
 
