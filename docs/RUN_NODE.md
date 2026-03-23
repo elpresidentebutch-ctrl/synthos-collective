@@ -86,3 +86,10 @@ This layout (genesis + node config + long-lived `synthosd` process) means:
 - Each operator can have their own `node.json` pointing at that genesis.
 - Multiple machines can now join the same chain and participate in consensus using shared genesis and appropriate `peers` / `listen_addr` settings in their node configs.
 
+---
+
+## Legal notice
+
+SYNTHOS Collective, SYNTHOS, and related names, marks, documentation, and technical materials in this document are the **exclusive property of James G. Isham Williams, Sr.** Unauthorized reproduction, distribution, or commercial use without express written permission is prohibited except as allowed under applicable open-source licenses for identified files. No rights are waived.
+
+This document is informational only and is not legal, financial, or investment advice. The canonical legal notice is in **docs/LEGAL_NOTICE.md** in the SYNTHOS Collective repository.
