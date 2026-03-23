@@ -1,0 +1,10 @@
+{
+  "node_id": "node-1",
+  "data_dir": ".synthos-node-1",
+  "is_validator": true,
+  "rpc_listen": ":8080",
+  "genesis_path": "config/genesis.example.json",
+  "peers": [],
+  "listen_addr": ":9001"
+}
+

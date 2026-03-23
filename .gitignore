@@ -1,0 +1,32 @@
+.synthos-data
+.env
+.env.*
+!.env.example
+
+# Redundant audit export (use docs/audit + scripts/package_audit.ps1 to regenerate)
+SYNTHOS_AUDIT_PACKET.zip
+SYNTHOS_AUDIT_PACKET/
+
+# Go
+*.exe
+*.test
+
+# Node / Hardhat (contracts/)
+contracts/node_modules/
+contracts/cache/
+contracts/artifacts/
+contracts/coverage/
+contracts/coverage.json
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

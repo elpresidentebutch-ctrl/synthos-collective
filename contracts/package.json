@@ -1,0 +1,16 @@
+{
+  "name": "@synthos-collective/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy:synthos:local": "hardhat run scripts/deploy-synthos.js --network hardhat"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@openzeppelin/contracts": "^4.9.6",
+    "dotenv": "^16.4.5",
+    "hardhat": "^2.22.17"
+  }
+}

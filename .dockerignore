@@ -1,0 +1,10 @@
+.git
+.synthos-data
+**/node_modules
+**/cache
+**/artifacts
+SYNTHOS_AUDIT_PACKET
+**/__pycache__
+*.pyc
+.env
+.env.*

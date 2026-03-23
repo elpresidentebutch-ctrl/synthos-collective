@@ -1,0 +1,9 @@
+{
+  "node_id": "node-2",
+  "data_dir": ".synthos-node-2",
+  "is_validator": true,
+  "rpc_listen": ":8081",
+  "genesis_path": "config/genesis.json",
+  "peers": ["node-1@127.0.0.1:9001"],
+  "listen_addr": ":9002"
+}

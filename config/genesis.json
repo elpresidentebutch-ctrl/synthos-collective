@@ -1,0 +1,8 @@
+{
+  "chain_id": "synthos-l1-devnet",
+  "alloc": {
+    "agent-0": 100000000000
+  },
+  "symbol": "SYN",
+  "decimals": 0
+}
