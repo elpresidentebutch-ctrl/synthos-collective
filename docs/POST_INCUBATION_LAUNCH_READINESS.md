@@ -68,6 +68,7 @@ npm run deploy:synthos:local
 
 ## Related docs
 
+- [TOKENOMICS.md](./TOKENOMICS.md) — SYN supply, buckets, governance & staking parameters vs Solidity  
 - [SEEDIFY_INCUBATION_READINESS.md](./SEEDIFY_INCUBATION_READINESS.md) — prior gate  
 - [audit/AUDIT_PACKET.md](./audit/AUDIT_PACKET.md) — reviewer scope and maturity statement  
 - [RUN_NODE.md](./RUN_NODE.md) — node operation  

@@ -128,6 +128,10 @@ Run a local RPC node (persists snapshot in `.synthos-data` by default):
 go run ./cmd/rpcnode
 ```
 
+## Tokenomics (SYN)
+
+Single reference aligned to `contracts/src/synthos/SYNToken.sol` and related contracts: [docs/TOKENOMICS.md](docs/TOKENOMICS.md).
+
 ## Audit packaging
 
 If you’re preparing an audit/review, see `docs/audit/` (scope, architecture summary, threat model, and review checklist).

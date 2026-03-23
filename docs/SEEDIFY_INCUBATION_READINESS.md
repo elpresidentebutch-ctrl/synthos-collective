@@ -23,6 +23,8 @@ This document summarizes what is **already in the repository** for incubator-sty
 
 The **authoritative** supply and bucket sizes are the **constants in `contracts/src/synthos/SYNToken.sol`** (not prose in older docs, which may cite different figures). Before any public deck, reconcile every slide with the deployed or candidate Solidity.
 
+**Human-readable tokenomics (aligned to code):** [TOKENOMICS.md](./TOKENOMICS.md).
+
 ## Typical incubator ask-list (you should prepare externally)
 
 Programs often ask for some combination of the following. This repo supports the **technical** items; the rest is your responsibility outside Git.
