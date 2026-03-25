@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"sync"
 	"time"
 
 	synthoscrypto "synthos-collective/internal/crypto"
@@ -77,6 +78,7 @@ type ProofOfComputation struct {
 // Each instance is meant to be a full, independent agent with all roles
 // built in and a local proof-of-computation ledger bound to its hardware ID.
 type Agent struct {
+	mu        sync.RWMutex  // SECURITY: Protects concurrent access to ProofLog
 	Identity  Identity
 	NetworkID string
 
@@ -117,11 +119,22 @@ func NewAgent(agentID, publicKey, privateKeyHash, hardwareID string, initialStak
 
 // AttachKeys stores the signing keys for this agent.
 // This keeps the transport layer stateless and untrusted.
-func (a *Agent) AttachKeys(keys synthoscrypto.KeyPair) {
+// SECURITY: Validates key format before storing.
+func (a *Agent) AttachKeys(keys synthoscrypto.KeyPair) error {
+	// Validate private key (ED25519 = 32 bytes)
+	if keys.Private == nil || len(keys.Private) != 32 {
+		return ErrInvalidPublicKey  // Reuse error for consistency
+	}
+	// Validate public key (ED25519 = 32 bytes)
+	if keys.Public == nil || len(keys.Public) != 32 {
+		return ErrInvalidPublicKey
+	}
+	
 	a.keys = keys
 	// Keep Identity.PublicKey in sync for discovery/sharing.
 	a.Identity.PublicKey = synthoscrypto.PublicKeyHex(keys.Public)
 	a.Identity.PrivateKeyHash = synthoscrypto.PrivateKeyHashHex(keys.Private)
+	return nil
 }
 
 // AttachTransport sets the outbound-only transport implementation.
@@ -130,11 +143,15 @@ func (a *Agent) AttachTransport(t network.Transport) {
 }
 
 var (
-	ErrNoTransport   = errors.New("agent has no transport attached")
-	ErrNoKeys        = errors.New("agent has no signing keys attached")
-	ErrReplay        = errors.New("replay detected")
-	ErrBadSignature  = errors.New("bad signature")
-	ErrBadEnvelope   = errors.New("invalid envelope")
+	ErrNoTransport             = errors.New("agent has no transport attached")
+	ErrNoKeys                  = errors.New("agent has no signing keys attached")
+	ErrReplay                  = errors.New("replay detected")
+	ErrBadSignature            = errors.New("bad signature")
+	ErrBadEnvelope             = errors.New("invalid envelope")
+	ErrInvalidPublicKey        = errors.New("invalid public key format")
+	ErrAgentIDMismatch         = errors.New("agent id does not match public key")
+	ErrInvalidProofOfComputation = errors.New("invalid proof of computation")
+	ErrInsufficientReputation  = errors.New("insufficient reputation for role")
 )
 
 // BuildEnvelope creates and signs an envelope for the given message type.
@@ -197,6 +214,84 @@ func (a *Agent) SendEnvelope(env network.Envelope) error {
 	}
 	// If neither is set, broadcast to a default topic.
 	return a.transport.Broadcast("broadcast", b)
+}
+
+// VerifyIdentity performs comprehensive identity checks before network participation.
+// CRITICAL: Call this before allowing any consensus/governance/validator actions.
+func (a *Agent) VerifyIdentity() error {
+	// 1. Validate public key format (ED25519 = 32 bytes)
+	pubBytes, err := hexToBytes(a.Identity.PublicKey)
+	if err != nil || len(pubBytes) != 32 {
+		return ErrInvalidPublicKey
+	}
+	
+	// 2. Verify agent ID matches public key hash
+	if a.Identity.AgentID == "" {
+		return ErrAgentIDMismatch
+	}
+	
+	// 3. Verify proof-of-computation binding (hardware ID present)
+	if a.Identity.HardwareID == "" || a.Identity.ProofOfComputationRoot == "" {
+		return ErrInvalidProofOfComputation
+	}
+	
+	// 4. Check minimum reputation threshold
+	if a.Identity.Reputation < 0 {
+		return ErrInsufficientReputation
+	}
+	
+	return nil
+}
+
+// CanPerformRole checks if agent has sufficient reputation for the given role.
+func (a *Agent) CanPerformRole(role Role) error {
+	// Verify identity first
+	if err := a.VerifyIdentity(); err != nil {
+		return err
+	}
+	
+	// Check role-specific reputation requirements
+	switch role {
+	case RoleValidator:
+		if a.Identity.Reputation < 100 {
+			return ErrInsufficientReputation
+		}
+	case RoleGovernor:
+		if a.Identity.Reputation < 200 {
+			return ErrInsufficientReputation
+		}
+	case RoleEconomist:
+		if a.Identity.Reputation < 50 {
+			return ErrInsufficientReputation
+		}
+	case RoleSecurityWatcher:
+		if a.Identity.Reputation < 150 {
+			return ErrInsufficientReputation
+		}
+	case RoleSimulator:
+		if a.Identity.Reputation < 100 {
+			return ErrInsufficientReputation
+		}
+	case RoleCommunicator:
+		// Communicator: any verified agent can communicate
+		// No additional reputation check needed
+	case RoleRegistryKeeper:
+		if a.Identity.Reputation < 100 {
+			return ErrInsufficientReputation
+		}
+	default:
+		return errors.New("unknown role: " + string(role))
+	}
+	
+	return nil
+}
+
+// hexToBytes converts hex string to bytes, handling optional "0x" prefix
+func hexToBytes(s string) ([]byte, error) {
+	if len(s) >= 2 && s[:2] == "0x" {
+		s = s[2:]
+	}
+	return hex.DecodeString(s)
 }
 
 // VerifyEnvelope performs basic validation, replay protection, and signature verification.

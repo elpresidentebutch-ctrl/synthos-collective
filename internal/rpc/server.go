@@ -11,13 +11,31 @@ import (
 )
 
 type Server struct {
-	Chain *chain.Chain
-	Store *storage.Store
-	Node  *node.Node
+	Chain       *chain.Chain
+	Store       *storage.Store
+	Node        *node.Node
+	RateLimiter *RateLimiter
+	MaxBodySize int64
 }
 
 func NewServer(c *chain.Chain, st *storage.Store, n *node.Node) *Server {
-	return &Server{Chain: c, Store: st, Node: n}
+	return &Server{
+		Chain:       c,
+		Store:       st,
+		Node:        n,
+		RateLimiter: NewRateLimiter(1000), // Default 1000 RPS
+		MaxBodySize: 1024 * 1024, // Default 1MB
+	}
+}
+
+func NewServerWithConfig(c *chain.Chain, st *storage.Store, n *node.Node, rps int, maxBodySize int64) *Server {
+	return &Server{
+		Chain:       c,
+		Store:       st,
+		Node:        n,
+		RateLimiter: NewRateLimiter(rps),
+		MaxBodySize: maxBodySize,
+	}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -28,7 +46,19 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/mempool", s.handleMempool)
 	mux.HandleFunc("/submitTx", s.handleSubmitTx)
 	mux.HandleFunc("/proposeBlock", s.handleProposeBlock)
-	return mux
+	
+	// Wrap with rate limiting and input size limit middleware
+	handler := s.RateLimiter.Middleware(mux)
+	handler = s.bodyLimitMiddleware(handler)
+	return handler
+}
+
+// bodyLimitMiddleware enforces maximum request body size
+func (s *Server) bodyLimitMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, s.MaxBodySize)
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -69,9 +99,15 @@ func (s *Server) handleSubmitTx(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	
 	var tx chain.Tx
 	if err := json.NewDecoder(r.Body).Decode(&tx); err != nil {
-		http.Error(w, "bad json", http.StatusBadRequest)
+		// Check if it's a "request body too large" error
+		if err.Error() == "http: request body too large" {
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 	if err := s.Chain.SubmitTx(tx); err != nil {

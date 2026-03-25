@@ -2,6 +2,7 @@ package chain
 
 import (
 	"errors"
+	"fmt"
 	"sort"
 	"time"
 )
@@ -72,6 +73,13 @@ func (c *Chain) SubmitTx(tx Tx) error {
 	if err := tx.Verify(); err != nil {
 		return err
 	}
+	
+	// SECURITY: Validate nonce against current state to prevent replay
+	expectedNonce := c.State.GetNextNonce(tx.From)
+	if tx.Nonce != expectedNonce {
+		return fmt.Errorf("nonce mismatch: got %d, expected %d for address %s", tx.Nonce, expectedNonce, tx.From)
+	}
+	
 	c.Mempool[tx.ID] = tx
 	return nil
 }
@@ -173,15 +181,29 @@ func (c *Chain) ValidateBlock(b *Block) error {
 }
 
 // FinalizeBlock commits a validated block to canonical chain state.
+// Distributes collected fees to the block proposer.
 func (c *Chain) FinalizeBlock(b *Block) error {
 	if err := c.ValidateBlock(b); err != nil {
 		return err
 	}
+	
+	// Calculate total fees collected in this block
+	var totalFees uint64
 	for _, tx := range b.Tx {
 		// Apply to canonical state (should not fail if ValidateBlock passed).
 		_ = c.State.ApplyTx(tx)
+		totalFees += tx.Fee
 		delete(c.Mempool, tx.ID)
 	}
+	
+	// Distribute collected fees to block proposer
+	if totalFees > 0 && b.Header.ProposerID != "" {
+		proposerAddr := Address("0x" + b.Header.ProposerID) // Convert proposer ID to address
+		proposer := c.State.Get(proposerAddr)
+		proposer.Balance += totalFees
+		c.State.Set(proposerAddr, proposer)
+	}
+	
 	b.Finalized = true
 	c.Blocks = append(c.Blocks, b)
 	return nil

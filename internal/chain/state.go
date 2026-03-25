@@ -42,7 +42,14 @@ var (
 	ErrBadNonce          = errors.New("bad nonce")
 )
 
-// ApplyTx applies a transaction to state (including fee burn for now).
+// GetNextNonce returns the next expected nonce for an address
+func (s *State) GetNextNonce(a Address) uint64 {
+	acc := s.Get(a)
+	return acc.Nonce
+}
+
+// ApplyTx applies a transaction to state.
+// Fees are deducted but not distributed here; block proposer receives them when block finalizes.
 func (s *State) ApplyTx(tx Tx) error {
 	if err := tx.Verify(); err != nil {
 		return err
@@ -66,7 +73,7 @@ func (s *State) ApplyTx(tx Tx) error {
 
 	s.Set(tx.From, from)
 	s.Set(tx.To, to)
-	// Fee handling: burned (reduces effective circulating, but supply tracking is separate).
+	// Fee distribution: collected by block proposer during FinalizeBlock
 	return nil
 }
 

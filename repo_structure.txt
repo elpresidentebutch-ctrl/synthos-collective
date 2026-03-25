@@ -1,0 +1,240 @@
+Folder PATH listing for volume WINDOWS
+Volume serial number is 22EA-7469
+C:.
+|   .dockerignore
+|   .gitignore
+|   COMPLETION_SUMMARY.md
+|   demo_blockchain.py
+|   Dockerfile
+|   example.py
+|   go.mod
+|   QUICKSTART.md
+|   README.md
+|   requirements.txt
+|   TESTING.md
+|   
++---.github
+|   \---workflows
+|           go.yml
+|           
++---cmd
+|   +---agent
+|   |       main.go
+|   |       
+|   +---devnet
+|   |       main.go
+|   |       
+|   +---node
+|   |       main.go
+|   |       
+|   +---rpcnode
+|   |       main.go
+|   |       
+|   +---synthosd
+|   |       main.go
+|   |       
+|   +---txgen
+|   |       main.go
+|   |       
+|   \---wallet
+|           main.go
+|           
++---config
+|       genesis.example.json
+|       genesis.json
+|       node.example.json
+|       node.json
+|       node2.json
+|       validator.py
+|       __init__.py
+|       
++---contracts
+|   |   .env.example
+|   |   hardhat.config.js
+|   |   package-lock.json
+|   |   package.json
+|   |   SMART_CONTRACTS.md
+|   |   
+|   +---scripts
+|   |       deploy-gemini.js
+|   |       deploy-synthos.js
+|   |       
+|   +---src
+|   |   |   RewardDistributor.sol
+|   |   |   
+|   |   +---gemini
+|   |   |       CrossChainBridge.sol
+|   |   |       GeminiLiquidityPool.sol
+|   |   |       GeminiOracle.sol
+|   |   |       GEMToken.sol
+|   |   |       
+|   |   \---synthos
+|   |           SYNTHOSGovernance.sol
+|   |           SYNTHOSStaking.sol
+|   |           SYNTHOSTimelock.sol
+|   |           SYNTHOSTreasury.sol
+|   |           SYNTHOSVestingVault.sol
+|   |           SYNToken.sol
+|   |           
+|   \---test
+|           smoke.test.js
+|           
++---docs
+|   |   ADVANCED_PATTERNS.md
+|   |   AGENTS_ARE_BLOCKCHAIN.md
+|   |   AGENTS_SPECIFICATION.md
+|   |   COMPLETE_ARCHITECTURE.md
+|   |   DEPLOYMENT_PRODUCTION.md
+|   |   DEPLOYMENT_REGISTRY.md
+|   |   DOCUMENTATION_INDEX.md
+|   |   FRAMEWORK_DESIGN.md
+|   |   GOVERNANCE_CAPABILITIES.md
+|   |   IMMUTABLE_PARAMETERS.md
+|   |   IMPLEMENTATION_GUIDE.md
+|   |   INTELLIGENCE_CAPABILITIES.md
+|   |   LEGAL_NOTICE.md
+|   |   OPERATIONAL_CAPABILITIES.md
+|   |   POST_INCUBATION_LAUNCH_READINESS.md
+|   |   QUICK_REFERENCE.md
+|   |   RUN_NODE.md
+|   |   SEEDIFY_INCUBATION_READINESS.md
+|   |   SMART_CONTRACTS.md
+|   |   SMART_CONTRACTS_SUMMARY.md
+|   |   SYSTEM_INTEGRATION.md
+|   |   TOKENOMICS.md
+|   |   
+|   \---audit
+|           ARCHITECTURE.md
+|           AUDIT_PACKET.md
+|           INVARIANTS.md
+|           REVIEW_CHECKLIST.md
+|           THREAT_MODEL.md
+|           
++---internal
+|   +---agent
+|   |       agent.go
+|   |       
+|   +---chain
+|   |       address.go
+|   |       block.go
+|   |       block_test.go
+|   |       chain.go
+|   |       genesis.go
+|   |       state.go
+|   |       tx.go
+|   |       tx_test.go
+|   |       
+|   +---config
+|   |       config.go
+|   |       
+|   +---consensus
+|   |       engine.go
+|   |       engine_test.go
+|   |       messages.go
+|   |       
+|   +---crypto
+|   |       ed25519.go
+|   |       ed25519_test.go
+|   |       
+|   +---network
+|   |       envelope.go
+|   |       memory_transport.go
+|   |       ratelimit.go
+|   |       relay_transport.go
+|   |       replay_cache.go
+|   |       tcp_transport.go
+|   |       transport.go
+|   |       
+|   +---node
+|   |       node.go
+|   |       
+|   +---rpc
+|   |       server.go
+|   |       
+|   +---storage
+|   |       store.go
+|   |       
+|   \---wallet
+|           wallet.go
+|           
++---scripts
+|       package_audit.ps1
+|       
++---src
+|   |   blockchain.py
+|   |   blockchain_original.py
+|   |   crypto_wallet.py
+|   |   p2p_validators_bridge.py
+|   |   smart_contracts.py
+|   |   synthos_currency.py
+|   |   __init__.py
+|   |   
+|   +---consensus
+|   |       consensus.py
+|   |       __init__.py
+|   |       
+|   +---contracts
+|   |   |   __init__.py
+|   |   |   
+|   |   +---deployment
+|   |   |       manager.py
+|   |   |       __init__.py
+|   |   |       
+|   |   +---gemini
+|   |   |       defi.py
+|   |   |       megachain.py
+|   |   |       __init__.py
+|   |   |       
+|   |   \---synthos
+|   |           governance.py
+|   |           staking.py
+|   |           token.py
+|   |           __init__.py
+|   |           
+|   +---core
+|   |       agent.py
+|   |       agent_blueprint.py
+|   |       base_role.py
+|   |       blockchain.py
+|   |       blockchain_integration.py
+|   |       event.py
+|   |       state.py
+|   |       __init__.py
+|   |       
+|   +---governance
+|   |       constraints.py
+|   |       governance.py
+|   |       __init__.py
+|   |       
+|   +---models
+|   |       __init__.py
+|   |       
+|   +---network
+|   |       constitution.py
+|   |       p2p_messaging.py
+|   |       __init__.py
+|   |       
+|   +---roles
+|   |       block_proposer.py
+|   |       citizen.py
+|   |       communicator.py
+|   |       economist.py
+|   |       enforcer.py
+|   |       governor.py
+|   |       simulator.py
+|   |       transaction_validator.py
+|   |       validator.py
+|   |       __init__.py
+|   |       
+|   +---storage
+|   |       state_store.py
+|   |       __init__.py
+|   |       
+|   \---utils
+|           __init__.py
+|           
+\---tests
+        test_core.py
+        test_roles.py
+        __init__.py
+        

@@ -5,22 +5,38 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Snapshot.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 /**
  * @title SYNToken
- * @dev SYNTHOS native token implementing ERC-20 with governance features
+ * @dev SYNTHOS native token with security hardening
  * 
- * Features:
- * - Standard ERC-20 token interface
- * - Burnable tokens for deflation
- * - Snapshot capability for governance voting
+ * Security Features:
+ * - ReentrancyGuard on critical transfers
+ * - AccessControl for fine-grained permission management
  * - Pausable for emergency situations
- * - Owner controls (governance contract becomes owner)
+ * - Burnable for token deflation
+ * - MAX_SUPPLY enforcement
  */
-contract SYNToken is ERC20, ERC20Burnable, ERC20Snapshot, Ownable, Pausable {
+contract SYNToken is 
+    ERC20, 
+    ERC20Burnable, 
+    ERC20Snapshot, 
+    Ownable, 
+    AccessControl,
+    Pausable,
+    ReentrancyGuard
+{
+    // Role definitions
+    bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
+    bytes32 public constant BURNER_ROLE = keccak256("BURNER_ROLE");
+    bytes32 public constant SNAPSHOT_ROLE = keccak256("SNAPSHOT_ROLE");
+    
     // Constants
-    uint256 public constant INITIAL_SUPPLY = 100_000_000_000 * 10**18; // 100 billion SYN
+    uint256 public constant MAX_SUPPLY = 100_000_000_000 * 10**18; // 100 billion SYN
     uint256 public constant ECOSYSTEM_ALLOCATION = 40_000_000_000 * 10**18; // 40%
     uint256 public constant VALIDATORS_ALLOCATION = 30_000_000_000 * 10**18; // 30%
     uint256 public constant COMMUNITY_ALLOCATION = 20_000_000_000 * 10**18; // 20%
@@ -31,21 +47,20 @@ contract SYNToken is ERC20, ERC20Burnable, ERC20Snapshot, Ownable, Pausable {
     mapping(address => bool) public ecosystem_recipients;
     mapping(address => bool) public validator_recipients;
 
-    // Snapshot history
-    uint256 private current_snapshot;
-    mapping(uint256 => mapping(address => uint256)) private snapshots;
-
     // Events
-    event SnapshotCreated(uint256 indexed snapshotId, uint256 timestamp);
     event AllocationSet(address indexed recipient, uint256 amount, string allocationType);
     event TokensBurned(address indexed burner, uint256 amount);
     event TokensMinted(address indexed recipient, uint256 amount);
 
     constructor() ERC20("SYNTHOS", "SYN") {
-        current_snapshot = 0;
+        // Initialize roles
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _grantRole(MINTER_ROLE, msg.sender);
+        _grantRole(PAUSER_ROLE, msg.sender);
+        _grantRole(SNAPSHOT_ROLE, msg.sender);
         
         // Initial mint to contract (will be distributed)
-        _mint(address(this), INITIAL_SUPPLY);
+        _mint(address(this), MAX_SUPPLY);
         
         // Emit allocation events
         emit AllocationSet(address(this), ECOSYSTEM_ALLOCATION, "ECOSYSTEM");
@@ -56,33 +71,16 @@ contract SYNToken is ERC20, ERC20Burnable, ERC20Snapshot, Ownable, Pausable {
 
     /**
      * @dev Create a snapshot of current token balances for governance voting
+     * Uses OpenZeppelin's ERC20Snapshot for automatic balance tracking
      * @return snapshotId The ID of the created snapshot
      */
-    function createSnapshot() public onlyOwner returns (uint256) {
-        current_snapshot++;
-        emit SnapshotCreated(current_snapshot, block.timestamp);
-        return current_snapshot;
-    }
-
-    /**
-     * @dev Get balance at specific snapshot for governance voting
-     * @param account Address to check balance for
-     * @param snapshotId Snapshot ID to query
-     * @return Balance at snapshot
-     */
-    function balanceOfAtSnapshot(address account, uint256 snapshotId) 
-        public 
-        view 
-        returns (uint256) 
-    {
-        require(snapshotId <= current_snapshot, "Invalid snapshot ID");
-        require(snapshotId > 0, "Snapshot must be positive");
-        
-        return snapshots[snapshotId][account];
+    function snapshot() public onlyRole(SNAPSHOT_ROLE) returns (uint256) {
+        return _snapshot();
     }
 
     /**
      * @dev Allocate tokens to ecosystem participants
+     * SECURITY: Protected by nonReentrant and role-based access
      * @param recipient Address receiving tokens
      * @param amount Amount to allocate
      * @param allocationType Type of allocation
@@ -93,10 +91,12 @@ contract SYNToken is ERC20, ERC20Burnable, ERC20Snapshot, Ownable, Pausable {
         string memory allocationType
     ) 
         public 
-        onlyOwner 
+        onlyRole(MINTER_ROLE)
+        nonReentrant
     {
         require(recipient != address(0), "Invalid recipient");
         require(amount > 0, "Amount must be positive");
+        require(totalSupply() + amount <= MAX_SUPPLY, "Exceeds max supply");
         require(balanceOf(address(this)) >= amount, "Insufficient contract balance");
 
         _transfer(address(this), recipient, amount);
@@ -112,30 +112,79 @@ contract SYNToken is ERC20, ERC20Burnable, ERC20Snapshot, Ownable, Pausable {
     }
 
     /**
+     * @dev Mint new tokens (controlled by MINTER_ROLE)
+     * SECURITY: Enforces MAX_SUPPLY limit
+     */
+    function mint(address to, uint256 amount)
+        public
+        onlyRole(MINTER_ROLE)
+    {
+        require(to != address(0), "Mint to zero address");
+        require(amount > 0, "Amount must be positive");
+        require(totalSupply() + amount <= MAX_SUPPLY, "Exceeds max supply");
+        _mint(to, amount);
+        emit TokensMinted(to, amount);
+    }
+
+    /**
      * @dev Burn tokens (deflation mechanism)
+     * SECURITY: Protected by role-based access
      * @param amount Amount to burn
      */
-    function burn(uint256 amount) public override {
+    function burn(uint256 amount) public override onlyRole(BURNER_ROLE) {
         super.burn(amount);
         emit TokensBurned(msg.sender, amount);
     }
 
     /**
-     * @dev Emergency pause function
+     * @dev Emergency pause function (role-protected)
      */
-    function pause() public onlyOwner {
+    function pause() public onlyRole(PAUSER_ROLE) {
         _pause();
     }
 
     /**
      * @dev Resume token transfers after pause
      */
-    function unpause() public onlyOwner {
+    function unpause() public onlyRole(PAUSER_ROLE) {
         _unpause();
     }
 
     /**
-     * @dev Override transfer to respect pause state
+     * @dev Override transfer to respect pause state and add re-entrancy protection
+     * SECURITY: nonReentrant guard on all transfers
+     */
+    function transfer(address to, uint256 amount)
+        public
+        override
+        nonReentrant
+        whenNotPaused
+        returns (bool)
+    {
+        require(to != address(0), "Transfer to zero address");
+        require(amount > 0, "Amount must be positive");
+        return super.transfer(to, amount);
+    }
+
+    /**
+     * @dev Override transferFrom to add re-entrancy protection
+     */
+    function transferFrom(address from, address to, uint256 amount)
+        public
+        override
+        nonReentrant
+        whenNotPaused
+        returns (bool)
+    {
+        require(from != address(0), "Transfer from zero address");
+        require(to != address(0), "Transfer to zero address");
+        require(amount > 0, "Amount must be positive");
+        return super.transferFrom(from, to, amount);
+    }
+
+    /**
+     * @dev Override _beforeTokenTransfer to enforce pause state
+     * ERC20Snapshot base class automatically tracks balance changes at snapshot boundaries
      */
     function _beforeTokenTransfer(
         address from,
@@ -146,15 +195,8 @@ contract SYNToken is ERC20, ERC20Burnable, ERC20Snapshot, Ownable, Pausable {
         override(ERC20, ERC20Snapshot) 
         whenNotPaused 
     {
+        // Call parent implementation - ERC20Snapshot will record balances at snapshot moments
         super._beforeTokenTransfer(from, to, amount);
-        
-        // Update snapshots
-        if (from != address(0)) {
-            snapshots[current_snapshot][from] = balanceOf(from) - amount;
-        }
-        if (to != address(0)) {
-            snapshots[current_snapshot][to] = balanceOf(to) + amount;
-        }
     }
 
     /**
@@ -167,8 +209,7 @@ contract SYNToken is ERC20, ERC20Burnable, ERC20Snapshot, Ownable, Pausable {
         view 
         returns (uint256) 
     {
-        require(snapshotId <= current_snapshot, "Invalid snapshot ID");
-        return INITIAL_SUPPLY;
+        return super.totalSupplyAt(snapshotId);
     }
 
     /**
@@ -176,6 +217,17 @@ contract SYNToken is ERC20, ERC20Burnable, ERC20Snapshot, Ownable, Pausable {
      * @return Current snapshot ID
      */
     function getCurrentSnapshot() public view returns (uint256) {
-        return current_snapshot;
+        return _getCurrentSnapshotId();
+    }
+
+    /**
+     * @dev Revoke a role from an account (admin function)
+     */
+    function revokeRole(bytes32 role, address account)
+        public
+        override
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        super.revokeRole(role, account);
     }
 }

@@ -1,0 +1,114 @@
+name: Security Checks
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  go-security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '1.22'
+      
+      # GoSec: Go static security analyzer
+      - name: Run GoSec
+        uses: securego/gosec@master
+        with:
+          args: '-no-fail -fmt json -out gosec-report.json ./...'
+      
+      # Nancy: Go dependency vulnerability scanner
+      - name: Go Dependency Audit (Nancy)
+        run: |
+          go install github.com/sonatype-nexus-community/nancy@latest
+          go list -json -m all | nancy sleuth --severity high --output json || echo "Vulnerabilities found, but continuing..."
+      
+      # Test coverage
+      - name: Run Tests with Coverage
+        run: |
+          go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+      
+      # Enforce minimum coverage
+      - name: Check Coverage Threshold (70%)
+        run: |
+          coverage=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+          echo "Test Coverage: ${coverage}%"
+          if (( $(echo "$coverage < 70" | bc -l) )); then
+            echo "ERROR: Coverage ${coverage}% below threshold 70%"
+            exit 1
+          fi
+      
+      # Upload coverage to Codecov (optional)
+      - name: Upload Coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage.out
+          fail_ci_if_error: false
+
+  solidity-security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      
+      # Install dependencies
+      - name: Install Dependencies
+        run: |
+          cd contracts
+          npm install --legacy-peer-deps
+      
+      # Slither: Solidity static analysis
+      - name: Run Slither Analysis
+        uses: crytic/slither-action@v0.3
+        with:
+          node-version: 18
+          fail-on: high,critical
+        continue-on-error: true
+      
+      # NPM Audit: Dependency check
+      - name: NPM Dependency Audit
+        run: |
+          cd contracts
+          npm audit --audit-level=high || npm audit
+
+  linting:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '1.22'
+      
+      # GolangCI-Lint
+      - name: Run GolangCI-Lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest
+          args: --timeout=5m
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - uses: docker/setup-buildx-action@v2
+      
+      - name: Build Docker Image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: false
+          tags: synthos:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
