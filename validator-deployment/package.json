@@ -1,0 +1,33 @@
+{
+  "name": "synthos-validators",
+  "version": "1.0.0",
+  "description": "Deploy 15 decentralized validators to Cloudflare Workers",
+  "main": "src/index.js",
+  "scripts": {
+    "generate-keys": "node scripts/generate-keys.js",
+    "setup": "npm install && npm run generate-keys",
+    "deploy": "bash deploy.sh",
+    "deploy:validator1": "wrangler deploy --env validator1",
+    "deploy:validator2": "wrangler deploy --env validator2",
+    "deploy:all": "for i in {1..15}; do npm run deploy:validator$i; done",
+    "logs:validator1": "wrangler tail --env validator1",
+    "monitor": "watch -n 5 'npm run logs:validator1'",
+    "test": "node scripts/test-consensus.js"
+  },
+  "dependencies": {
+    "tweetnacl": "^1.0.3",
+    "wrangler": "^3.0.0"
+  },
+  "devDependencies": {
+    "node-fetch": "^3.3.0"
+  },
+  "keywords": [
+    "blockchain",
+    "validator",
+    "cloudflare",
+    "serverless",
+    "decentralized"
+  ],
+  "author": "SYNTHOS Collective",
+  "license": "MIT"
+}

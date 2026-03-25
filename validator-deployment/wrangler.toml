@@ -1,0 +1,60 @@
+name = "synthos-validator"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Cloudflare R2 Bucket Configuration
+[[r2_buckets]]
+binding = "VALIDATOR_BUCKET"
+bucket_name = "synthos-validators"
+jurisdiction = "eu"
+
+# Environment Variables (per validator)
+[env.validator1]
+vars = { VALIDATOR_ID = "validator-1", PRIVATE_KEY = "paste_your_key_here", NETWORK = "mainnet" }
+
+[env.validator2]
+vars = { VALIDATOR_ID = "validator-2", PRIVATE_KEY = "paste_your_key_here", NETWORK = "mainnet" }
+
+[env.validator3]
+vars = { VALIDATOR_ID = "validator-3", PRIVATE_KEY = "paste_your_key_here", NETWORK = "mainnet" }
+
+[env.validator4]
+vars = { VALIDATOR_ID = "validator-4", PRIVATE_KEY = "paste_your_key_here", NETWORK = "mainnet" }
+
+[env.validator5]
+vars = { VALIDATOR_ID = "validator-5", PRIVATE_KEY = "paste_your_key_here", NETWORK = "mainnet" }
+
+[env.validator6]
+vars = { VALIDATOR_ID = "validator-6", PRIVATE_KEY = "paste_your_key_here", NETWORK = "mainnet" }
+
+[env.validator7]
+vars = { VALIDATOR_ID = "validator-7", PRIVATE_KEY = "paste_your_key_here", NETWORK = "mainnet" }
+
+[env.validator8]
+vars = { VALIDATOR_ID = "validator-8", PRIVATE_KEY = "paste_your_key_here", NETWORK = "mainnet" }
+
+[env.validator9]
+vars = { VALIDATOR_ID = "validator-9", PRIVATE_KEY = "paste_your_key_here", NETWORK = "mainnet" }
+
+[env.validator10]
+vars = { VALIDATOR_ID = "validator-10", PRIVATE_KEY = "paste_your_key_here", NETWORK = "mainnet" }
+
+[env.validator11]
+vars = { VALIDATOR_ID = "validator-11", PRIVATE_KEY = "paste_your_key_here", NETWORK = "mainnet" }
+
+[env.validator12]
+vars = { VALIDATOR_ID = "validator-12", PRIVATE_KEY = "paste_your_key_here", NETWORK = "mainnet" }
+
+[env.validator13]
+vars = { VALIDATOR_ID = "validator-13", PRIVATE_KEY = "paste_your_key_here", NETWORK = "mainnet" }
+
+[env.validator14]
+vars = { VALIDATOR_ID = "validator-14", PRIVATE_KEY = "paste_your_key_here", NETWORK = "mainnet" }
+
+[env.validator15]
+vars = { VALIDATOR_ID = "validator-15", PRIVATE_KEY = "paste_your_key_here", NETWORK = "mainnet" }
+
+# Cron Trigger - runs every 5 seconds
+# Note: Cloudflare Workers execute on every request, plus scheduled cron
+triggers = { crons = ["*/5 * * * *"] }
