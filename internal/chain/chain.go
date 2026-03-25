@@ -149,6 +149,7 @@ func (c *Chain) BuildBlock(proposerID string, proposerPoCRoot string, maxTx int)
 }
 
 // ValidateBlock checks basic structure and replays txs to confirm StateRoot.
+// SECURITY: Enforces signature verification on all transactions before block acceptance.
 func (c *Chain) ValidateBlock(b *Block) error {
 	if b == nil || b.Hash == "" {
 		return ErrBadBlock
@@ -166,6 +167,13 @@ func (c *Chain) ValidateBlock(b *Block) error {
 	// Timeless runtime: only genesis may have a timestamp.
 	if b.Header.Height > 0 && !b.Header.Timestamp.IsZero() {
 		return ErrBadBlock
+	}
+
+	// SECURITY: Verify all transaction signatures before applying
+	for _, tx := range b.Tx {
+		if err := tx.Verify(); err != nil {
+			return fmt.Errorf("invalid transaction signature in block: %w", err)
+		}
 	}
 
 	tmp := c.State.Clone()
