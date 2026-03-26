@@ -1,6 +1,6 @@
 name = "synthos-validator"
 main = "src/index.js"
-account_id = "f2e9e2935f6f8321889b7535a9cd4b18"
+account_id = "f2e9e2935f6f8231889b7535a9cd4b18"
 compatibility_date = "2024-01-01"
 compatibility_flags = ["nodejs_compat"]
 

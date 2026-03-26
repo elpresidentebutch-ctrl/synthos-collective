@@ -15,11 +15,11 @@
     "test": "node scripts/test-consensus.js"
   },
   "dependencies": {
-    "tweetnacl": "^1.0.3",
-    "wrangler": "^3.0.0"
+    "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
-    "node-fetch": "^3.3.0"
+    "node-fetch": "^3.3.0",
+    "wrangler": "^4.77.0"
   },
   "keywords": [
     "blockchain",
