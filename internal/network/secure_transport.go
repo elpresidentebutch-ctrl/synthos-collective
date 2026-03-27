@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"strings"
 	"sync"
@@ -434,7 +435,7 @@ func (t *SecureTCPTransport) GetPeerReputation(agentID string) *PeerInfo {
 // recordConnectionError tracks connection failures for reputation.
 func (t *SecureTCPTransport) recordConnectionError(agentID string) {
 	t.mu.Lock()
-	defer t.mu.Lock()
+	defer t.mu.Unlock()
 	t.connectionErrors[agentID]++
 
 	// Ban after persistent failures.

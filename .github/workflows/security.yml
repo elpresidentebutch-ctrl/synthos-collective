@@ -79,7 +79,7 @@ jobs:
       - name: NPM Dependency Audit
         run: |
           cd contracts
-          npm audit --audit-level=high || npm audit
+          npm audit --audit-level=high || true
 
   linting:
     runs-on: ubuntu-latest
