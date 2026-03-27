@@ -3,6 +3,7 @@
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
+import copy
 import json
 import hashlib
 from enum import Enum
@@ -152,10 +153,10 @@ class AgentState:
         snapshot = StateSnapshot(
             timestamp=datetime.now().timestamp(),
             version=self.version,
-            ledger=self.data[StateType.LEDGER.value].copy(),
-            consensus=self.data[StateType.CONSENSUS.value].copy(),
-            reputation=self.data[StateType.REPUTATION.value].copy(),
-            resources=self.data[StateType.RESOURCES.value].copy(),
+            ledger=copy.deepcopy(self.data[StateType.LEDGER.value]),
+            consensus=copy.deepcopy(self.data[StateType.CONSENSUS.value]),
+            reputation=copy.deepcopy(self.data[StateType.REPUTATION.value]),
+            resources=copy.deepcopy(self.data[StateType.RESOURCES.value]),
         )
         snapshot.hash = snapshot.compute_hash()
         
@@ -164,10 +165,10 @@ class AgentState:
     
     async def restore_snapshot(self, snapshot: StateSnapshot) -> None:
         """Restore state from snapshot"""
-        self.data[StateType.LEDGER.value] = snapshot.ledger.copy()
-        self.data[StateType.CONSENSUS.value] = snapshot.consensus.copy()
-        self.data[StateType.REPUTATION.value] = snapshot.reputation.copy()
-        self.data[StateType.RESOURCES.value] = snapshot.resources.copy()
+        self.data[StateType.LEDGER.value] = copy.deepcopy(snapshot.ledger)
+        self.data[StateType.CONSENSUS.value] = copy.deepcopy(snapshot.consensus)
+        self.data[StateType.REPUTATION.value] = copy.deepcopy(snapshot.reputation)
+        self.data[StateType.RESOURCES.value] = copy.deepcopy(snapshot.resources)
         self.version = snapshot.version
         self.transaction_buffer = {}
         self.in_transaction = False
