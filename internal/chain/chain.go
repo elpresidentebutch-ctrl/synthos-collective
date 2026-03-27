@@ -73,13 +73,18 @@ func (c *Chain) SubmitTx(tx Tx) error {
 	if err := tx.Verify(); err != nil {
 		return err
 	}
-	
-	// SECURITY: Validate nonce against current state to prevent replay
+
+	// SECURITY: Validate nonce against current state to prevent replay.
 	expectedNonce := c.State.GetNextNonce(tx.From)
 	if tx.Nonce != expectedNonce {
 		return fmt.Errorf("nonce mismatch: got %d, expected %d for address %s", tx.Nonce, expectedNonce, tx.From)
 	}
-	
+
+	// SECURITY: Reject transactions already present in the mempool (duplicate/replay).
+	if _, exists := c.Mempool[tx.ID]; exists {
+		return fmt.Errorf("transaction already in mempool: %s", tx.ID)
+	}
+
 	c.Mempool[tx.ID] = tx
 	return nil
 }
