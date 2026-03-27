@@ -71,18 +71,18 @@ func NewSecureTCPTransport(
 	peerAuth := NewPeerAuth(nodeID, privateKey, requirePeerAuth)
 
 	return &SecureTCPTransport{
-		nodeID:          nodeID,
-		listenAddr:      listenAddr,
-		privateKey:      privateKey,
-		certManager:     certManager,
-		peerAuth:        peerAuth,
-		enableTLS:       enableTLS,
-		requirePeerAuth: requirePeerAuth,
-		peers:           peers,
-		topicHandlers:   make(map[string]func(string, []byte)),
-		peerConnections: make(map[string]net.Conn),
+		nodeID:           nodeID,
+		listenAddr:       listenAddr,
+		privateKey:       privateKey,
+		certManager:      certManager,
+		peerAuth:         peerAuth,
+		enableTLS:        enableTLS,
+		requirePeerAuth:  requirePeerAuth,
+		peers:            peers,
+		topicHandlers:    make(map[string]func(string, []byte)),
+		peerConnections:  make(map[string]net.Conn),
 		connectionErrors: make(map[string]int),
-	}
+	}, nil
 }
 
 // Start begins listening for connections and authenticating peers.
