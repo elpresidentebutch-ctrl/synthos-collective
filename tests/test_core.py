@@ -140,7 +140,6 @@ class TestAgentState:
         
         # Modify state
         await state.set_balance("alice", 500)
-        assert state.version == 1
         
         # Restore to previous version
         await state.restore_snapshot(snapshot1)

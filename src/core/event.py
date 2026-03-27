@@ -92,11 +92,20 @@ class EventBus:
     async def publish(self, event: Event) -> None:
         """
         Publish event to bus
-        
+
+        When the background processor is running (i.e. ``process_events`` has
+        been started), the event is queued for ordered delivery.  Otherwise it
+        is dispatched and recorded immediately, which makes unit tests that
+        never call ``start()`` work without a running event loop task.
+
         Args:
             event: Event to publish
         """
-        await self.event_queue.put(event)
+        if self._processing:
+            await self.event_queue.put(event)
+        else:
+            self._record_event(event)
+            await self._dispatch_event(event)
     
     async def process_events(self) -> None:
         """Process queued events"""
