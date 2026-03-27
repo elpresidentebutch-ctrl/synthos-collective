@@ -121,19 +121,21 @@ func NewAgent(agentID, publicKey, privateKeyHash, hardwareID string, initialStak
 // This keeps the transport layer stateless and untrusted.
 // SECURITY: Validates key format before storing.
 func (a *Agent) AttachKeys(keys synthoscrypto.KeyPair) error {
-	// Validate private key (ED25519 = 32 bytes)
-	if keys.Private == nil || len(keys.Private) != 32 {
+	// Validate private key: Go's ed25519.PrivateKey is 64 bytes (seed + public key)
+	if keys.Private == nil || len(keys.Private) != 64 {
 		return ErrInvalidPublicKey  // Reuse error for consistency
 	}
-	// Validate public key (ED25519 = 32 bytes)
+	// Validate public key (ED25519 public key = 32 bytes)
 	if keys.Public == nil || len(keys.Public) != 32 {
 		return ErrInvalidPublicKey
 	}
-	
+
+	a.mu.Lock()
 	a.keys = keys
 	// Keep Identity.PublicKey in sync for discovery/sharing.
 	a.Identity.PublicKey = synthoscrypto.PublicKeyHex(keys.Public)
 	a.Identity.PrivateKeyHash = synthoscrypto.PrivateKeyHashHex(keys.Private)
+	a.mu.Unlock()
 	return nil
 }
 
@@ -347,8 +349,10 @@ func (a *Agent) RecordComputation(payload map[string]any) ProofOfComputation {
 
 	poc.Hash = hashProof(poc)
 
+	a.mu.Lock()
 	a.ProofLog = append(a.ProofLog, poc)
 	a.recomputeProofRoot()
+	a.mu.Unlock()
 
 	return poc
 }
@@ -356,6 +360,8 @@ func (a *Agent) RecordComputation(payload map[string]any) ProofOfComputation {
 // ProofRoot returns the current rolling root hash over all computation
 // proofs for this agent.
 func (a *Agent) ProofRoot() string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
 	return a.Identity.ProofOfComputationRoot
 }
 

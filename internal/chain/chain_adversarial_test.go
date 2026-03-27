@@ -1,10 +1,12 @@
-package chain
+package chain_test
 
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/hex"
 	"testing"
 
+	"synthos-collective/internal/chain"
 	"synthos-collective/internal/consensus"
 )
 
@@ -12,7 +14,7 @@ import (
 func TestAdversarial_InvalidSignatureRejection(t *testing.T) {
 	// Setup
 	genesis := newTestGenesis()
-	chain, err := NewChain(genesis)
+	c, err := chain.NewChain(genesis)
 	if err != nil {
 		t.Fatalf("Failed to create chain: %v", err)
 	}
@@ -23,13 +25,13 @@ func TestAdversarial_InvalidSignatureRejection(t *testing.T) {
 		t.Fatalf("Failed to generate keypair: %v", err)
 	}
 
-	fromAddr := AddressFromPublicKey(pub)
-	chain.State.Set(fromAddr, Account{Balance: 1000, Nonce: 0})
+	fromAddr := chain.AddressFromPublicKey(pub)
+	c.State.Set(fromAddr, chain.Account{Balance: 1000, Nonce: 0})
 
-	tx := Tx{
+	tx := chain.Tx{
 		ChainID:   1,
 		From:      fromAddr,
-		To:        Address("0x2222"),
+		To:        chain.Address("0x2222"),
 		Amount:    100,
 		Fee:       10,
 		Nonce:     0,
@@ -48,29 +50,29 @@ func TestAdversarial_InvalidSignatureRejection(t *testing.T) {
 	// Signature is now invalid because amount changed
 
 	// Create block with tampered tx
-	block := &Block{
-		Header: BlockHeader{
+	block := &chain.Block{
+		Header: chain.BlockHeader{
 			Height:     1,
-			ParentHash: chain.Tip().Hash,
+			ParentHash: c.Tip().Hash,
 			ProposerID: "attacker",
 			StateRoot:  "fake",
 		},
-		Tx: []Tx{tamperTx},
+		Tx: []chain.Tx{tamperTx},
 	}
 	block.ComputeHash()
 
 	// VERIFY: Block validation should reject due to invalid signature
-	err = chain.ValidateBlock(block)
+	err = c.ValidateBlock(block)
 	if err == nil {
 		t.Fatal("SECURITY FAILURE: Block with tampered transaction was accepted! Attack succeeded.")
 	}
 	t.Logf("✅ Attack 1 Blocked: %v", err)
 
 	// **ATTACK 2: Forge signature completely**
-	forgeTx := Tx{
+	forgeTx := chain.Tx{
 		ChainID:   1,
 		From:      fromAddr,
-		To:        Address("0x3333"),
+		To:        chain.Address("0x3333"),
 		Amount:    100,
 		Fee:       10,
 		Nonce:     0,
@@ -80,18 +82,18 @@ func TestAdversarial_InvalidSignatureRejection(t *testing.T) {
 	}
 	forgeTx.ComputeID()
 
-	block2 := &Block{
-		Header: BlockHeader{
+	block2 := &chain.Block{
+		Header: chain.BlockHeader{
 			Height:     1,
-			ParentHash: chain.Tip().Hash,
+			ParentHash: c.Tip().Hash,
 			ProposerID: "attacker",
 			StateRoot:  "fake",
 		},
-		Tx: []Tx{forgeTx},
+		Tx: []chain.Tx{forgeTx},
 	}
 	block2.ComputeHash()
 
-	err = chain.ValidateBlock(block2)
+	err = c.ValidateBlock(block2)
 	if err == nil {
 		t.Fatal("SECURITY FAILURE: Block with forged signature was accepted! Attack succeeded.")
 	}
@@ -176,20 +178,20 @@ func TestAdversarial_DowntimeSlashing(t *testing.T) {
 // TestAdversarial_NonceReplay tests that replay attacks via nonce are blocked
 func TestAdversarial_NonceReplay(t *testing.T) {
 	genesis := newTestGenesis()
-	chain, err := NewChain(genesis)
+	c, err := chain.NewChain(genesis)
 	if err != nil {
 		t.Fatalf("Failed to create chain: %v", err)
 	}
 
 	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
-	fromAddr := AddressFromPublicKey(pub)
-	chain.State.Set(fromAddr, Account{Balance: 10000, Nonce: 0})
+	fromAddr := chain.AddressFromPublicKey(pub)
+	c.State.Set(fromAddr, chain.Account{Balance: 10000, Nonce: 0})
 
 	// **ATTACK: Submit same transaction twice with nonce=0**
-	tx := Tx{
+	tx := chain.Tx{
 		ChainID:   1,
 		From:      fromAddr,
-		To:        Address("0x4444"),
+		To:        chain.Address("0x4444"),
 		Amount:    100,
 		Fee:       10,
 		Nonce:     0, // Both will have same nonce
@@ -198,19 +200,19 @@ func TestAdversarial_NonceReplay(t *testing.T) {
 	tx.Sign(priv)
 
 	// First submission should succeed
-	err = chain.SubmitTx(tx)
+	err = c.SubmitTx(tx)
 	if err != nil {
 		t.Fatalf("First tx submission failed: %v", err)
 	}
 
 	// **ATTACK: Try to submit same transaction again**
 	tx2 := tx
-	err = chain.SubmitTx(tx2)
+	err = c.SubmitTx(tx2)
 	if err == nil {
 		t.Fatal("SECURITY FAILURE: Duplicate nonce was accepted! Replay attack succeeded.")
 	}
 
-	if err.Error() != "nonce mismatch: got 0, expected 1 for address " + string(fromAddr) {
+	if err.Error() != "nonce mismatch: got 0, expected 1 for address "+string(fromAddr) {
 		t.Logf("Correct error: %v", err)
 	}
 
@@ -220,21 +222,21 @@ func TestAdversarial_NonceReplay(t *testing.T) {
 // TestAdversarial_ChainIDReplay tests cross-chain replay attack prevention
 func TestAdversarial_ChainIDReplay(t *testing.T) {
 	genesis := newTestGenesis()
-	chain, err := NewChain(genesis)
+	c, err := chain.NewChain(genesis)
 	if err != nil {
 		t.Fatalf("Failed to create chain: %v", err)
 	}
-	chain.ChainID = "testnet-1"
+	c.ChainID = "testnet-1"
 
 	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
-	fromAddr := AddressFromPublicKey(pub)
-	chain.State.Set(fromAddr, Account{Balance: 10000, Nonce: 0})
+	fromAddr := chain.AddressFromPublicKey(pub)
+	c.State.Set(fromAddr, chain.Account{Balance: 10000, Nonce: 0})
 
 	// Create transaction for testnet (ChainID=1)
-	txTestnet := Tx{
+	txTestnet := chain.Tx{
 		ChainID:   1,
 		From:      fromAddr,
-		To:        Address("0x5555"),
+		To:        chain.Address("0x5555"),
 		Amount:    100,
 		Fee:       10,
 		Nonce:     0,
@@ -247,11 +249,11 @@ func TestAdversarial_ChainIDReplay(t *testing.T) {
 	txMainnet.ChainID = 42 // Attacker changes ChainID - but signature becomes invalid!
 
 	// Create new chain with mainnet ChainID
-	mainnet := &Chain{
-		ChainID:  "mainnet",
-		State:    chain.State,
-		Blocks:   chain.Blocks,
-		Mempool:  make(map[string]Tx),
+	mainnet := &chain.Chain{
+		ChainID: "mainnet",
+		State:   c.State,
+		Blocks:  c.Blocks,
+		Mempool: make(map[string]chain.Tx),
 	}
 
 	// Try to submit on mainnet
@@ -270,13 +272,13 @@ func TestAdversarial_ChainIDReplay(t *testing.T) {
 // TestAdversarial_FeeExhaustion tests that trivial fees are rejected
 func TestAdversarial_FeeExhaustion(t *testing.T) {
 	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
-	fromAddr := AddressFromPublicKey(pub)
+	fromAddr := chain.AddressFromPublicKey(pub)
 
 	// **ATTACK: Submit transaction with fee=0 to spam network**
-	tx := Tx{
+	tx := chain.Tx{
 		ChainID:   1,
 		From:      fromAddr,
-		To:        Address("0x6666"),
+		To:        chain.Address("0x6666"),
 		Amount:    100,
 		Fee:       0, // Zero fee - attack vector
 		Nonce:     0,
@@ -294,27 +296,17 @@ func TestAdversarial_FeeExhaustion(t *testing.T) {
 }
 
 // Helper function to create a test genesis
-func newTestGenesis() Genesis {
-	return Genesis{
+func newTestGenesis() chain.Genesis {
+	return chain.Genesis{
 		ChainID: "test",
-		Alloc: map[Address]uint64{
-			Address("0x1111"): 5000,
-			Address("0x2222"): 2000,
+		Alloc: map[chain.Address]uint64{
+			chain.Address("0x1111"): 5000,
+			chain.Address("0x2222"): 2000,
 		},
 	}
 }
 
-// Helper to convert bytes to hex
+// toHex converts a byte slice to a lowercase hex string.
 func toHex(b []byte) string {
-	return bytesToHex(b)
-}
-
-func bytesToHex(b []byte) string {
-	const hex = "0123456789abcdef"
-	s := make([]byte, len(b)*2)
-	for i, v := range b {
-		s[i*2] = hex[v>>4]
-		s[i*2+1] = hex[v&0x0f]
-	}
-	return string(s)
+	return hex.EncodeToString(b)
 }

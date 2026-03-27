@@ -31,6 +31,7 @@ func TestTx_SignVerifyRoundTrip(t *testing.T) {
 	from := AddressFromPublicKey(kp.Public)
 
 	tx := Tx{
+		ChainID:   1,
 		From:      from,
 		To:        Address("0x" + "11"),
 		Amount:    100,
@@ -59,10 +60,11 @@ func TestTx_Verify_FromMismatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	tx := Tx{
+		ChainID:   1,
 		From:      AddressFromPublicKey(other.Public),
 		To:        Address("0x22"),
 		Amount:    1,
-		Fee:       0,
+		Fee:       1,
 		Nonce:     0,
 		PublicKey: crypto.PublicKeyHex(kp.Public),
 	}
