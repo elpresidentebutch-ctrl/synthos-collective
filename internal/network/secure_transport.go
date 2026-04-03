@@ -358,7 +358,14 @@ func (t *SecureTCPTransport) Broadcast(topic string, payload []byte) error {
 	var errs []string
 	for agentID, addr := range addrs {
 		if err := t.sendWithHandshake(agentID, addr, payload); err != nil {
-			errs = append(errs, fmt.Sprintf("peer %s: %v", agentID, err))
+			// Sanitize agentID to prevent log injection (strip control chars).
+			safeID := strings.Map(func(r rune) rune {
+				if r < 0x20 || r == 0x7f {
+					return '_'
+				}
+				return r
+			}, agentID)
+			errs = append(errs, fmt.Sprintf("peer %s: %v", safeID, err))
 		}
 	}
 	if len(errs) > 0 {
