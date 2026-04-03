@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"strings"
 	"sync"
@@ -220,7 +221,10 @@ func (t *SecureTCPTransport) sendAuthResponse(conn net.Conn, accepted bool, reas
 	}
 
 	lenBuf := make([]byte, 4)
-	binary.BigEndian.PutUint32(lenBuf, uint32(len(data)))
+	if len(data) > math.MaxUint32 {
+		return fmt.Errorf("auth response too large: %d bytes", len(data))
+	}
+	binary.BigEndian.PutUint32(lenBuf, uint32(len(data))) // #nosec G115 -- bounds checked above
 
 	if _, err := conn.Write(lenBuf); err != nil {
 		return err
@@ -294,8 +298,11 @@ func (t *SecureTCPTransport) sendWithHandshake(agentID, addr string, payload []b
 	}
 
 	// Send handshake.
+	if len(hsData) > math.MaxUint32 {
+		return fmt.Errorf("handshake data too large: %d bytes", len(hsData))
+	}
 	lenBuf := make([]byte, 4)
-	binary.BigEndian.PutUint32(lenBuf, uint32(len(hsData)))
+	binary.BigEndian.PutUint32(lenBuf, uint32(len(hsData))) // #nosec G115 -- bounds checked above
 
 	if _, err := conn.Write(lenBuf); err != nil {
 		return fmt.Errorf("failed to send handshake: %w", err)
@@ -334,8 +341,11 @@ func (t *SecureTCPTransport) sendWithHandshake(agentID, addr string, payload []b
 
 // sendOnConn sends a message on an active connection.
 func (t *SecureTCPTransport) sendOnConn(conn net.Conn, payload []byte) error {
+	if len(payload) > math.MaxUint32 {
+		return fmt.Errorf("payload too large: %d bytes exceeds maximum of %d", len(payload), math.MaxUint32)
+	}
 	lenBuf := make([]byte, 4)
-	binary.BigEndian.PutUint32(lenBuf, uint32(len(payload)))
+	binary.BigEndian.PutUint32(lenBuf, uint32(len(payload))) // #nosec G115 -- bounds checked above
 
 	if _, err := conn.Write(lenBuf); err != nil {
 		return err

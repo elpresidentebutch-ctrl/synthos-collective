@@ -187,15 +187,17 @@ func (st *SlashingTracker) CleanupOldSignatures(currentHeight uint64) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
-	cutoff := int64(currentHeight) - int64(st.params.SlashingWindow)
-	if cutoff <= 0 {
+	cutoff := uint64(0)
+	if currentHeight > st.params.SlashingWindow {
+		cutoff = currentHeight - st.params.SlashingWindow
+	} else {
 		return
 	}
 
 	for validatorID, heights := range st.signedBlocks {
 		newHeights := make([]uint64, 0)
 		for _, h := range heights {
-			if int64(h) > cutoff {
+			if h > cutoff {
 				newHeights = append(newHeights, h)
 			}
 		}

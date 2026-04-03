@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"strings"
 	"sync"
@@ -136,8 +137,11 @@ func (t *TCPTransport) sendToAddr(addr string, payload []byte) error {
 	defer conn.Close()
 
 	// Write 4-byte length prefix followed by payload.
+	if len(payload) > math.MaxUint32 {
+		return fmt.Errorf("payload too large: %d bytes exceeds maximum of %d", len(payload), math.MaxUint32)
+	}
 	lenBuf := make([]byte, 4)
-	binary.BigEndian.PutUint32(lenBuf, uint32(len(payload)))
+	binary.BigEndian.PutUint32(lenBuf, uint32(len(payload))) // #nosec G115 -- bounds checked above
 	if _, err := conn.Write(lenBuf); err != nil {
 		return err
 	}

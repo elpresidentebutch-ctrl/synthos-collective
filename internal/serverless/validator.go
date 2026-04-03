@@ -69,7 +69,7 @@ type ServerlessValidator struct {
 	Network        string                    // Network name (mainnet, testnet, etc.)
 	PollInterval   time.Duration             // How often to poll storage
 	MessageTTL     int64                     // Seconds before messages expire
-	LastPolledAtom map[string]int64          // Last polled height per sender
+	LastPolledAtom map[string]uint64         // Last polled height per sender
 	blockValidator BlockValidator            // Validates blocks
 	mu             sync.RWMutex
 }
@@ -94,7 +94,7 @@ func NewServerlessValidator(
 		Network:       network,
 		PollInterval:  100 * time.Millisecond,
 		MessageTTL:    300, // 5 minutes
-		LastPolledAtom: make(map[string]int64),
+		LastPolledAtom: make(map[string]uint64),
 		blockValidator: blockValidator,
 	}
 }
@@ -192,8 +192,8 @@ func (sv *ServerlessValidator) PollForMessages(ctx interface{}, maxMessages int)
 	sv.mu.Lock()
 	for _, msg := range messages {
 		key := fmt.Sprintf("%s:%d", msg.Sender, msg.Height)
-		if int64(msg.Height) > lastPolled[key] {
-			lastPolled[key] = int64(msg.Height)
+		if msg.Height > lastPolled[key] {
+			lastPolled[key] = msg.Height
 		}
 	}
 	sv.mu.Unlock()
