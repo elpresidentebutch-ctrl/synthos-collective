@@ -1,9 +1,11 @@
 package rpc
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"synthos-collective/internal/chain"
 	"synthos-collective/internal/node"
@@ -80,11 +82,34 @@ func (s *Server) handleBalance(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing address", http.StatusBadRequest)
 		return
 	}
+	// Validate that the address matches the expected format: "0x" + 40 hex chars
+	// (20-byte SHA-256 derived address, see chain/address.go).
+	if err := validateAddress(addr); err != nil {
+		http.Error(w, "invalid address: "+err.Error(), http.StatusBadRequest)
+		return
+	}
 	bal := s.Chain.State.Get(chain.Address(addr)).Balance
 	writeJSON(w, map[string]any{
 		"address": addr,
 		"balance": bal,
 	})
+}
+
+// validateAddress checks that addr is a well-formed SYNTHOS address ("0x" + 40 lowercase hex chars).
+func validateAddress(addr string) error {
+	const prefix = "0x"
+	const hexLen = 40 // 20 bytes * 2 hex chars each
+	if !strings.HasPrefix(addr, prefix) {
+		return errors.New("must start with 0x")
+	}
+	hexPart := addr[len(prefix):]
+	if len(hexPart) != hexLen {
+		return errors.New("must be exactly 20 bytes (40 hex chars)")
+	}
+	if _, err := hex.DecodeString(hexPart); err != nil {
+		return errors.New("contains non-hex characters")
+	}
+	return nil
 }
 
 func (s *Server) handleMempool(w http.ResponseWriter, r *http.Request) {

@@ -345,6 +345,8 @@ func (t *SecureTCPTransport) sendOnConn(conn net.Conn, payload []byte) error {
 }
 
 // Broadcast sends a message to all known peers.
+// It returns a non-nil error if any peer send failed; delivery to other peers
+// is still attempted regardless.
 func (t *SecureTCPTransport) Broadcast(topic string, payload []byte) error {
 	t.mu.RLock()
 	addrs := make(map[string]string)
@@ -353,8 +355,15 @@ func (t *SecureTCPTransport) Broadcast(topic string, payload []byte) error {
 	}
 	t.mu.RUnlock()
 
+	var errs []string
 	for agentID, addr := range addrs {
-		_ = t.sendWithHandshake(agentID, addr, payload)
+		if err := t.sendWithHandshake(agentID, addr, payload); err != nil {
+			errs = append(errs, fmt.Sprintf("peer %s: %v", agentID, err))
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("broadcast partial failure (%d/%d peers): %s",
+			len(errs), len(addrs), strings.Join(errs, "; "))
 	}
 	return nil
 }
