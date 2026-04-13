@@ -23,7 +23,7 @@
 2. **Nonce Validation** - Double-spend attacks prevented at mempool
 
 ### HIGH (4/4) ✅
-3. **Snapshot Fix** - ERC20Snapshot integration for governance
+3. **Snapshot Fix** - SynCoin snapshot integration for governance
 4. **Rate Limiting** - Token bucket per-IP protection (prevents DDoS)
 5. **Environment Config** - Hardcoded values replaced with env vars
 6. **Key Validation** - ED25519 format enforcement on agent keys
@@ -84,7 +84,7 @@
 | `internal/agent/agent.go` | Key validation + RWMutex | HIGH - Key format enforcement + thread safety |
 | `internal/config/config.go` | Runtime config loading | HIGH - Environment flexibility |
 | `internal/rpc/server.go` | Rate limiting + size limits | HIGH - DDoS protection |
-| `contracts/src/synthos/SYNToken.sol` | ERC20Snapshot integration | HIGH - Governance reliability |
+| `contracts/src/synthos/SynCoin.sol` | SynCoin snapshot integration | HIGH - Governance reliability |
 
 ---
 

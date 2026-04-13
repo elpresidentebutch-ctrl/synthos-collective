@@ -1,6 +1,7 @@
 {
   "chain_id": "synthos-l1-devnet",
   "alloc": {
+    "0x4ab2003c0391f25013f15539c9123e770d3c5a67": 10000,
     "agent-0": 100000000000
   },
   "symbol": "SYN",

@@ -1,0 +1,12 @@
+{
+  "agent_id": "agent-1234",
+  "public_key": "abcdef1234567890...",
+  "hardware_id": "HW-TPM-9876543210",
+  "proof_of_computation_root": "root-hash-xyz",
+  "created_at": "2026-04-07T12:00:00Z",
+  "stake": 1000,
+  "reputation": 42,
+  "consensus_rounds_participated": 17,
+  "blocks_validated": 5,
+  "proposals_voted": 3
+}

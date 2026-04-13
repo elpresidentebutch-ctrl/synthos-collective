@@ -1,0 +1,28 @@
+name = "synthos-validator"
+main = "src/index.js"
+compatibility_date = "2024-12-01"
+
+# Cron trigger: auto-propose blocks every 30 minutes
+[triggers]
+crons = ["*/30 * * * *"]
+
+# Each validator Worker gets its own Durable Object for chain state
+[durable_objects]
+bindings = [
+  { name = "CHAIN", class_name = "ChainDO" }
+]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ChainDO"]
+
+# Dynamic peer registry URL (set per-validator or globally)
+# REGISTRY_URL — URL of the synthos-peer-registry Worker
+# SELF_URL     — This validator's public URL (so it can register itself)
+# REGISTRY_SECRET — Shared secret for registry auth (set via: wrangler secret put REGISTRY_SECRET)
+#
+# Example (set via deploy script --var flags):
+#   wrangler deploy --name synthos-validator-11 \
+#     --var WORKER_NAME:synthos-validator-11 \
+#     --var REGISTRY_URL:https://synthos-peer-registry.YOUR_ACCOUNT.workers.dev \
+#     --var SELF_URL:https://synthos-validator-11.YOUR_ACCOUNT.workers.dev

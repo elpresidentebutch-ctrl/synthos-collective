@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: synthos-validator
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: SYNTHOS_DATA_DIR
+        value: /data
+    disk:
+      name: synthos-data
+      mountPath: /data
+      sizeGB: 1
+    healthCheckPath: /health

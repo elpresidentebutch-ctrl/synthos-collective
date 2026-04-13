@@ -1,6 +1,6 @@
 # SYNTHOS — Tokenomics (SYN)
 
-**Canonical source:** Solidity constants in [`contracts/src/synthos/SYNToken.sol`](../contracts/src/synthos/SYNToken.sol). If this document ever disagrees with deployed code, **the contracts win**.
+**Canonical source:** Solidity constants in [`contracts/src/synthos/SynCoin.sol`](../contracts/src/synthos/SynCoin.sol). If this document ever disagrees with deployed code, **the contracts win**.
 
 This page is descriptive, not legal or investment advice.
 
@@ -13,10 +13,10 @@ This page is descriptive, not legal or investment advice.
 | **Name** | SYNTHOS |
 | **Symbol** | SYN |
 | **Decimals** | 18 |
-| **Standard** | ERC-20 (+ burn, + snapshot hooks, + `Ownable`, + `Pausable`) |
-| **Initial mint** | Entire supply minted once to the token contract address (`address(this)`) in the constructor |
+| **Standard** | SynCoin (AI-native, agent-centric, modular, supports programmable transfers, staking, governance, and more) |
+| **Initial mint** | Entire supply initialized at genesis; programmable supply and agent-centric allocation |
 
-There is **no** exposed `mint` path after deployment in `SYNToken.sol` beyond that single genesis mint. **Burn** is allowed (`ERC20Burnable`), so circulating supply can fall below the initial cap over time.
+There is **no** exposed `mint` path after deployment in `SynCoin.sol` beyond the initial genesis allocation. Burning and advanced supply logic are programmable and agent-governed.
 
 ---
 
@@ -120,20 +120,20 @@ Reward **emission** rates (how much enters `reward_pool` per epoch) are **not** 
 
 | Control | Contract |
 |---------|----------|
-| **Pause transfers** | `SYNToken.pause()` / `unpause()` — `onlyOwner` |
+| **Pause transfers** | `SynCoin.pause()` / `unpause()` — `onlyOwner` |
 | **Snapshots** | `createSnapshot()` — `onlyOwner` (custom snapshot storage in token; align with governance design) |
 
 ---
 
 ## 10. Go L1 demo vs EVM SYN
 
-The Go devnet / RPC demos may use **different** ledger metadata (e.g. integer balances in examples). **SYN tokenomics for investors and launchpads refer to the EVM `SYNToken` deployment**, not the Go demo ledger.
+The Go devnet / RPC demos may use **different** ledger metadata (e.g. integer balances in examples). **SYN tokenomics for investors and launchpads refer to the EVM `SynCoin` deployment**, not the Go demo ledger.
 
 ---
 
 ## 11. Checklist before any public deck or sale
 
-- [ ] Every percentage and SYN figure matches `SYNToken` constants.
+- [ ] Every percentage and SYN figure matches `SynCoin` constants.
 - [ ] “Who is owner?” answered (multisig / timelock addresses).
 - [ ] Vesting tables filled for each tranche actually deployed.
 - [ ] Governance and staking numbers in slides match `SYNTHOSGovernance` / `SYNTHOSStaking`.

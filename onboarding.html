@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Synthos Validator Onboarding</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0b0e14; color: #fff; margin: 0; }
+    .container { max-width: 420px; margin: 40px auto; background: rgba(255,255,255,0.04); border-radius: 18px; box-shadow: 0 4px 32px #0002; padding: 32px 24px; }
+    h1 { font-size: 2rem; margin-bottom: 8px; background: linear-gradient(135deg, #8b5cf6, #22c55e); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .badge { display: inline-block; background: #22c55e22; color: #22c55e; border-radius: 16px; padding: 6px 16px; font-weight: 600; margin-bottom: 18px; }
+    .step { margin-bottom: 18px; }
+    .step-title { font-size: 1.1rem; font-weight: 600; margin-bottom: 6px; }
+    .input { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #333; background: #181c24; color: #fff; margin-bottom: 10px; }
+    .btn { width: 100%; padding: 12px; border-radius: 10px; border: none; font-size: 1rem; font-weight: 700; background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; cursor: pointer; margin-bottom: 10px; }
+    .qr { display: flex; justify-content: center; margin: 18px 0; }
+    .success { color: #22c55e; font-weight: 600; margin-top: 10px; }
+    .error { color: #ef4444; font-weight: 600; margin-top: 10px; }
+    @media (max-width: 600px) { .container { margin: 0; border-radius: 0; min-height: 100vh; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Synthos Validator</h1>
+    <div class="badge">🎁 First 200 validators earn 5 SYN</div>
+    <div class="step">
+      <div class="step-title">1. Choose your device</div>
+      <div>Run a validator from your phone or computer. Mobile users: scan the QR code below. Desktop: click the link.</div>
+    </div>
+    <div class="qr">
+      <canvas id="qr" width="128" height="128"></canvas>
+    </div>
+    <div style="text-align:center;margin-bottom:18px;">
+      <a href="/workers/mobile-validator/index.html" class="btn">Start Mobile Validator</a>
+      <a href="/workers/validator/index.html" class="btn" style="background:linear-gradient(135deg,#22c55e,#8b5cf6);margin-top:6px;">Start Desktop Validator</a>
+    </div>
+    <div class="step">
+      <div class="step-title">2. Connect to the Network</div>
+      <div>Signaling server URL (pre-filled):</div>
+      <input class="input" id="signalUrl" value="wss://good-lynx-27.elpresidentebutch-ctrl.deno.net/signal" readonly />
+    </div>
+    <div class="step">
+      <div class="step-title">3. Claim your 5 SYN</div>
+      <div>When you run your validator for the first time, your address will be registered. The first 200 unique addresses will receive 5 SYN tokens automatically.</div>
+    </div>
+    <div class="step">
+      <div class="step-title">4. Buy SYN with MetaMask</div>
+      <div>Want more SYN tokens? Buy directly using MetaMask:</div>
+      <input class="input" id="buyAmount" type="number" min="1" placeholder="Amount of SYN to buy" />
+      <button class="btn" id="buyBtn">Buy SYN with MetaMask</button>
+      <div id="buyStatus"></div>
+    </div>
+    <div id="status"></div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+  <script>
+    // Generate QR code for mobile onboarding
+    var qr = qrcode(0, 'L');
+    qr.addData(window.location.origin + '/workers/mobile-validator/index.html');
+    qr.make();
+    document.getElementById('qr').outerHTML = qr.createImgTag(6);
+    // --- MetaMask Buy SYN Logic ---
+    // Replace with your actual SYN token sale contract address and ABI
+    const SYN_TOKEN_ADDRESS = "YOUR_SYN_TOKEN_CONTRACT_ADDRESS"; // <-- Replace this
+    const SALE_ADDRESS = "YOUR_SALE_CONTRACT_OR_WALLET_ADDRESS"; // <-- Replace this
+    const SYN_DECIMALS = 18; // Usually 18 for ERC-20
+    // Optional: ABI for direct contract interaction (if needed)
+    // const SYN_ABI = [ ... ];
+
+    document.getElementById('buyBtn').onclick = async function() {
+      const status = document.getElementById('buyStatus');
+      status.textContent = '';
+      if (!window.ethereum) {
+        status.textContent = 'MetaMask not detected. Please install MetaMask.';
+        status.className = 'error';
+        return;
+      }
+      const amount = document.getElementById('buyAmount').value;
+      if (!amount || isNaN(amount) || Number(amount) <= 0) {
+        status.textContent = 'Enter a valid SYN amount.';
+        status.className = 'error';
+        return;
+      }
+      try {
+        await window.ethereum.request({ method: 'eth_requestAccounts' });
+        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+        const account = accounts[0];
+        // Set your price per SYN (in ETH or native token)
+        const pricePerSYN = 0.01; // Example: 0.01 ETH per SYN (change as needed)
+        const value = (Number(amount) * pricePerSYN).toString();
+        // Convert to wei
+        const valueWei = (BigInt(Math.floor(Number(value) * 1e18))).toString();
+        // Send ETH to sale address (simple sale)
+        const tx = await window.ethereum.request({
+          method: 'eth_sendTransaction',
+          params: [{
+            from: account,
+            to: SALE_ADDRESS,
+            value: '0x' + BigInt(valueWei).toString(16),
+            // Optionally add data for contract call if needed
+          }]
+        });
+        status.textContent = 'Transaction sent! TX Hash: ' + tx;
+        status.className = 'success';
+      } catch (err) {
+        status.textContent = 'Error: ' + (err.message || err);
+        status.className = 'error';
+      

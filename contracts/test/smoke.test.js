@@ -6,8 +6,8 @@ describe("post-incubation compile / deploy smoke", function () {
     this.timeout(120000);
     const [deployer] = await ethers.getSigners();
 
-    const SYNToken = await ethers.getContractFactory("SYNToken");
-    const token = await SYNToken.deploy();
+    const SynCoin = await ethers.getContractFactory("SynCoin");
+    const token = await SynCoin.deploy();
     await token.waitForDeployment();
 
     const Timelock = await ethers.getContractFactory("SYNTHOSTimelock");

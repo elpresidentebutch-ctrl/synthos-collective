@@ -1,0 +1,19 @@
+{
+  "trace_id": "trace-001",
+  "agent_id": "agent-1234",
+  "actions": [
+    {
+      "action_id": "act-5678",
+      "type": "transfer",
+      "parameters": {"to": "agent-5678", "amount": 50},
+      "result": "success"
+    },
+    {
+      "action_id": "act-5679",
+      "type": "stake",
+      "parameters": {"amount": 100},
+      "result": "success"
+    }
+  ],
+  "final_state_root": "root-hash-abc"
+}

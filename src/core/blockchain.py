@@ -5,7 +5,7 @@ No separate consensus layer - consensus emerges from agent coordination.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, Optional, List, Tuple, Set, Any
+from typing import Dict, Optional, List, Tuple, Set, Any, TYPE_CHECKING
 from enum import Enum
 from datetime import datetime, timedelta
 import asyncio
@@ -13,6 +13,9 @@ import hashlib
 import json
 from uuid import uuid4
 import heapq
+
+if TYPE_CHECKING:
+    from src.core.agent_blueprint import SynthosAgentInstance
 
 
 @dataclass
@@ -338,12 +341,12 @@ class SynthosBlockchain:
         All agents participate autonomously
         Returns: (success, block_hash or error)
         """
+
+        if not self.agents:
+            return False, "No agents available for consensus"
         
         self.consensus_round += 1
         round_id = self.consensus_round
-        
-        # Step 1: Collect transactions from network
-        all_transactions = self._collect_transactions()
         
         # Step 2: Elect block proposer (round-robin or random)
         proposer = self._elect_block_proposer()
@@ -360,10 +363,11 @@ class SynthosBlockchain:
         # Step 4: All agents validate and vote on block
         votes_for = 0
         votes_against = 0
+        block_payload = self._serialize_block_for_validation(block)
         
         for agent in self.agents:
             # Each agent independently validates
-            validation = await agent.validate_block(block.__dict__)
+            validation = await agent.validate_block(block_payload)
             
             # Each agent independently votes
             vote_value = 1 if validation.is_valid else -1
@@ -493,8 +497,38 @@ class SynthosBlockchain:
         return list(self.ledger.mempool.values())
 
 
+    def _serialize_block_for_validation(self, block: Block) -> Dict[str, Any]:
+        """Convert a ledger block into the validator's expected payload shape."""
+        transactions = [self._serialize_transaction_for_validation(tx) for tx in block.transactions]
+        return {
+            "height": block.block_height,
+            "hash": block.block_hash,
+            "parent_hash": block.parent_hash,
+            "proposer": block.proposer_id,
+            "timestamp": block.timestamp.isoformat(),
+            "transactions": transactions,
+            "size": len(transactions),
+        }
+
+
+    def _serialize_transaction_for_validation(self, tx: Transaction) -> Dict[str, Any]:
+        """Convert a ledger transaction into the validator's expected payload shape."""
+        return {
+            "id": tx.tx_id,
+            "from": tx.sender,
+            "to": tx.receiver,
+            "amount": tx.amount,
+            "nonce": tx.nonce,
+            "signature": tx.signature,
+            "timestamp": tx.timestamp.isoformat(),
+        }
+
+
     def _elect_block_proposer(self) -> 'SynthosAgentInstance':
         """Elect block proposer (round-robin)"""
+        if not self.agents:
+            raise ValueError("Cannot elect proposer without agents")
+
         proposer_index = self.consensus_round % len(self.agents)
         return self.agents[proposer_index]
 

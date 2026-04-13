@@ -52,9 +52,30 @@ When `synthosd` is running, it exposes the same HTTP API as `cmd/rpcnode` on the
 
 - `GET /health` — lightweight liveness (`{"ok":true,"service":"synthos-rpc"}`)
 - `GET /status`
+- `GET /account?address=0x...` — account balance and next nonce
 - `GET /balance?address=0x...`
 - `GET /mempool`
 - `POST /submitTx` (JSON body)
+
+### 3a. Batch-fund validators
+
+Use the batch funding helper once you have a funded sender key and validator addresses:
+
+```bash
+go run ./cmd/fundvalidators \
+  --rpc http://127.0.0.1:8080 \
+  --priv 0xYOUR_PRIVATE_KEY \
+  --addresses-file validators.txt \
+  --amount 1000 \
+  --fee 1 \
+  --propose-block
+```
+
+Notes:
+
+- `validators.txt` should contain one address per line.
+- If the target node does not expose `/account`, add `--use-start-nonce --start-nonce N`.
+- Use `--dry-run` first to verify tx IDs and nonce sequencing without submitting.
 
 ### 4. Two-node local setup (example)
 

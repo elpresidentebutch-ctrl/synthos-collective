@@ -1,0 +1,11 @@
+{
+  "flow_id": "flow-001",
+  "initiator_agent": "agent-1234",
+  "steps": [
+    {"step": 1, "description": "Agent creates identity", "artifact": "agent_identity.json"},
+    {"step": 2, "description": "Agent submits action", "artifact": "action_receipt.json"},
+    {"step": 3, "description": "Memory anchor created", "artifact": "memory_anchor.json"},
+    {"step": 4, "description": "Replay trace generated", "artifact": "replay_trace.json"}
+  ],
+  "completed": true
+}

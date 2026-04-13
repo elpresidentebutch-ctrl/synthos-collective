@@ -90,7 +90,7 @@
 - internal/agent/agent.go - Key validation + thread safety
 - internal/config/config.go - Runtime config loading
 - internal/rpc/server.go - Rate limiting + size limits
-- contracts/src/synthos/SYNToken.sol - ERC20Snapshot integration
+- contracts/src/synthos/SynCoin.sol - SynCoin snapshot integration
 
 **2 files created:**
 - internal/rpc/ratelimit.go - Token bucket rate limiter

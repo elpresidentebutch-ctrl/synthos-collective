@@ -53,6 +53,7 @@
       font-weight: 700;
       background: linear-gradient(135deg, var(--accent), var(--green));
       -webkit-background-clip: text;
+      background-clip: text;
       -webkit-text-fill-color: transparent;
     }
     .status-dot {
@@ -260,10 +261,86 @@
       margin-bottom: 12px;
       text-align: center;
     }
+
+    /* ─── Connect Landing Screen ─────────────────────────────── */
+    .landing {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      text-align: center;
+      padding: 32px 24px;
+    }
+    .landing-logo {
+      font-size: 56px;
+      margin-bottom: 8px;
+    }
+    .landing h1 {
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      margin-bottom: 8px;
+      background: linear-gradient(135deg, #8b5cf6, #a78bfa, #c084fc);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .landing p {
+      color: var(--muted);
+      font-size: 15px;
+      max-width: 320px;
+      margin-bottom: 32px;
+      line-height: 1.5;
+    }
+    .landing .reward-badge {
+      display: inline-block;
+      padding: 6px 16px;
+      border-radius: 20px;
+      background: rgba(34,197,94,0.12);
+      color: var(--green);
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 24px;
+    }
+    .connect-btn {
+      width: 100%;
+      max-width: 320px;
+      padding: 18px 32px;
+      border: none;
+      border-radius: 16px;
+      background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+      color: #fff;
+      font-size: 20px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.15s;
+      box-shadow: 0 4px 24px rgba(139,92,246,0.3);
+    }
+    .connect-btn:active {
+      transform: scale(0.97);
+    }
+    .landing-footer {
+      margin-top: 40px;
+      color: rgba(255,255,255,0.3);
+      font-size: 12px;
+    }
+    .app.hidden { display: none; }
   </style>
 </head>
 <body>
-  <div class="app">
+  <!-- ─── Connect Landing Screen ─────────────────────────────── -->
+  <div class="landing" id="landingScreen">
+    <div class="landing-logo">⬡</div>
+    <h1>Synthos</h1>
+    <p>Run a validator node from your phone. Sync blocks, verify transactions, and earn rewards on the Synthos network.</p>
+    <div class="reward-badge">🎁 First 200 validators earn 5 SYN</div>
+    <button class="connect-btn" id="connectBtn" onclick="connectToNetwork()">Connect to Synthos</button>
+    <div class="landing-footer">Decentralized AI agent blockchain · No download required</div>
+  </div>
+
+  <!-- ─── Validator App (hidden until Connect) ───────────────── -->
+  <div class="app hidden" id="validatorApp">
     <div class="header">
       <h1>Synthos Validator</h1>
       <div class="status-label">
@@ -281,6 +358,7 @@
       <button class="tab" data-tab="peers">Peers</button>
       <button class="tab" data-tab="p2p">P2P</button>
       <button class="tab" data-tab="log">Log</button>
+      <button class="tab" data-tab="plugins">Plugins</button>
     </div>
 
     <!-- Chain Tab -->
@@ -421,9 +499,66 @@
         <button class="btn btn-danger" onclick="disconnectP2P()">Disconnect All</button>
       </div>
     </div>
+
+    <!-- Plugins Tab -->
+    <div class="tab-content" id="tab-plugins">
+      <div class="card">
+        <div class="card-title">Loaded Plugins & Capabilities</div>
+        <div id="pluginsList">
+          <div style="color:var(--muted);font-size:13px;">Loading plugins...</div>
+        </div>
+      </div>
+    </div>
   </div>
 
 <script>
+// ─── Connect Landing ────────────────────────────────────────────────────────
+function connectToNetwork() {
+  document.getElementById("landingScreen").style.display = "none";
+  const app = document.getElementById("validatorApp");
+  app.classList.remove("hidden");
+  boot();
+}
+
+// ─── Plugin Loader Integration ─────────────────────────────────────────────
+let agent = null;
+async function loadPlugins() {
+  // Dynamically import plugin loader and plugins (works in modern browsers)
+  try {
+    const loader = await import('/plugins/js/pluginLoader.js');
+    agent = new loader.Agent();
+    // List of plugins to load (add more as needed)
+    const plugins = [
+      await import('/plugins/js/negotiation.js'),
+      // Add more plugins here
+    ];
+    for (const p of plugins) {
+      await agent.loadPlugin(p);
+    }
+    updatePluginsUI();
+  } catch (e) {
+    document.getElementById("pluginsList").innerHTML = `<div style='color:var(--red)'>Plugin load error: ${e.message}</div>`;
+  }
+}
+
+function updatePluginsUI() {
+  if (!agent) return;
+  const list = document.getElementById("pluginsList");
+  if (agent.plugins.length === 0) {
+    list.innerHTML = '<div style="color:var(--muted);font-size:13px;">No plugins loaded</div>';
+    return;
+  }
+  list.innerHTML = agent.plugins.map((p, i) => `
+    <div style="margin-bottom:10px">
+      <b>Plugin #${i+1}</b><br/>
+      <span style="font-size:12px;color:var(--muted)">Capabilities:</span><br/>
+      <ul style="margin:0 0 0 18px;padding:0;font-size:13px;">
+        ${(p.capabilities||[]).map(c => `<li>${c}</li>`).join('')}
+      </ul>
+    </div>
+  `).join('');
+}
+
 // ─── Synthos Mobile Light Validator ─────────────────────────────────────────
 // Runs entirely in-browser. Syncs from network peers, validates blocks locally,
 // and can submit transactions. Uses IndexedDB for persistent chain state.
@@ -832,6 +967,7 @@ document.querySelectorAll(".tab").forEach(tab => {
     document.querySelectorAll(".tab-content").forEach(t => t.classList.remove("active"));
     tab.classList.add("active");
     document.getElementById("tab-" + tab.dataset.tab).classList.add("active");
+    if (tab.dataset.tab === "plugins") loadPlugins();
   });
 });
 
@@ -1250,9 +1386,15 @@ async function boot() {
       log("Service Worker registration skipped: " + e.message);
     }
   }
+
+  // Preload plugins for returning users
+  loadPlugins();
 }
 
-boot();
+// Auto-boot if returning user (already has chain data), otherwise show landing
+if (localStorage.getItem("synthos-peer-id")) {
+  connectToNetwork();
+}
 </script>
 </body>
 </html>

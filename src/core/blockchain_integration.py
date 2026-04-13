@@ -23,12 +23,13 @@ class BlockchainAwareAgent(SynthosAgentInstance):
         self.blockchain = blockchain
         self.last_chain_height = 0
         self.last_synced_block = None
+        self.transaction_nonces: Dict[str, int] = {}
 
 
     async def create_transaction(self, receiver: str, amount: int) -> str:
         """Create transaction to be added to blockchain mempool"""
         
-        nonce = self.local_transactions.get(self.identity.agent_id, 0)
+        nonce = self.transaction_nonces.get(self.identity.agent_id, 0)
         
         tx = Transaction(
             tx_id=f"tx_{self.identity.agent_id}_{nonce}_{int(datetime.now().timestamp() * 1000)}",
@@ -44,7 +45,8 @@ class BlockchainAwareAgent(SynthosAgentInstance):
         success, tx_id = self.blockchain.ledger.add_transaction(tx)
         
         if success:
-            self.local_transactions[self.identity.agent_id] = nonce + 1
+            self.transaction_nonces[self.identity.agent_id] = nonce + 1
+            self.local_transactions.append(tx.__dict__.copy())
             print(f"[{self.identity.agent_id}] Created transaction {tx_id}")
             return tx_id
         else:
@@ -71,6 +73,7 @@ class BlockchainAwareAgent(SynthosAgentInstance):
         """Synchronize with current blockchain state"""
         
         chain_state = self.blockchain.ledger.get_chain_state()
+        previous_height = self.last_chain_height
         
         # Update local view
         self.last_chain_height = chain_state.chain_height
@@ -78,9 +81,9 @@ class BlockchainAwareAgent(SynthosAgentInstance):
         
         sync_info = {
             "agent_id": self.identity.agent_id,
-            "before_height": self.last_chain_height,
+            "before_height": previous_height,
             "after_height": chain_state.chain_height,
-            "blocks_synced": chain_state.chain_height - self.last_chain_height,
+            "blocks_synced": chain_state.chain_height - previous_height,
             "pending_transactions": len(chain_state.pending_transactions),
         }
         
@@ -219,6 +222,7 @@ class AgentNetworkBlockchain:
             # Sync
             for agent in self.agents:
                 await agent.sync_blockchain_state()
+            await self.blockchain.synchronize_agents()
             
             await asyncio.sleep(0.1)
         

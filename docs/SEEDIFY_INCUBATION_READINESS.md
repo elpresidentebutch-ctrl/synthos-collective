@@ -15,13 +15,13 @@ This document summarizes what is **already in the repository** for incubator-sty
 | Reproducible container | `Dockerfile` | Builds `rpcnode` (default entrypoint) and includes `devnet` binary |
 | Consensus / ledger scope | `docs/audit/AUDIT_PACKET.md` | Explicit maturity statement: **not production L1** |
 | Threat model & invariants | `docs/audit/` | Architecture, threat model, invariants, review checklist |
-| Token & allocations (EVM) | `contracts/src/synthos/SYNToken.sol` | **100B** `SYN` initial supply; allocation constants in contract |
+| Token & allocations (EVM) | `contracts/src/synthos/SynCoin.sol` | **100B** `SYN` initial supply; allocation constants in contract |
 | Distribution mechanics | `contracts/src/synthos/SYNTHOSVestingVault.sol`, `SYNTHOSTimelock.sol`, `SYNTHOSTreasury.sol` (same folder) | Review with counsel before any sale |
 | Python agent stack | `src/`, `example.py`, `pytest` | See `COMPLETION_SUMMARY.md`, `QUICKSTART.md` |
 
 ## Token snapshot (on-chain source of truth)
 
-The **authoritative** supply and bucket sizes are the **constants in `contracts/src/synthos/SYNToken.sol`** (not prose in older docs, which may cite different figures). Before any public deck, reconcile every slide with the deployed or candidate Solidity.
+The **authoritative** supply and bucket sizes are the **constants in `contracts/src/synthos/SynCoin.sol`** (not prose in older docs, which may cite different figures). Before any public deck, reconcile every slide with the deployed or candidate Solidity.
 
 **Human-readable tokenomics (aligned to code):** [TOKENOMICS.md](./TOKENOMICS.md).
 
@@ -44,7 +44,7 @@ Use this as a team gate before submitting to an incubator:
 - [ ] `docker build -t synthos:local .` succeeds; `docker run -p 8080:8080 synthos:local` serves RPC as documented in `README.md` / `docs/RUN_NODE.md`.
 - [ ] `docs/audit/AUDIT_PACKET.md` is up to date with the code you are showing.
 - [ ] Solidity compiles (`contracts/` + Hardhat config); testnet deployment addresses documented when available ([DEPLOYMENT_REGISTRY.md](./DEPLOYMENT_REGISTRY.md)).
-- [ ] Deck + tokenomics PDF **match** `SYNToken.sol` and vesting/timelock/treasury design.
+- [ ] Deck + tokenomics PDF **match** `SynCoin.sol` and vesting/timelock/treasury design.
 
 ## Checklist walkthrough (verify before you apply)
 
@@ -60,7 +60,7 @@ Use this table against the current repo. **Technical** items can be re-checked l
 | 5 | `docs/audit/AUDIT_PACKET.md` matches code | Technical | **Pass** | Still references `cmd/devnet`, `cmd/rpcnode`, `internal/*` as implemented |
 | 6 | Solidity compiles | Technical | **Pass** | Hardhat `sources` = `./src` (under `contracts/`) |
 | 7 | Testnet addresses documented **when available** | Technical | **N/A / documented** | No public testnet claimed; see [DEPLOYMENT_REGISTRY.md](./DEPLOYMENT_REGISTRY.md) |
-| 8 | Deck + tokenomics match `SYNToken.sol` | External | **You** | Create/review materials vs `contracts/src/synthos/SYNToken.sol` |
+| 8 | Deck + tokenomics match `SynCoin.sol` | External | **You** | Create/review materials vs `contracts/src/synthos/SynCoin.sol` |
 | A | Pitch deck | External | **You** | Problem, solution, roadmap, team |
 | B | Tokenomics one-pager | External | **You** | Must match contract + counsel |
 | C | Demo (recording or live) | External | **You** | `go run ./cmd/devnet`, RPC, or Docker |

@@ -1,0 +1,14 @@
+/*
+  Custom CSS for Synthos Dashboard
+  Ensures background-clip compatibility across browsers
+*/
+
+.bg-clip-text {
+  background: linear-gradient(90deg, #00c3ff, #ffff1c);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Example usage: <div class="bg-clip-text">Gradient Text</div> */

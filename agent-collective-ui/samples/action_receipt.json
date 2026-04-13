@@ -1,0 +1,13 @@
+{
+  "action_id": "act-5678",
+  "agent_id": "agent-1234",
+  "action_type": "transfer",
+  "parameters": {
+    "to": "agent-5678",
+    "amount": 50
+  },
+  "timestamp": "2026-04-07T12:01:00Z",
+  "state_root_before": "root-hash-xyz",
+  "state_root_after": "root-hash-abc",
+  "signature": "sig-abcdef123456..."
+}

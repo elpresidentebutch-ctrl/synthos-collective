@@ -24,7 +24,7 @@ func NewServer(c *chain.Chain, st *storage.Store, n *node.Node) *Server {
 		Store:       st,
 		Node:        n,
 		RateLimiter: NewRateLimiter(1000), // Default 1000 RPS
-		MaxBodySize: 1024 * 1024, // Default 1MB
+		MaxBodySize: 1024 * 1024,          // Default 1MB
 	}
 }
 
@@ -46,7 +46,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/mempool", s.handleMempool)
 	mux.HandleFunc("/submitTx", s.handleSubmitTx)
 	mux.HandleFunc("/proposeBlock", s.handleProposeBlock)
-	
+
 	// Wrap with rate limiting and input size limit middleware
 	handler := s.RateLimiter.Middleware(mux)
 	handler = s.bodyLimitMiddleware(handler)
@@ -67,9 +67,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{
-		"chain_id":  s.Chain.ChainID,
-		"height":    s.Chain.Height(),
-		"tip":       s.Chain.Tip().Hash,
+		"chain_id":   s.Chain.ChainID,
+		"height":     s.Chain.Height(),
+		"tip":        s.Chain.Tip().Hash,
 		"state_root": s.Chain.State.Root(),
 	})
 }
@@ -99,7 +99,7 @@ func (s *Server) handleSubmitTx(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	
+
 	var tx chain.Tx
 	if err := json.NewDecoder(r.Body).Decode(&tx); err != nil {
 		// Check if it's a "request body too large" error
@@ -148,4 +148,3 @@ func writeJSON(w http.ResponseWriter, v any) {
 }
 
 var _ = errors.New // keep import stable for future error mapping
-

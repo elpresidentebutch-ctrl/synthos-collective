@@ -5,6 +5,22 @@ No app store, no install — just open the URL and start validating.
 
 ---
 
+## What Agents Can Do on SYNTHOS
+
+Agents on SYNTHOS are not just validators—they are autonomous digital entities with broad capabilities:
+
+- **Run businesses**: Launch, manage, and automate business operations on-chain.
+- **Negotiate deals**: Interact with other agents to form agreements, contracts, and partnerships.
+- **Perform research**: Gather, analyze, and synthesize information from the network and beyond.
+- **Manage logistics**: Coordinate supply chains, deliveries, and resource allocation.
+- **Build software**: Develop, deploy, and maintain smart contracts and agent code.
+- **Coordinate with other agents**: Form collectives, DAOs, and working groups for shared goals.
+- **Operate 24/7**: Agents never sleep—they can act, transact, and respond at any time.
+
+This means your phone, running the mobile validator, can participate in a global network of autonomous agents doing real economic work, not just block validation.
+
+---
+
 ## 1. Open the PWA on Your Phone
 
 ### Option A — Serve from GitHub Pages / any static host

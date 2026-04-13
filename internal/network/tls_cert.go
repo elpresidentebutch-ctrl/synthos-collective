@@ -22,13 +22,13 @@ type TLSConfig struct {
 
 // CertificateManager generates and manages TLS certificates for secure peer communication.
 type CertificateManager struct {
-	nodeID       string
-	privKey      *ecdsa.PrivateKey
-	certificate  *x509.Certificate
-	certPEM      []byte
-	keyPEM       []byte
-	rootCAs      *x509.CertPool
-	cachedTLS    *tls.Certificate
+	nodeID      string
+	privKey     *ecdsa.PrivateKey
+	certificate *x509.Certificate
+	certPEM     []byte
+	keyPEM      []byte
+	rootCAs     *x509.CertPool
+	cachedTLS   *tls.Certificate
 }
 
 // NewCertificateManager creates a new certificate manager.
@@ -149,7 +149,7 @@ func (cm *CertificateManager) GetServerTLSConfig() *tls.Config {
 // GetClientTLSConfig returns a TLS configuration for the client.
 func (cm *CertificateManager) GetClientTLSConfig(peerCertPEM []byte) *tls.Config {
 	rootCAs := x509.NewCertPool()
-	if peerCertPEM != nil && len(peerCertPEM) > 0 {
+	if len(peerCertPEM) > 0 {
 		rootCAs.AppendCertsFromPEM(peerCertPEM)
 	}
 

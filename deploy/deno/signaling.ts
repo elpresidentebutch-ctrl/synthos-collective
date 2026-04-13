@@ -21,14 +21,14 @@
 // Connected WebSocket peers: peerId → WebSocket
 const signalingPeers = new Map<string, WebSocket>();
 
-// Registered HTTP peers (validators): stored in Deno KV
-const kv = await Deno.openKv();
+// Registered HTTP peers (validators): in-memory (peers re-register on connect)
+const registeredPeers = new Map<string, any>();
 
 const STALE_MS = 5 * 60 * 1000; // 5 minutes
 
 // ─── HTTP Server ────────────────────────────────────────────────────────────
 
-Deno.serve({ port: 8000 }, async (req: Request): Promise<Response> => {
+Deno.serve(async (req: Request): Promise<Response> => {
   const url = new URL(req.url);
   const path = url.pathname;
 
@@ -77,7 +77,7 @@ Deno.serve({ port: 8000 }, async (req: Request): Promise<Response> => {
   // Delete peer
   if (path.startsWith("/peers/") && req.method === "DELETE") {
     const name = path.replace("/peers/", "");
-    await kv.delete(["peer", name]);
+    registeredPeers.delete(name);
     return json({ ok: true, deleted: name });
   }
 
@@ -173,7 +173,9 @@ async function handleRegister(req: Request): Promise<Response> {
     last_seen: Date.now(),
   };
 
-  await kv.set(["peer", name], entry, { expireIn: 3600_000 }); // 1hr TTL
+  registeredPeers.set(name, entry);
+  // Auto-expire after 1 hour
+  setTimeout(() => { if (registeredPeers.get(name)?.registered_at === entry.registered_at) registeredPeers.delete(name); }, 3600_000);
 
   return json({ ok: true, peer: name, message: "registered" });
 }
@@ -182,9 +184,7 @@ async function handleListPeers(activeOnly: boolean): Promise<Response> {
   const peers: any[] = [];
   const now = Date.now();
 
-  const entries = kv.list({ prefix: ["peer"] });
-  for await (const entry of entries) {
-    const peer = entry.value as any;
+  for (const peer of registeredPeers.values()) {
     const stale = now - peer.last_seen > STALE_MS;
     if (activeOnly && stale) continue;
     peers.push({ ...peer, stale });

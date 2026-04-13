@@ -1,0 +1,6 @@
+{
+  "agent_id": "agent-1234",
+  "memory_root": "mem-root-123456",
+  "timestamp": "2026-04-07T12:02:00Z",
+  "anchor_hash": "anchor-hash-7890abcd"
+}

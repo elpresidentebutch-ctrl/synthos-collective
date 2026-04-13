@@ -1,13 +1,14 @@
 package main
 
 import (
-	"crypto/ed25519"
-	"crypto/rand"
+	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 
 	"synthos-collective/internal/chain"
+	"synthos-collective/internal/network"
 	"synthos-collective/internal/rpc"
 	"synthos-collective/internal/storage"
 )
@@ -26,39 +27,82 @@ func main() {
 	var c *chain.Chain
 	if snap, err := st.Load(); err == nil && snap != nil && len(snap.Blocks) > 0 && snap.State != nil {
 		c = &chain.Chain{
-			ChainID:  snap.ChainID,
-			State:    snap.State,
-			Blocks:   snap.Blocks,
-			Mempool:  make(map[string]chain.Tx),
+			ChainID: snap.ChainID,
+			State:   snap.State,
+			Blocks:  snap.Blocks,
+			Mempool: make(map[string]chain.Tx),
 		}
 	} else {
-		// Fresh chain with demo genesis.
-		pub, _, _ := ed25519.GenerateKey(rand.Reader)
-		addr := chain.AddressFromPublicKey(pub)
-		gen := chain.Genesis{
-			ChainID: "synthos-l1-local",
-			Alloc: map[chain.Address]uint64{
-				addr: 100_000_000_000,
-			},
-			Metadata: map[string]any{"symbol": "SYN", "decimals": 0},
-		}
+		// Load genesis from config/genesis.json if present, otherwise use defaults.
+		gen := loadGenesis("config/genesis.json")
 		c, err = chain.NewChain(gen)
 		if err != nil {
 			panic(err)
 		}
 		_ = st.Save(c)
-		fmt.Printf("Initialized new chain, funded %s\n", addr)
+		for addr, bal := range gen.Alloc {
+			fmt.Printf("Funded %s with %d SYN\n", addr, bal)
+		}
+	}
+
+	// Wire up relay transport if registry URL is configured.
+	// This lets the Go node participate in the same network as
+	// Cloudflare Workers validators and mobile PWA validators.
+	var relay *network.RelayTransport
+	registryURL := os.Getenv("REGISTRY_URL")
+	selfName := os.Getenv("WORKER_NAME")
+	selfURL := os.Getenv("SELF_URL")
+
+	if registryURL != "" && selfName != "" {
+		relay = network.NewRelayTransportFromConfig(network.RelayConfig{
+			RegistryURL:    registryURL,
+			SelfName:       selfName,
+			SelfURL:        selfURL,
+			RegistrySecret: os.Getenv("REGISTRY_SECRET"),
+			Cloud:          "go-node",
+			Logf:           log.Printf,
+		})
+		if err := relay.Start(); err != nil {
+			log.Printf("WARNING: relay transport failed to start: %v", err)
+		} else {
+			log.Printf("Relay transport started: registry=%s self=%s", registryURL, selfName)
+		}
 	}
 
 	srv := rpc.NewServer(c, st, nil)
+	_ = relay // relay runs independently; push-from-proposer model, no gossip needed
+
 	addr := ":8080"
+	port := os.Getenv("PORT")
+	if port != "" {
+		addr = ":" + port
+	}
 	fmt.Printf("RPC listening on %s\n", addr)
-	fmt.Printf("GET /status\n")
-	fmt.Printf("GET /balance?address=0x...\n")
-	fmt.Printf("GET /mempool\n")
-	fmt.Printf("POST /submitTx (JSON body)\n")
+	fmt.Printf("GET  /health /status /account /balance /mempool /blocks /peers\n")
+	fmt.Printf("POST /submitTx /proposeBlock /gossip/block /gossip/tx-batch\n")
+	if registryURL != "" {
+		fmt.Printf("Registry: %s | Self: %s (%s)\n", registryURL, selfName, selfURL)
+	}
 	if err := http.ListenAndServe(addr, srv.Handler()); err != nil {
 		panic(err)
 	}
 }
 
+func loadGenesis(path string) chain.Genesis {
+	f, err := os.Open(path)
+	if err == nil {
+		defer f.Close()
+		var g chain.Genesis
+		if json.NewDecoder(f).Decode(&g) == nil && g.Validate() == nil {
+			return g
+		}
+	}
+	// Fallback: default genesis with large agent-0 allocation.
+	return chain.Genesis{
+		ChainID: "synthos-l1-local",
+		Alloc: map[chain.Address]uint64{
+			"agent-0": 100_000_000_000,
+		},
+		Metadata: map[string]any{"symbol": "SYN", "decimals": 0},
+	}
+}

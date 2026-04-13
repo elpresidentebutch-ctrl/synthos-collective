@@ -8,4 +8,6 @@ __all__ = [
     'ConsensusEngine',
     'TransactionValidator',
     'BlockProposer',
+    'RelayTransport',
+    'RelayPeer',
 ]

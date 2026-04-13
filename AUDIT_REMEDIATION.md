@@ -221,12 +221,12 @@ return fmt.Errorf("signature verification failed for tx_id: %s", t.ID)
 ## 5. Smart Contract Security
 
 ### Finding
-> "SYNToken.sol missing re-entrancy protection, no role-based access, no MAX_SUPPLY enforcement"
+> "SynCoin.sol missing re-entrancy protection, no role-based access, no MAX_SUPPLY enforcement"
 
 ### Status: ✅ COMPLETED
 
 ### Remediation
-**File Modified:** `contracts/src/synthos/SYNToken.sol`
+**File Modified:** `contracts/src/synthos/SynCoin.sol`
 
 #### Security Enhancements
 
@@ -234,7 +234,7 @@ return fmt.Errorf("signature verification failed for tx_id: %s", t.ID)
 ```solidity
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
-contract SYNToken is ... ReentrancyGuard {
+contract SynCoin is ... ReentrancyGuard {
     function transfer(...) public override nonReentrant { ... }
     function allocateTokens(...) public nonReentrant { ... }
 }
@@ -372,7 +372,7 @@ npm install --save-exact  # Lock exact versions
 ### Files Modified
 1. ✅ `internal/agent/agent.go` - Added identity verification + RBAC
 2. ✅ `internal/chain/tx.go` - Enhanced validation + error messages
-3. ✅ `contracts/src/synthos/SYNToken.sol` - Added ReentrancyGuard + AccessControl
+3. ✅ `contracts/src/synthos/SynCoin.sol` - Added ReentrancyGuard + AccessControl
 
 ### Total Changes
 - **Lines Added:** ~800
@@ -401,7 +401,7 @@ npm install --save-exact  # Lock exact versions
 - TestValidateTx_BadNonce
 - TestValidateTx_FeeValidation
 
-// contracts/test/SYNToken.test.ts
+// contracts/test/SynCoin.test.ts
 - testReentrancyGuard()
 - testAccessControl()
 - testMaxSupplyEnforcement()

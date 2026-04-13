@@ -361,11 +361,11 @@ func (s *Server) ServeHTTP(w, r) {
 ### ✅ LOW: Issue #13 - Missing Snapshot Implementation
 
 **Status:** Identified, partial fix  
-**Note:** SYNToken.sol already uses OpenZeppelin's ERC20Snapshot correctly
+**Note:** SynCoin.sol already uses OpenZeppelin's ERC20Snapshot correctly
 
 **Verified:**
 ```solidity
-contract SYNToken is ..., ERC20Snapshot ... {
+contract SynCoin is ..., ERC20Snapshot ... {
     function _beforeTokenTransfer(...) override(ERC20, ERC20Snapshot) {
         ERC20Snapshot._beforeTokenTransfer(...);
     }

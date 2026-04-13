@@ -53,7 +53,7 @@ SYNTHOS Collective is now **production-ready Layer-1 blockchain** with:
 
 #### 3. Snapshot Implementation Broken
 **Status:** ✅ COMPLETE  
-**Files Modified:** `contracts/src/synthos/SYNToken.sol`
+**Files Modified:** `contracts/src/synthos/SynCoin.sol`
 - Removed manual snapshot tracking (flawed `current_snapshot` mapping)
 - Integrated OpenZeppelin's ERC20Snapshot properly
 - `snapshot()` calls `_snapshot()` from parent class
@@ -253,7 +253,7 @@ logging.Info("Transaction validated",
 | `internal/agent/agent.go` | Key validation, thread-safe mutex | HIGH |
 | `internal/config/config.go` | Runtime config from env vars | HIGH |
 | `internal/rpc/server.go` | Rate limiting, request size limits | HIGH |
-| `contracts/src/synthos/SYNToken.sol` | ERC20Snapshot integration | HIGH |
+| `contracts/src/synthos/SynCoin.sol` | SynCoin snapshot integration | HIGH |
 
 ---
 
@@ -263,7 +263,7 @@ logging.Info("Transaction validated",
 - [x] Double-spend prevention (nonce validation at submission)
 - [x] Input validation (signature, key format, amount bounds)
 - [x] Access control (role-based permissions in contracts)
-- [x] Reentrancy protection (SYNToken with ReentrancyGuard)
+- [x] Reentrancy protection (SynCoin with ReentrancyGuard)
 - [x] Rate limiting (token bucket per IP)
 - [x] Request size limits (MaxBytesReader)
 - [x] Thread safety (RWMutex on concurrent structures)
@@ -296,7 +296,7 @@ go test -run TestTokenBucket ./internal/rpc
 go test -run TestRateLimiter ./internal/rpc
 
 # Contract tests (Foundry)
-forge test contracts/test/SYNToken.t.sol
+forge test contracts/test/SynCoin.t.sol
 ```
 
 ---

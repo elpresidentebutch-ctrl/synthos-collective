@@ -13,13 +13,13 @@ type Chain struct {
 	ChainID string
 	State   *State
 
-	Blocks []*Block
+	Blocks  []*Block
 	Mempool map[string]Tx
 }
 
 var (
-	ErrNoGenesis   = errors.New("genesis not initialized")
-	ErrBadBlock    = errors.New("bad block")
+	ErrNoGenesis = errors.New("genesis not initialized")
+	ErrBadBlock  = errors.New("bad block")
 )
 
 func NewChain(genesis Genesis) (*Chain, error) {
@@ -28,10 +28,10 @@ func NewChain(genesis Genesis) (*Chain, error) {
 		return nil, err
 	}
 	c := &Chain{
-		ChainID:  genesis.ChainID,
-		State:    st,
-		Blocks:   make([]*Block, 0, 1024),
-		Mempool:  make(map[string]Tx),
+		ChainID: genesis.ChainID,
+		State:   st,
+		Blocks:  make([]*Block, 0, 1024),
+		Mempool: make(map[string]Tx),
 	}
 
 	// Create genesis block (height 0).
@@ -64,6 +64,18 @@ func (c *Chain) Tip() *Block {
 		return nil
 	}
 	return c.Blocks[len(c.Blocks)-1]
+}
+
+// BlocksFrom returns all blocks from height `from` onward.
+// Compatible with the JS validator GET /blocks?from=N protocol.
+func (c *Chain) BlocksFrom(from int) []*Block {
+	if from < 0 {
+		from = 0
+	}
+	if from >= len(c.Blocks) {
+		return nil
+	}
+	return c.Blocks[from:]
 }
 
 func (c *Chain) SubmitTx(tx Tx) error {
@@ -137,17 +149,17 @@ func (c *Chain) BuildBlock(proposerID string, proposerPoCRoot string, maxTx int)
 	parent := c.Tip()
 	b := &Block{
 		Header: BlockHeader{
-			Height:          parent.Header.Height + 1,
-			ParentHash:      parent.Hash,
+			Height:     parent.Header.Height + 1,
+			ParentHash: parent.Hash,
 			// Timeless runtime: no wall-clock timestamps in non-genesis blocks.
 			Timestamp:       time.Time{},
 			ProposerID:      proposerID,
 			StateRoot:       tmp.Root(),
 			ProposerPoCRoot: proposerPoCRoot,
 		},
-		Tx:            txs,
+		Tx:             txs,
 		ValidatorVotes: make(map[string]int),
-		Finalized:     false,
+		Finalized:      false,
 	}
 	_, err := b.ComputeHash()
 	return b, err
@@ -199,7 +211,7 @@ func (c *Chain) FinalizeBlock(b *Block) error {
 	if err := c.ValidateBlock(b); err != nil {
 		return err
 	}
-	
+
 	// Calculate total fees collected in this block
 	var totalFees uint64
 	for _, tx := range b.Tx {
@@ -208,7 +220,7 @@ func (c *Chain) FinalizeBlock(b *Block) error {
 		totalFees += tx.Fee
 		delete(c.Mempool, tx.ID)
 	}
-	
+
 	// Distribute collected fees to block proposer
 	if totalFees > 0 && b.Header.ProposerID != "" {
 		proposerAddr := Address("0x" + b.Header.ProposerID) // Convert proposer ID to address
@@ -216,9 +228,8 @@ func (c *Chain) FinalizeBlock(b *Block) error {
 		proposer.Balance += totalFees
 		c.State.Set(proposerAddr, proposer)
 	}
-	
+
 	b.Finalized = true
 	c.Blocks = append(c.Blocks, b)
 	return nil
 }
-

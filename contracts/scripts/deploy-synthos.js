@@ -1,114 +1,133 @@
+// scripts/deploy-synthos.js
+
 /**
- * SYNTHOS — ordered deployment for testnets / internal rehearsals.
- *
- * Order: SYNToken → SYNTHOSTimelock → SYNTHOSGovernance (grant timelock roles) →
- *        SYNTHOSStaking → RewardDistributor → token ownership → governance setup notes
- *
- * Usage:
- *   cd contracts && npx hardhat run scripts/deploy-synthos.js --network hardhat
- *   npx hardhat run scripts/deploy-synthos.js --network synthos
- *
- * Env:
- *   TIMELOCK_MIN_DELAY — seconds (default: 60 on hardhat, 172800 elsewhere = 2 days)
+ * SYNTHOS Network Deployment Script
+ * 
+ * Deploys all SYNTHOS contracts in correct order:
+ * 1. SynCoin
+ * 2. SYNTHOSGovernance  
+ * 3. SYNTHOSStaking
+ * 4. RewardDistributor
+ * 
+ * Usage: npx hardhat run scripts/deploy-synthos.js --network synthos
  */
 
 const hre = require("hardhat");
+const { ethers } = hre;
 
 async function main() {
-  const { ethers, network } = hre;
+  console.log("🚀 Deploying SYNTHOS contracts...\n");
+
   const [deployer] = await ethers.getSigners();
-  const isHardhat = network.name === "hardhat";
+  console.log(`📍 Deployer: ${deployer.address}\n`);
 
-  const minDelay = Number(
-    process.env.TIMELOCK_MIN_DELAY ?? (isHardhat ? 60 : 172800)
+  // ============================================
+  // 1. Deploy SynCoin
+  // ============================================
+  console.log("1️⃣ Deploying SynCoin...");
+  const SynCoin = await ethers.getContractFactory("SynCoin");
+  const synCoin = await SynCoin.deploy();
+  await synCoin.deployed();
+  console.log(`✅ SynCoin deployed to: ${synCoin.address}\n`);
+
+  // ============================================
+  // 2. Deploy SYNTHOSGovernance
+  // ============================================
+  console.log("2️⃣ Deploying SYNTHOSGovernance...");
+  
+  // Deploy timelock (2-day delay)
+  const TimelockFactory = await ethers.getContractFactory("Timelock"); // You'll need Timelock contract
+  // For now, we'll use a simple governance timelock address
+  const timelockAddress = deployer.address; // Placeholder
+  
+  const SYNTHOSGovernance = await ethers.getContractFactory("SYNTHOSGovernance");
+  const governance = await SYNTHOSGovernance.deploy(
+    synCoin.address,
+    timelockAddress
   );
+  await governance.deployed();
+  console.log(`✅ SYNTHOSGovernance deployed to: ${governance.address}\n`);
 
-  console.log("SYNTHOS deploy");
-  console.log("  network:", network.name);
-  console.log("  deployer:", deployer.address);
-  console.log("  timelock minDelay (s):", minDelay);
-
-  console.log("\n1/5 SYNToken");
-  const SYNToken = await ethers.getContractFactory("SYNToken");
-  const synToken = await SYNToken.deploy();
-  await synToken.waitForDeployment();
-  const synTokenAddr = await synToken.getAddress();
-  console.log("  SYNToken:", synTokenAddr);
-
-  console.log("\n2/5 SYNTHOSTimelock");
-  const Timelock = await ethers.getContractFactory("SYNTHOSTimelock");
-  const timelock = await Timelock.deploy(
-    minDelay,
-    [deployer.address],
-    [deployer.address],
-    deployer.address
+  // ============================================
+  // 3. Deploy SYNTHOSStaking
+  // ============================================
+  console.log("3️⃣ Deploying SYNTHOSStaking...");
+  const SYNTHOSStaking = await ethers.getContractFactory("SYNTHOSStaking");
+  const staking = await SYNTHOSStaking.deploy(
+    synCoin.address,
+    governance.address
   );
-  await timelock.waitForDeployment();
-  const timelockAddr = await timelock.getAddress();
-  console.log("  Timelock:", timelockAddr);
+  await staking.deployed();
+  console.log(`✅ SYNTHOSStaking deployed to: ${staking.address}\n`);
 
-  console.log("\n3/5 SYNTHOSGovernance");
-  const Gov = await ethers.getContractFactory("SYNTHOSGovernance");
-  const governance = await Gov.deploy(synTokenAddr, timelockAddr);
-  await governance.waitForDeployment();
-  const govAddr = await governance.getAddress();
-  console.log("  Governance:", govAddr);
+  // ============================================
+  // 4. Deploy RewardDistributor
+  // ============================================
+  console.log("4️⃣ Deploying RewardDistributor...");
+  const RewardDistributor = await ethers.getContractFactory("RewardDistributor");
+  const rewards = await RewardDistributor.deploy(governance.address);
+  await rewards.deployed();
+  console.log(`✅ RewardDistributor deployed to: ${rewards.address}\n`);
 
-  const proposerRole = await timelock.PROPOSER_ROLE();
-  await (await timelock.grantRole(proposerRole, govAddr)).wait();
-  await (await timelock.revokeRole(proposerRole, deployer.address)).wait();
-  console.log("  Timelock: PROPOSER_ROLE → governance, revoked deployer proposer");
+  // ============================================
+  // 5. Configuration
+  // ============================================
+  console.log("⚙️  Configuring contracts...\n");
 
-  console.log("\n4/5 SYNTHOSStaking");
-  const Staking = await ethers.getContractFactory("SYNTHOSStaking");
-  const staking = await Staking.deploy(synTokenAddr, govAddr);
-  await staking.waitForDeployment();
-  const stakingAddr = await staking.getAddress();
-  console.log("  Staking:", stakingAddr);
+  // Transfer SynCoin ownership to governance (if needed)
+  // console.log("   - Transferring SynCoin ownership to governance...");
+  // let tx = await synCoin.transferOwnership(governance.address);
+  // await tx.wait();
+  // console.log("   ✓ Ownership transferred\n");
 
-  console.log("\n5/5 RewardDistributor");
-  const Rewards = await ethers.getContractFactory("RewardDistributor");
-  const rewards = await Rewards.deploy(govAddr);
-  await rewards.waitForDeployment();
-  const rewardsAddr = await rewards.getAddress();
-  console.log("  RewardDistributor:", rewardsAddr);
+  // Approve SynCoin in RewardDistributor (if needed)
+  // console.log("   - Approving SynCoin in RewardDistributor...");
+  // tx = await rewards.approveToken(synCoin.address);
+  // await tx.wait();
+  // console.log("   ✓ Token approved\n");
 
-  console.log("\nToken ownership → governance");
-  await (await synToken.transferOwnership(govAddr)).wait();
-  console.log("  done");
+  // ============================================
+  // 6. Summary
+  // ============================================
+  console.log("=" .repeat(60));
+  console.log("🎉 SYNTHOS DEPLOYMENT COMPLETE\n");
+  console.log("Contract Addresses:");
+  console.log("-".repeat(60));
+  console.log(`SynCoin:            ${synCoin.address}`);
+  console.log(`SYNTHOSGovernance:  ${governance.address}`);
+  console.log(`SYNTHOSStaking:     ${staking.address}`);
+  console.log(`RewardDistributor:  ${rewards.address}`);
+  console.log("-".repeat(60));
+  console.log(`\n📝 Save these addresses for future reference!\n`);
 
-  console.log("\n--- Post-deploy (governance must execute) ---");
-  console.log(
-    "  RewardDistributor.approveToken(synToken) — only callable by governance address."
-  );
-  console.log(
-    "  Plan: queue via timelock + governance proposal, or use multisig-as-governance pattern."
-  );
-  console.log(
-    "  Explorer verify: npx hardhat verify --network <net> <address> [constructor args]"
-  );
+  // ============================================
+  // 7. Verification Info
+  // ============================================
+  console.log("🔗 To verify contracts on block explorer:\n");
+  console.log("npx hardhat verify --network synthos <CONTRACT_ADDRESS> <CONSTRUCTOR_ARGS>");
+  console.log("");
 
-  const net = await ethers.provider.getNetwork();
+  // ============================================
+  // 8. Next Steps
+  // ============================================
+  console.log("📋 Next Steps:");
+  console.log("   1. Update .env file with deployed addresses");
+  console.log("   2. Run allocation script to distribute tokens");
+  console.log("   3. Register initial validators");
+  console.log("   4. Create first governance proposal");
+  console.log("");
 
-  console.log("\nAddresses JSON (copy to deployment registry):");
-  console.log(
-    JSON.stringify(
-      {
-        network: network.name,
-        chainId: Number(net.chainId),
-        SYNToken: synTokenAddr,
-        SYNTHOSTimelock: timelockAddr,
-        SYNTHOSGovernance: govAddr,
-        SYNTHOSStaking: stakingAddr,
-        RewardDistributor: rewardsAddr,
-      },
-      null,
-      2
-    )
-  );
+  return {
+    synToken: synToken.address,
+    governance: governance.address,
+    staking: staking.address,
+    rewards: rewards.address,
+  };
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+main()
+  .then(() => process.exit(0))
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });

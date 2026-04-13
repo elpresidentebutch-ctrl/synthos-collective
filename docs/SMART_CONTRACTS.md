@@ -4,15 +4,14 @@ Complete smart contract platform for SYNTHOS Agent civilization and Gemini Megac
 
 ## Overview
 
-### SYNTHOS Smart Contracts (Token, Governance, Staking)
+### SYNTHOS Smart Contracts (SynCoin, Governance, Staking)
 
-**SYNTHOS Token Contract** (`src/contracts/synthos/token.py`)
-- ERC20-compatible token with 1 billion supply
-- Governance voting integration with snapshot mechanism
-- Delegation system for voting power transfer
-- No supply inflation (max supply = initial)
-- Token transfer whitelisting and pause mechanisms
-- Complete transfer history and approval tracking
+**SYNTHOS SynCoin Contract** (`contracts/src/synthos/SynCoin.sol`)
+- AI-native, agent-centric coin with modular, programmable features
+- Supports programmable agent-to-agent transfers, staking, governance, and more
+- No supply inflation (max supply = initial, programmable by agents)
+- Advanced transfer controls, agent roles, and metadata
+- Complete transfer and event history
 
 **SYNTHOS Governance Contract** (`src/contracts/synthos/governance.py`)
 - DAO voting on protocol upgrades, treaties, economic policy, constitution changes
@@ -92,29 +91,27 @@ src/contracts/
 
 ### Features
 
-- **Supply Management**
-  - Initial: 1 billion (1×10⁹) tokens
+**Supply Management**
+  - Initial: 100 billion (1×10¹¹) SynCoin
   - Decimals: 18
-  - Max supply caps inflation
-  - Minting/burning only by authorized roles
+  - Max supply programmable by agent consensus
+  - Minting/burning and advanced supply logic are agent-governed
 
-- **Governance Integration**
-  - Snapshot mechanism for voting power at block height
-  - Delegation system for voting power transfer
-  - Get voting power including delegated amounts
-  - Complete delegation management
+**Governance Integration**
+  - Agent-centric voting and governance hooks
+  - Delegation and programmable voting power
+  - Complete delegation and agent role management
 
-- **Transfer Controls**
-  - Pause/resume mechanism for all transfers
-  - Whitelist system for restricted environments
-  - Complete transfer history with reasons
-  - Approval and allowance management (ERC20-compatible)
+**Transfer Controls**
+  - Programmable agent-to-agent transfers
+  - Pause/resume and advanced transfer controls
+  - Complete transfer and event history
+  - Advanced agent permission and approval management
 
-- **History & Auditing**
-  - Complete transfer history (unlimited)
-  - Approval history tracking
-  - Mint event history
-  - Burn tracking with burn address (0x0000...)
+**History & Auditing**
+  - Complete transfer and event history (unlimited)
+  - Agent action and permission tracking
+  - Mint/burn and programmable event history
 
 ### Interface
 
@@ -651,7 +648,7 @@ assert proposal["executed"] == True
 
 The Smart Contracts System provides:
 
-- **SYNTHOS Token**: 1B supply ERC20 with governance integration
+- **SYNTHOS SynCoin**: 100B supply, agent-native, programmable, with governance integration
 - **SYNTHOS Governance**: Complete DAO voting system with time-locked execution
 - **SYNTHOS Staking**: Validator management with delegation and slashing
 - **Gemini Megachain 2.0**: Multi-chain platform with cross-chain messaging
@@ -667,11 +664,3 @@ All contracts feature:
 - Emergency controls
 
 Total: **3000+ lines of production-ready smart contract code**
-
----
-
-## Legal notice
-
-SYNTHOS Collective, SYNTHOS, and related names, marks, documentation, and technical materials in this document are the **exclusive property of James G. Isham Williams, Sr.** Unauthorized reproduction, distribution, or commercial use without express written permission is prohibited except as allowed under applicable open-source licenses for identified files. No rights are waived.
-
-This document is informational only and is not legal, financial, or investment advice. The canonical legal notice is in **docs/LEGAL_NOTICE.md** in the SYNTHOS Collective repository.

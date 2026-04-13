@@ -8,9 +8,9 @@ This document covers the complete smart contract suite for SYNTHOS and Gemini Me
 
 ## SYNTHOS Smart Contracts
 
-### 1. SYNToken (ERC-20)
+### 1. SynCoin (AI-native)
 
-**File**: `contracts/src/synthos/SYNToken.sol`  
+**File**: `contracts/synthos/SynCoin.sol`  
 **Network**: SYNTHOS Chain  
 **Total Supply**: 1 billion SYN tokens
 
@@ -54,13 +54,13 @@ function pause() / unpause()
 
 ```solidity
 // Create snapshot for proposal voting
-uint256 snapshotId = synToken.createSnapshot();
+uint256 snapshotId = synCoin.createSnapshot();
 
 // Get voting power at snapshot
-uint256 votingPower = synToken.balanceOfAtSnapshot(msg.sender, snapshotId);
+uint256 votingPower = synCoin.balanceOfAtSnapshot(msg.sender, snapshotId);
 
 // Allocate tokens
-synToken.allocateTokens(
+synCoin.allocateTokens(
     ecosystemPartner,
     1_000_000 * 10**18,
     "ECOSYSTEM"
@@ -71,7 +71,7 @@ synToken.allocateTokens(
 
 ### 2. SYNTHOSGovernance (DAO)
 
-**File**: `contracts/src/synthos/SYNTHOSGovernance.sol`  
+**File**: `contracts/synthos/SYNTHOSGovernance.sol`  
 **Network**: SYNTHOS Chain  
 **Governance Model**: Delegative democracy with vote delegation
 
@@ -176,7 +176,7 @@ governance.executeProposal(proposalId);
 
 ### 3. SYNTHOSStaking
 
-**File**: `contracts/src/synthos/SYNTHOSStaking.sol`  
+**File**: `contracts/synthos/SYNTHOSStaking.sol`  
 **Network**: SYNTHOS Chain  
 **Model**: Delegated Proof-of-Stake (DPoS)
 
@@ -768,9 +768,9 @@ npm install @openzeppelin/contracts
 
 #### SYNTHOS Network
 
-1. **Deploy SYNToken**
+1. **Deploy SynCoin**
    ```solidity
-   SYNToken syn = new SYNToken();
+    SynCoin syn = new SynCoin();
    ```
 
 2. **Deploy SYNTHOSGovernance**
@@ -804,7 +804,7 @@ npm install @openzeppelin/contracts
 2. **Deploy CrossChainBridge**
    ```solidity
    CrossChainBridge bridge = new CrossChainBridge();
-   bridge.registerToken(SYNTHOS_CHAIN_ID, synToken);
+    bridge.registerToken(SYNTHOS_CHAIN_ID, synCoin);
    bridge.registerToken(GEMINI_CHAIN_ID, gem);
    ```
 
@@ -898,11 +898,3 @@ For questions or contributions:
 - Create issues in the repository
 - Submit pull requests with improvements
 - Contact governance team for major changes
-
----
-
-## Legal notice
-
-SYNTHOS Collective, SYNTHOS, and related names, marks, documentation, and technical materials in this document are the **exclusive property of James G. Isham Williams, Sr.** Unauthorized reproduction, distribution, or commercial use without express written permission is prohibited except as allowed under applicable open-source licenses for identified files. No rights are waived.
-
-This document is informational only and is not legal, financial, or investment advice. The canonical legal notice is in **docs/LEGAL_NOTICE.md** in the SYNTHOS Collective repository.

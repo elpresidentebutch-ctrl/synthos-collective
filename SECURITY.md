@@ -107,7 +107,7 @@ This document establishes the security model, threat framework, and controls for
 
 ## 5. Smart Contract Security
 
-### SYNToken.sol Enhancements
+### SynCoin.sol Enhancements
 - ✅ **ReentrancyGuard**: Prevents re-entrancy on transfers
 - ✅ **AccessControl**: MINTER_ROLE, PAUSER_ROLE, BURNER_ROLE
 - ✅ **MAX_SUPPLY**: Enforced on all mints

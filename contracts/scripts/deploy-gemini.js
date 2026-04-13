@@ -1,5 +1,4 @@
 // scripts/deploy-gemini.js
-// NOTE: Legacy script — uses older Hardhat/ethers patterns. Update for @nomicfoundation/hardhat-toolbox / ethers v6 before production use.
 
 /**
  * Gemini Megachain 2.0 Deployment Script

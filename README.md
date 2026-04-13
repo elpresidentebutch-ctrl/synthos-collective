@@ -182,7 +182,7 @@ SYNTHOS COLLECTIVE/
 │   ├── node/
 │   ├── rpc/
 │   └── storage/
-├── contracts/                    # Solidity (EVM + SYNToken)
+├── contracts/                    # Solidity (SynCoin, governance, staking)
 ├── docs/                         # Concept + architecture docs
 └── README.md
 ```
@@ -294,7 +294,7 @@ See [validator-deployment/README.md](validator-deployment/README.md) for details
 
 ## Tokenomics (SYN)
 
-Single reference aligned to `contracts/src/synthos/SYNToken.sol` and related contracts: [docs/TOKENOMICS.md](docs/TOKENOMICS.md).
+Single reference aligned to `contracts/src/synthos/SynCoin.sol` and related contracts: [docs/TOKENOMICS.md](docs/TOKENOMICS.md).
 
 ## Audit packaging
 
