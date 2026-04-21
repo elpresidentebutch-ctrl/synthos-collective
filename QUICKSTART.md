@@ -1,72 +1,73 @@
 # SYNTHOS Collective - Quick Start Guide
 
-## 5-Minute Setup
+## 5-Minute Setup (Go L1)
 
 ### 1. Prerequisites
 
 ```bash
-# Python 3.8+
-python --version
-
-# Install dependencies
-pip install -r requirements.txt
+# Go 1.22+
+go version
 ```
 
-### 2. Run Example
+### 2. Run a local devnet demo (no open ports)
 
 ```bash
 # From project root
-python example.py
+go run ./cmd/devnet
 ```
 
-This will:
-- Create a test agent
-- Demonstrate transaction flow
-- Show governance voting
-- Monitor agent status
-- Review performance metrics
+This spins up multiple nodes in-memory and finalizes a block with BFT-style voting.
 
-### 3. Run Tests
+### 3. Run a minimal single-node chain demo
 
 ```bash
-# Install test dependencies
-pip install pytest pytest-asyncio
-
-# Run all tests
-pytest tests/ -v
-
-# Run core tests only
-pytest tests/test_core.py -v
-
-# Run role tests only
-pytest tests/test_roles.py -v
+# Prints chain height/balances as JSON
+go run ./cmd/node
 ```
 
-## Project Structure
+### 4. Run an RPC node (local HTTP API)
+
+```bash
+go run ./cmd/rpcnode
+```
+
+By default it listens on `:8080` and exposes endpoints like:
+
+- `GET /health /status /balance /blocks`
+- `POST /submitTx /proposeBlock`
+
+### 5. Run Go tests
+
+```bash
+go test ./...
+```
+
+## Project Structure (Go)
 
 ```
 SYNTHOS COLLECTIVE/
-├── src/
-│   ├── core/              # Core framework (agent, state, events)
-│   ├── roles/             # Seven core roles
-│   ├── models/            # Data models
-│   ├── consensus/         # Consensus engine
-│   ├── governance/        # Governance module
-│   ├── network/           # Network layer
-│   ├── storage/           # Storage layer
-│   └── utils/             # Utilities
-├── config/
-│   └── validator.py       # Configuration validation
-├── tests/
-│   ├── test_core.py       # Core framework tests
-│   └── test_roles.py      # Role tests
-├── docs/                  # Documentation
-├── example.py             # Working examples
-├── TESTING.md             # Testing guide
-└── README.md              # Project overview
+├── cmd/                        # Go entrypoints (node, devnet, rpcnode, synthosd, etc.)
+├── internal/                   # Go implementation (chain, consensus, node, network, storage, ...)
+├── config/                     # Genesis + node config (Go)
+├── workers/                    # Cloudflare Workers validators + registry
+├── validator-deployment/       # Multi-validator deployment helpers
+└── README.md
 ```
 
-## Usage Examples
+---
+
+## Optional: Python framework quick start (legacy/demo)
+
+Some docs and examples in this repo also include a Python agent framework. If you want to run those:
+
+```bash
+python --version
+python -m pip install -r requirements.txt
+python example.py
+pytest tests/ -v
+```
+
+## Python usage examples
 
 ### Create an Agent
 
