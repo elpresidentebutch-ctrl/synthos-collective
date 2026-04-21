@@ -2,11 +2,13 @@
 
 from src.core import (
     SyntHOSAgent,
+    AgentConfig,
     AgentState,
     Event,
     EventBus,
     EventType,
     Role,
+    RoleStatus,
 )
 
 from src.roles import (
@@ -32,11 +34,13 @@ __version__ = "1.0.0"
 __all__ = [
     # Core
     'SyntHOSAgent',
+    'AgentConfig',
     'AgentState',
     'Event',
     'EventBus',
     'EventType',
     'Role',
+    'RoleStatus',
     # Roles
     'ValidatorRole',
     'EconomistRole',
