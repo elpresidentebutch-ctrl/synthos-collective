@@ -1,5 +1,3 @@
-"""Python dependencies for SYNTHOS Collective"""
-
 # Runtime dependencies used by the Python demos and dashboards
 dash
 flask
