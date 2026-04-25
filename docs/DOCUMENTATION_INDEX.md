@@ -18,10 +18,9 @@ Welcome to the SYNTHOS Agent comprehensive documentation suite. This guide helps
 3. [OPERATIONAL_CAPABILITIES.md](OPERATIONAL_CAPABILITIES.md) - Transaction validation, consensus, P2P messaging
 4. [SYSTEM_INTEGRATION.md](SYSTEM_INTEGRATION.md) - End-to-end integration patterns
 
-### For Smart Contracts & DeFi
-1. [SMART_CONTRACTS.md](SMART_CONTRACTS.md) - Token, Governance, Staking, and DeFi contracts
-2. [GEMINI_MEGACHAIN.md](GEMINI_MEGACHAIN.md) - Multi-chain platform and cross-chain interactions
-3. [CONTRACT_DEPLOYMENT.md](CONTRACT_DEPLOYMENT.md) - Deployment orchestration and management
+### For Smart Contracts
+1. [SMART_CONTRACTS.md](SMART_CONTRACTS.md) - Token, Governance, and Staking contracts
+2. [CONTRACT_DEPLOYMENT.md](CONTRACT_DEPLOYMENT.md) - Deployment orchestration and management
 
 ### For DevOps/Operations - Production
 1. [DEPLOYMENT_PRODUCTION.md](DEPLOYMENT_PRODUCTION.md) - Deployment guide, monitoring, backups
@@ -183,15 +182,11 @@ Welcome to the SYNTHOS Agent comprehensive documentation suite. This guide helps
 ### Smart Contracts & DeFi (3000+ lines code)
 
 #### 12. **SMART_CONTRACTS.md** - Smart Contract Platform
-- **Content**: Complete smart contract platform for SYNTHOS and Gemini Megachain 2.0
+- **Content**: Complete smart contract platform for SYNTHOS
 - **Key Sections**:
   - SYNTHOS Token Contract (1B supply, governance integration, snapshots)
   - SYNTHOS Governance Contract (DAO voting, 8 proposal types, time-locked execution)
   - SYNTHOS Staking Contract (validators, delegation, rewards, slashing)
-  - Gemini Megachain 2.0 (multi-chain platform, cross-chain messaging)
-  - Gemini Oracle Contract (multi-source price feeds, validator consensus)
-  - Gemini Lending Contract (over-collateralized lending, liquidation)
-  - Gemini DEX Contract (AMM, liquidity pools, fee tiers)
   - Deployment Manager (orchestration, configuration, health monitoring)
 - **File Size**: 3000+ lines (documented interfaces and examples)
 - **Code Size**: 3000+ lines in src/contracts/
@@ -222,12 +217,10 @@ Welcome to the SYNTHOS Agent comprehensive documentation suite. This guide helps
 - [SYSTEM_INTEGRATION.md - Governance Integration](SYSTEM_INTEGRATION.md)
 - [OPERATIONAL_CAPABILITIES.md - Constitution Enforcement](OPERATIONAL_CAPABILITIES.md)
 
-#### Smart Contracts & DeFi
+#### Smart Contracts
 - [SMART_CONTRACTS.md - Token Contract](SMART_CONTRACTS.md#synthos-token-contract)
 - [SMART_CONTRACTS.md - Governance Contract](SMART_CONTRACTS.md#synthos-governance-contract)
 - [SMART_CONTRACTS.md - Staking Contract](SMART_CONTRACTS.md#synthos-staking-contract)
-- [SMART_CONTRACTS.md - Gemini Megachain 2.0](SMART_CONTRACTS.md#gemini-megachain-20)
-- [SMART_CONTRACTS.md - Oracle, Lending, DEX](SMART_CONTRACTS.md#gemini-defi-contracts)
 
 #### Constraints & Immutable Parameters
 - [IMMUTABLE_PARAMETERS.md - Identity Constraint (A)](IMMUTABLE_PARAMETERS.md)

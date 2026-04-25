@@ -69,7 +69,7 @@ class TokenMintEvent:
 class SynthosTokenContract:
     """
     SYNTHOS ERC20-compatible token contract
-    - 1 billion total supply
+    - 100 billion total supply
     - 18 decimals
     - Governance voting integration
     - Snapshot mechanism for voting
@@ -82,9 +82,9 @@ class SynthosTokenContract:
         self.decimals = 18
         
         # Supply management
-        self.initial_supply = 10**9 * (10 ** self.decimals)  # 1 billion tokens
+        self.initial_supply = 10**11 * (10 ** self.decimals)  # 100 billion tokens
         self.total_supply = self.initial_supply
-        self.max_supply = 10**9 * (10 ** self.decimals)  # No inflation beyond initial
+        self.max_supply = 10**11 * (10 ** self.decimals)  # No inflation beyond initial
         
         # Balances and allowances
         self.balances: Dict[str, int] = {owner: self.initial_supply}
@@ -109,6 +109,12 @@ class SynthosTokenContract:
         # Pause mechanism
         self.paused = False
         self.transfer_whitelist: Dict[str, bool] = {}
+
+        # First 200 Validators Reward (5 SYN)
+        self.rewarded_validators: Dict[str, bool] = {}
+        self.reward_count = 0
+        self.MAX_REWARDED = 200
+        self.REWARD_AMOUNT = 5 * (10 ** self.decimals)
 
 
     def balance_of(self, address: str) -> int:
@@ -407,6 +413,26 @@ class SynthosTokenContract:
         
         return history[-limit:]
 
+
+    def grant_validator_reward(self, validator_addr: str) -> Tuple[bool, str]:
+        """
+        Grant 5 SYN reward to the first 200 validators.
+        SYN currently has no monetary value.
+        """
+        if self.reward_count >= self.MAX_REWARDED:
+            return False, "Maximum rewarded validators reached"
+        
+        if self.rewarded_validators.get(validator_addr):
+            return False, "Validator already rewarded"
+
+        # Execute reward transfer from owner (treasury)
+        success, res = self.transfer(self.owner, validator_addr, self.REWARD_AMOUNT, reason="EARLY_VALIDATOR_REWARD")
+        if success:
+            self.rewarded_validators[validator_addr] = True
+            self.reward_count += 1
+            return True, f"Rewarded {validator_addr} with 5 SYN"
+        
+        return False, f"Reward transfer failed: {res}"
 
     def get_contract_state(self) -> Dict:
         """Get full contract state"""

@@ -1,6 +1,6 @@
-# SYNTHOS & Gemini Smart Contracts System
+# SYNTHOS Smart Contracts System
 
-Complete smart contract platform for SYNTHOS Agent civilization and Gemini Megachain 2.0, featuring governance, staking, cross-chain interactions, and advanced DeFi capabilities.
+Complete smart contract platform for SYNTHOS Agent civilization, featuring governance, staking, and advanced DeFi capabilities.
 
 ## Overview
 
@@ -33,21 +33,6 @@ Complete smart contract platform for SYNTHOS Agent civilization and Gemini Megac
 - Commission-based reward split between validator and delegators
 - Unbonding period with block-based tracking
 
-### Gemini Megachain 2.0 Smart Contracts
-
-**Megachain Platform** (`src/contracts/gemini/megachain.py`)
-- Support for 6+ blockchain networks (Ethereum, Polygon, Arbitrum, Optimism, Avalanche, Solana, Cosmos)
-- Cross-chain messaging and bridge protocol
-- Liquidity pool management (AMM)
-- Token registration and wrapped token system
-- Gas cost estimation across chains
-- Unified platform for multi-chain interactions
-- Message confirmation via validator consensus
-
-**DeFi Contracts** (`src/contracts/gemini/defi.py`)
-- **Oracle Contract**: Multi-source price feeds with median aggregation, validator consensus
-- **Lending Contract**: Over-collateralized lending, interest accrual, liquidation mechanism
-- **DEX Contract**: Decentralized exchange with multiple fee tiers and liquidity provision
 
 **Deployment Manager** (`src/contracts/deployment/manager.py`)
 - Centralized deployment orchestration
@@ -68,10 +53,7 @@ src/contracts/
 │   ├── token.py               # Token contract (1B supply)
 │   ├── governance.py          # DAO voting system
 │   └── staking.py             # Validator staking and delegation
-├── gemini/                     # Gemini Megachain 2.0
-│   ├── __init__.py            # Module exports
-│   ├── megachain.py           # Multi-chain platform
-│   └── defi.py                # Oracle, Lending, DEX
+
 ├── deployment/                 # Deployment Management
 │   ├── __init__.py            # Module exports
 │   └── manager.py             # Deployment orchestration
@@ -292,206 +274,6 @@ rankings = staking.get_validator_ranking(top_n=50)
 stats = staking.get_staking_stats()
 ```
 
-## Gemini Megachain 2.0
-
-### Features
-
-- **Multi-Chain Support**
-  - Ethereum, Polygon, Arbitrum, Optimism, Avalanche
-  - Solana (via bridge)
-  - Cosmos ecosystem
-  - Extensible for new chains
-
-- **Cross-Chain Messaging**
-  - Send messages between chains
-  - Confirm via validator consensus
-  - Execution hash generation
-  - Message tracking and history
-
-- **Liquidity Management**
-  - AMM pools with constant product formula
-  - Configurable fee tiers (0.01%, 0.05%, 0.3%, 1%)
-  - LP token supply tracking
-  - Volume and fee statistics
-
-- **Token Management**
-  - Register tokens from any network
-  - Wrapped token creation
-  - Standard mapping (ERC20, ERC721, ERC1155, SPL, etc.)
-  - Token linking across chains
-
-- **Gas Optimization**
-  - Per-chain gas price tracking
-  - Operation complexity estimation
-  - Cost calculation in USD equivalent
-  - Routing optimization
-
-### Interface
-
-```python
-# Create megachain
-megachain = GeminiMegachain20(owner="0xowner")
-
-# Register chain
-success, msg = megachain.register_chain(
-    chain_id=1,
-    chain_type=ChainType.ETHEREUM,
-    name="Ethereum Mainnet",
-    rpc_url="https://eth-mainnet.g.alchemy.com/...",
-    block_time=12
-)
-
-# Deploy contract
-success, msg = megachain.deploy_contract(
-    deployer="0xdeployer",
-    contract_type=ContractType.ERC20,
-    chain_id=1,
-    contract_address="0xtoken",
-    source_code_hash="0x...",
-    abi={...}
-)
-
-# Cross-chain swap
-success, result = megachain.execute_cross_chain_swap(
-    user="0xuser",
-    source_chain=1,
-    dest_chain=137,  # Polygon
-    from_token="0xeth",
-    to_token="0xusdc",
-    amount=100 * 10**18
-)
-
-# Create liquidity pool
-success, pool_id = megachain.create_liquidity_pool(
-    pool_id="ETH-USDC",
-    chain_id=1,
-    token_a="0xeth",
-    token_b="0xusdc",
-    initial_reserve_a=100 * 10**18,
-    initial_reserve_b=300000 * 10**6,
-    fee_rate=30  # 0.3%
-)
-
-# Register token
-success, msg = megachain.register_token(
-    token_address="0xtoken",
-    chain_id=1,
-    token_standard=TokenStandard.ERC20,
-    name="My Token",
-    symbol="MYT",
-    decimals=18
-)
-
-# Wrap token
-success, wrapped = megachain.wrap_token(
-    original_token="0xeth",
-    source_chain=1,
-    dest_chain=137
-)
-
-# Query
-stats = megachain.get_platform_stats()
-pool = megachain.get_liquidity_pool_stats(pool_id)
-```
-
-## Gemini DeFi Contracts
-
-### Oracle Contract
-
-**Features**:
-- Multi-source price feeds
-- Validator consensus (minimum 3 validators)
-- Median price aggregation
-- Confidence scoring
-- Price history tracking
-- Extreme deviation protection
-
-**Interface**:
-```python
-oracle = GeminiOracleContract(owner, required_validators=3)
-
-# Submit price
-success, msg = oracle.submit_price(
-    validator="0xoracle",
-    asset="ETH",
-    price=2000 * 10**8,  # $2000 in 1e8 scale
-    source=PriceSourceType.CHAINLINK
-)
-
-# Get current price
-price = oracle.get_price("ETH")
-# Returns: {"price": 2000e8, "price_usd": 2000, "confidence": 95}
-
-# Price history
-history = oracle.get_price_history("ETH", limit=100)
-```
-
-### Lending Contract
-
-**Features**:
-- Over-collateralized lending (150% default)
-- Interest accrual and compounding
-- Liquidation mechanism
-- Token pair configuration
-- Dynamic interest rates
-- Borrower history tracking
-
-**Interface**:
-```python
-lending = GeminiLendingContract(owner, oracle)
-
-# Configure pair
-success, msg = lending.init_lending_pair(
-    collateral_token="0xeth",
-    loan_token="0xusdc",
-    collateral_ratio=1500,  # 150%
-    base_rate=100  # 1% annually
-)
-
-# Borrow
-success, loan_id = lending.borrow(
-    borrower="0xuser",
-    collateral_token="0xeth",
-    collateral_amount=10 * 10**18,
-    loan_token="0xusdc",
-    loan_amount=20000 * 10**6,
-    maturity_blocks=1000000
-)
-
-# Repay
-success, msg = lending.repay_loan(borrower, loan_id, repay_amount)
-
-# Liquidate
-success, msg = lending.liquidate_loan(loan_id)
-
-# Query loan
-loan = lending.get_loan(loan_id)
-```
-
-### DEX Contract
-
-**Features**:
-- Multiple fee tiers
-- Constant product formula
-- Pool creation and management
-- Volume tracking
-- Fee collection
-
-**Interface**:
-```python
-dex = GeminiDEXContract(owner)
-
-# Create pool
-success, pool_id = dex.create_pool(
-    token_a="0xeth",
-    token_b="0xusdc",
-    fee_tier=30  # 0.3%
-)
-
-# Get pool details
-pool = dex.get_pool(pool_id)
-```
-
 ## Deployment Manager
 
 ### Features
@@ -582,11 +364,6 @@ The system provides gas estimation for all operations:
 # - Delegation: ~150,000 gas
 # - Reward distribution: ~200,000 gas
 
-# Gemini Contracts
-# - Pool creation: ~300,000 gas
-# - Swap execution: ~150,000 gas
-# - Loan origination: ~350,000 gas
-
 # Cross-chain operations: 1.5x-3x of base operation
 ```
 
@@ -651,8 +428,6 @@ The Smart Contracts System provides:
 - **SYNTHOS SynCoin**: 100B supply, agent-native, programmable, with governance integration
 - **SYNTHOS Governance**: Complete DAO voting system with time-locked execution
 - **SYNTHOS Staking**: Validator management with delegation and slashing
-- **Gemini Megachain 2.0**: Multi-chain platform with cross-chain messaging
-- **Gemini DeFi**: Oracle, Lending, and DEX contracts for complete DeFi
 - **Deployment Manager**: Centralized orchestration across multiple networks
 
 All contracts feature:
