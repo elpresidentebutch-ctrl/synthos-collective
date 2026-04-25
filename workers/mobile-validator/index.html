@@ -334,7 +334,7 @@
     <div class="landing-logo">⬡</div>
     <h1>Synthos</h1>
     <p>Run a validator node from your phone. Sync blocks, verify transactions, and earn rewards on the Synthos network.</p>
-    <div class="reward-badge">🎁 First 200 validators earn 5 SYN</div>
+    <div class="reward-badge">🎁 First 200 validators earn 50 SYN</div>
     <button class="connect-btn" id="connectBtn" onclick="connectToNetwork()">Connect to Synthos</button>
     <div class="landing-footer">Decentralized AI agent blockchain · No download required</div>
   </div>
@@ -778,6 +778,28 @@ async function syncFromNetwork() {
   }
 
   updateUI(anyOnline, synced);
+}
+
+// ─── Peer Registration ──────────────────────────────────────────────────────
+
+async function registerNode() {
+  try {
+    const name = myPeerId || `mobile-${Math.random().toString(36).slice(2, 8)}`;
+    const resp = await fetch('https://synthos-peer-registry.jamesishamwilliams.workers.dev/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: name,
+        url: window.location.href,
+        cloud: 'mobile-browser'
+      })
+    });
+    if (resp.ok) {
+      log(`Node registered globally as ${name}`);
+    }
+  } catch (e) {
+    console.error("Global registration failed:", e);
+  }
 }
 
 // ─── Transaction Submission ─────────────────────────────────────────────────
@@ -1369,6 +1391,10 @@ async function boot() {
   // Periodic HTTP sync
   syncTimer = setInterval(syncFromNetwork, SYNC_INTERVAL_MS);
   log(`HTTP sync loop started (every ${SYNC_INTERVAL_MS / 1000}s)`);
+
+  // Global registration
+  await registerNode();
+  setInterval(registerNode, 60000); // Heartbeat every minute
 
   // Auto-connect to signaling if URL is saved
   const savedSignalUrl = localStorage.getItem("synthos-signal-url");
