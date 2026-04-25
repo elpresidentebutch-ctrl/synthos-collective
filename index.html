@@ -512,6 +512,22 @@ Prop3=19,2
       URL.revokeObjectURL(url);
     };
 
+    // --- Real-Time Validator Count ---
+    async function updateRealCount() {
+      try {
+        const resp = await fetch('https://synthos-peer-registry.jamesishamwilliams.workers.dev/peers/active');
+        if (resp.ok) {
+          const data = await resp.json();
+          const count = data.total || 0;
+          document.getElementById('live-count').textContent = count;
+        }
+      } catch (e) {
+        console.error("Registry sync failed:", e);
+      }
+    }
+    setInterval(updateRealCount, 10000);
+    updateRealCount();
+
     // --- Flash Reward Timer Logic ---
     const flashEndTime = new Date().getTime() + (5 * 60 * 1000);
     const timerEl = document.getElementById('timer');

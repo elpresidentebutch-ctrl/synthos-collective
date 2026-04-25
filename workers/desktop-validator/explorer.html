@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Synthos Network Explorer</title>
+  <style>
+    :root {
+      --bg: #030712;
+      --card: rgba(17, 24, 39, 0.7);
+      --accent: #8b5cf6;
+      --accent-2: #22c55e;
+      --text: #f3f4f6;
+      --text-muted: #9ca3af;
+      --border: rgba(255, 255, 255, 0.1);
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 40px;
+      line-height: 1.5;
+    }
+
+    .container {
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    header {
+      margin-bottom: 40px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin: 0;
+      background: linear-gradient(135deg, #fff 0%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .status-pill {
+      background: rgba(34, 197, 94, 0.1);
+      color: var(--accent-2);
+      padding: 4px 12px;
+      border-radius: 99px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      border: 1px solid rgba(34, 197, 94, 0.2);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 24px;
+    }
+
+    .card {
+      background: var(--card);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+    }
+
+    .card-title {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .table th {
+      text-align: left;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      padding: 12px 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .table td {
+      padding: 16px 8px;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.85rem;
+    }
+
+    .mono {
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      color: var(--accent);
+    }
+
+    .tag {
+      font-size: 0.7rem;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(139, 92, 246, 0.1);
+      border: 1px solid rgba(139, 92, 246, 0.2);
+    }
+
+    .tag-burn {
+      background: rgba(239, 68, 68, 0.1);
+      border-color: rgba(239, 68, 68, 0.2);
+      color: #f87171;
+    }
+
+    .tag-block {
+      background: rgba(34, 197, 94, 0.1);
+      border-color: rgba(34, 197, 94, 0.2);
+      color: var(--accent-2);
+    }
+
+    .stat-val {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .stat-label {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .auto-refresh {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-align: right;
+      margin-top: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>Synthos Mainnet Explorer</h1>
+        <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">Real-time Serverless Chain State</div>
+      </div>
+      <div class="status-pill">● Network Active</div>
+    </header>
+
+    <div class="grid">
+      <div class="card">
+        <div class="card-title">Latest Transactions & Events</div>
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Hash / ID</th>
+              <th>Sender</th>
+              <th>Height</th>
+            </tr>
+          </thead>
+          <tbody id="eventLog">
+            <!-- Data populated here -->
+          </tbody>
+        </table>
+        <div class="auto-refresh">Auto-refreshing every 2s...</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Network Stats</div>
+        <div style="margin-bottom: 32px;">
+          <div class="stat-val" id="totalHeight">0</div>
+          <div class="stat-label">Block Height</div>
+        </div>
+        <div style="margin-bottom: 32px;">
+          <div class="stat-val" id="totalValidators">0</div>
+          <div class="stat-label">Total Validators Online</div>
+        </div>
+        <div style="margin-bottom: 32px;">
+          <div class="stat-val" id="totalVolume">0</div>
+          <div class="stat-label">SYN Transferred</div>
+        </div>
+        <div style="margin-bottom: 32px;">
+          <div class="stat-val" id="totalBurned" style="color: #f87171;">0</div>
+          <div class="stat-label">SYN Burned</div>
+        </div>
+        <div class="card" style="padding: 0; background: none; border: none; backdrop-filter: none;">
+          <div class="card-title">Validator Registry</div>
+          <div id="validatorList" style="display: flex; flex-direction: column; gap: 12px;">
+            <!-- Validators list -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const processed = new Set();
+    let volume = 0;
+    let burned = 0;
+    let height = 0;
+    const agents = new Set();
+
+    async function refresh() {
+      try {
+        const resp = await fetch('synthos/testnet/messages/manifest.json');
+        if (!resp.ok) return;
+        const manifest = await resp.json();
+        
+        for (const filename of manifest.latest.reverse()) {
+          const id = filename.replace('.json', '');
+          if (processed.has(id)) continue;
+          processed.add(id);
+
+          const msgResp = await fetch(`synthos/testnet/messages/${filename}`);
+          if (!msgResp.ok) continue;
+          const msg = await msgResp.json();
+          const payload = JSON.parse(msg.payload);
+
+          // Update stats
+          if (msg.type === 'transaction') {
+            volume += (payload.amount || 0);
+          } else if (msg.type === 'burn') {
+            burned += (payload.amount || 0);
+          }
+          if (msg.height > height) height = msg.height;
+          agents.add(msg.sender);
+
+          // Add to table
+          const row = document.createElement('tr');
+          let tagClass = '';
+          if (msg.type === 'burn') tagClass = 'tag-burn';
+          if (msg.type === 'block') tagClass = 'tag-block';
+
+          row.innerHTML = `
+            <td><span class="tag ${tagClass}">${msg.type.toUpperCase()}</span></td>
+            <td class="mono">${msg.id.slice(0, 12)}...</td>
+            <td>${msg.sender}</td>
+            <td class="mono">${msg.height}</td>
+          `;
+          
+          const log = document.getElementById('eventLog');
+          log.insertBefore(row, log.firstChild);
+          if (log.childNodes.length > 30) log.removeChild(log.lastChild);
+        }
+
+        // Update UI
+        document.getElementById('totalHeight').textContent = height.toLocaleString();
+        document.getElementById('totalVolume').textContent = volume.toLocaleString();
+        document.getElementById('totalBurned').textContent = burned.toLocaleString();
+        
+        // Fetch Real-World Validator Count from Registry
+        let registryCount = 0;
+        try {
+          const regResp = await fetch('https://synthos-peer-registry.jamesishamwilliams.workers.dev/peers/active');
+          if (regResp.ok) {
+            const regData = await regResp.json();
+            registryCount = regData.total || 0;
+          }
+        } catch(e) {}
+
+        document.getElementById('totalValidators').textContent = Math.max(agents.size, registryCount);
+        
+        const vList = document.getElementById('validatorList');
+        vList.innerHTML = Array.from(agents).map(agent => `
+          <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: 8px; border: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+            <div style="font-size: 0.8rem; font-family: 'JetBrains Mono'; color: var(--accent);">${agent}</div>
+            <div class="status-pill" style="font-size: 0.65rem; padding: 2px 8px;">Active</div>
+          </div>
+        `).join('');
+
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    setInterval(refresh, 2000);
+    refresh();
+  </script>
+</body>
+</html>
