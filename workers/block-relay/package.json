@@ -1,0 +1,14 @@
+{
+  "name": "synthos-block-relay",
+  "version": "1.0.0",
+  "description": "Block relay worker — receives finalized blocks from validators and serves a live feed to dashboards",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}

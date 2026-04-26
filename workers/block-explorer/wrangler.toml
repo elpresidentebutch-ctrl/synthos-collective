@@ -1,0 +1,7 @@
+name = "synthos-block-explorer"
+main = "src/index.js"
+compatibility_date = "2024-12-01"
+
+# No Durable Objects needed — the explorer is stateless (reads from validators on demand)
+# Optional: add KV for block caching if needed later
+

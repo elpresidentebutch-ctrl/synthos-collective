@@ -1,1 +1,0 @@
-{"id": "034e21ec0c21c0bbff34509393879214", "type": "transaction", "sender": "0x7f08a1d8", "height": 124086, "timestamp": 1777122527, "payload": "{\"from\": \"0x7f08a1d8\", \"to\": \"0x3e230d02\", \"amount\": 51, \"fee\": 1}", "signature": "mock-sig-501e2fe94867cc91", "created_at": 1777122527}

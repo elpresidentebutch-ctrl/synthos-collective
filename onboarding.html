@@ -371,7 +371,10 @@
         <span id="live-count">15</span> Validators Online
       </div>
       <h1>The Synthos Collective</h1>
-      <div class="badge">🎁 First 200 validators earn 5 SYN tokens</div>
+      <div class="badge flash-badge" id="rewardBadge">⚡ FLASH EVENT: 50 SYN for new nodes</div>
+      <div id="flashTimer" style="font-size: 0.85rem; color: var(--accent-2); margin-top: 8px; font-weight: 700;">
+        Ending in: <span id="timer">05:00</span>
+      </div>
       <p class="subtitle">Join the decentralized AI network. Run a validator node directly from your browser, sync blocks, and earn rewards instantly.</p>
     </div>
 
@@ -508,6 +511,29 @@ Prop3=19,2
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     };
+
+    // --- Flash Reward Timer Logic ---
+    const flashEndTime = new Date().getTime() + (5 * 60 * 1000);
+    const timerEl = document.getElementById('timer');
+    const badgeEl = document.getElementById('rewardBadge');
+    const timerContainer = document.getElementById('flashTimer');
+
+    const timerInterval = setInterval(() => {
+      const now = new Date().getTime();
+      const distance = flashEndTime - now;
+
+      if (distance < 0) {
+        clearInterval(timerInterval);
+        timerContainer.style.display = 'none';
+        badgeEl.innerHTML = '🎁 First 200 validators earn 5 SYN tokens';
+        badgeEl.classList.remove('flash-badge');
+        return;
+      }
+
+      const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+      timerEl.innerHTML = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    }, 1000);
   </script>
 </body>
 </html>

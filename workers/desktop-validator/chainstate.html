@@ -187,9 +187,18 @@
         let nodes = [];
         let particles = [];
         let validatorCount = 0;
-        let blockHeight = 124082;
-        
-        // Mock R2 Bucket (Bulletin Board)
+        let blockHeight = 0;
+
+        // Block detection state
+        const seenHashes = new Set();
+        const EXPLORER_API = 'https://synthos-block-explorer.jamesishamwilliams.workers.dev';
+        const PEER_REGISTRY = 'https://synthos-peer-registry.jamesishamwilliams.workers.dev';
+        const FALLBACK_VALIDATORS = [
+          'https://synthos-validator-11.jamesishamwilliams.workers.dev',
+          'https://synthos-validator-12.jamesishamwilliams.workers.dev',
+        ];
+
+        // Mock R2 Bucket (Bulletin Board) — kept for legacy local manifest polling
         const mockR2Bucket = [];
         const processedMessages = new Set();
 
@@ -282,11 +291,7 @@
             }
 
             setInterval(addValidator, 4000);
-            setInterval(() => {
-                blockHeight++;
-                blockEl.textContent = blockHeight.toLocaleString();
-                addLog(`New block finalized: ${blockHeight}`);
-            }, 5000);
+            // Block height is now driven by real relay data (see pollBlockRelay)
         }
 
         function addValidator(nodeId) {
@@ -320,7 +325,7 @@
 
             // Simulate the reward logic
             if (validatorCount <= 200) {
-                setTimeout(() => addLog(`<span style="color: #4ade80">Reward: 5 SYN granted to ${id}</span>`), 1000);
+                setTimeout(() => addLog(`<span style="color: #4ade80">Reward: 50 SYN granted to ${id}</span>`), 1000);
             }
         }
 
@@ -332,44 +337,117 @@
             if (log.childNodes.length > 8) log.removeChild(log.firstChild);
         }
 
-        // Functional Polling Loop (Real Data from Stress Test)
+        // ── Real Block Detection via Block Explorer API ──────────────────
+        async function pollBlockExplorer() {
+            // 1. Fetch latest blocks from the explorer API
+            try {
+                const [latestResp, statusResp] = await Promise.all([
+                    fetch(`${EXPLORER_API}/api/blocks?limit=10`),
+                    fetch(`${EXPLORER_API}/api/status`),
+                ]);
+
+                if (latestResp.ok && statusResp.ok) {
+                    const { blocks } = await latestResp.json();
+                    const status = await statusResp.json();
+
+                    // Update block height from explorer
+                    if (status.highest_height > blockHeight) {
+                        blockHeight = status.highest_height;
+                        blockEl.textContent = blockHeight.toLocaleString();
+                        addLog(`⛓ Explorer API: height now <span style="color:#4ade80">#${blockHeight.toLocaleString()}</span>`);
+                    }
+
+                    // Inject new blocks into the visualization
+                    for (const b of (blocks || [])) {
+                        if (!b.hash || seenHashes.has(b.hash)) continue;
+                        seenHashes.add(b.hash);
+
+                        addLog(`✅ Block <span style="color:#4ade80">#${b.height}</span> by ${b.proposer || '—'} — ${b.tx_count || 0} txs`);
+
+                        // Propagate particle burst across all nodes
+                        nodes.forEach(node => {
+                            const target = nodes[Math.floor(Math.random() * nodes.length)];
+                            particles.push(new Particle(node.x, node.y, target.x, target.y));
+                        });
+
+                        // Register proposer as a validator node if not already present
+                        if (b.proposer && !nodes.find(n => n.id === b.proposer)) {
+                            addValidator(b.proposer);
+                        }
+                    }
+                    return; // explorer succeeded
+                }
+            } catch (_) {}
+
+            // 2. Fallback: poll one validator directly
+            for (const url of FALLBACK_VALIDATORS) {
+                try {
+                    const resp = await fetch(`${url}/status`, { signal: AbortSignal.timeout(3000) });
+                    if (!resp.ok) continue;
+                    const s = await resp.json();
+                    if (s.height > blockHeight) {
+                        blockHeight = s.height;
+                        blockEl.textContent = blockHeight.toLocaleString();
+                        addLog(`⛓ Validator: new block <span style="color:#4ade80">#${blockHeight}</span>`);
+                        nodes.forEach(n => {
+                            const t = nodes[Math.floor(Math.random() * nodes.length)];
+                            particles.push(new Particle(n.x, n.y, t.x, t.y));
+                        });
+                    }
+                    break;
+                } catch (_) { continue; }
+            }
+        }
+
+        // ── Peer Registry: real validator count ───────────────────────────
+        async function pollPeerRegistry() {
+            try {
+                const resp = await fetch(`${PEER_REGISTRY}/peers/active`);
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const count = data.total || 0;
+                if (count > validatorCount) {
+                    // Add synthetic nodes for any unrepresented validators
+                    (data.peers || []).forEach(p => {
+                        const name = p.name || p;
+                        if (!nodes.find(n => n.id === name)) addValidator(name);
+                    });
+                }
+            } catch (_) {}
+        }
+
+        // ── Legacy local manifest poll (kept for local dev / static hosting) ──
         async function pollNetwork() {
             try {
-                // Fetch the manifest of latest messages
                 const resp = await fetch('synthos/testnet/messages/manifest.json');
                 if (!resp.ok) return;
-                
+
                 const manifest = await resp.json();
                 const latestFiles = manifest.latest || [];
-                
+
                 for (const filename of latestFiles) {
                     const msgId = filename.replace('.json', '');
                     if (processedMessages.has(msgId)) continue;
-                    
-                    // Fetch the individual message
+
                     const msgResp = await fetch(`synthos/testnet/messages/${filename}`);
                     if (!msgResp.ok) continue;
-                    
+
                     const msg = await msgResp.json();
                     processedMessages.add(msg.id);
-                    
+
                     if (msg.type === 'join') {
                         addValidator(msg.sender);
                     } else {
                         addLog(`New ${msg.type} from ${msg.sender.slice(0,8)}...`);
-                        
-                        // Simulate verification and processing
                         setTimeout(() => {
                             if (msg.type === 'block') {
-                                blockHeight = msg.height;
+                                blockHeight = Math.max(blockHeight, msg.height);
                                 blockEl.textContent = blockHeight.toLocaleString();
-                                // Ping nodes
                                 nodes.forEach(node => {
                                     const target = nodes[Math.floor(Math.random() * nodes.length)];
                                     particles.push(new Particle(node.x, node.y, target.x, target.y));
                                 });
                             } else if (msg.type === 'transaction') {
-                                // Add transient transaction particles
                                 const source = nodes[Math.floor(Math.random() * nodes.length)];
                                 const target = nodes[Math.floor(Math.random() * nodes.length)];
                                 if(source && target) particles.push(new Particle(source.x, source.y, target.x, target.y));
@@ -386,7 +464,12 @@
             addLog(`<span style="color: #f87171">Note: Manual broadcast disabled during Stress Test.</span>`);
         };
 
-        setInterval(pollNetwork, 2000);
+        // Start polling loops
+        setInterval(pollBlockExplorer, 3000);  // primary: real block detection
+        setInterval(pollNetwork, 5000);        // secondary: local manifest (static fallback)
+        setInterval(pollPeerRegistry, 15000);  // validator count from registry
+        pollBlockExplorer();   // immediate first call
+        pollPeerRegistry();
 
         function animate() {
             ctx.fillStyle = 'rgba(5, 5, 5, 0.2)';

@@ -14,11 +14,13 @@ MESSAGES_DIR = os.path.join(BASE_DIR, "workers", "desktop-validator", "synthos",
 
 def generate_tx(height):
     tx_id = binascii.hexlify(os.urandom(16)).decode()
-    sender = f"0x{binascii.hexlify(os.urandom(4)).decode()}"
-    recipient = f"0x{binascii.hexlify(os.urandom(4)).decode()}"
-    amount = random.randint(1, 1000)
+    # Agent-to-Agent IDs
+    agents = ["Agent-Alpha", "Agent-Beta", "Agent-Gamma", "Agent-Delta", "Agent-Epsilon"]
+    sender = random.choice(agents)
+    recipient = random.choice([a for a in agents if a != sender])
+    amount = random.randint(100, 5000)
     
-    msg = {
+    return {
         "id": tx_id,
         "type": "transaction",
         "sender": sender,
@@ -28,12 +30,58 @@ def generate_tx(height):
             "from": sender,
             "to": recipient,
             "amount": amount,
-            "fee": 1
-        }),
-        "signature": "mock-sig-" + binascii.hexlify(os.urandom(8)).decode(),
-        "created_at": int(time.time())
+            "fee": 1,
+            "agent_auth": "ed25519-sig-" + binascii.hexlify(os.urandom(4)).decode()
+        })
     }
-    return msg
+
+def generate_burn(height):
+    tx_id = "burn-" + binascii.hexlify(os.urandom(12)).decode()
+    agents = ["Agent-Alpha", "Agent-Beta", "Agent-Gamma"]
+    sender = random.choice(agents)
+    amount = random.randint(1000, 10000)
+    
+    return {
+        "id": tx_id,
+        "type": "burn",
+        "sender": sender,
+        "height": height,
+        "timestamp": int(time.time()),
+        "payload": json.dumps({
+            "from": sender,
+            "amount": amount,
+            "reason": "Economic deflation protocol"
+        })
+    }
+
+def generate_block(height, tx_list):
+    block_id = "block-" + binascii.hexlify(os.urandom(16)).decode()
+    return {
+        "id": block_id,
+        "type": "block",
+        "sender": "Synthos-Collective-Leader",
+        "height": height,
+        "timestamp": int(time.time()),
+        "payload": json.dumps({
+            "transactions": tx_list,
+            "state_root": "0x" + binascii.hexlify(os.urandom(32)).decode(),
+            "reward": 50
+        })
+    }
+
+def generate_join(height):
+    agent_id = f"Agent-{binascii.hexlify(os.urandom(4)).decode()}"
+    return {
+        "id": "join-" + binascii.hexlify(os.urandom(12)).decode(),
+        "type": "join",
+        "sender": agent_id,
+        "height": height,
+        "timestamp": int(time.time()),
+        "payload": json.dumps({
+            "agent_type": "Validator",
+            "capabilities": ["Compute", "Verification"]
+        })
+    }
 
 def main():
     if not os.path.exists(MESSAGES_DIR):
@@ -47,28 +95,50 @@ def main():
     height = 124082
     count = 0
     total_syn_moved = 0
-    TARGET_SYN = 20000
+    total_syn_burned = 0
+    TARGET_SYN = 50000 # Increased for more load
     
     try:
         while total_syn_moved < TARGET_SYN:
-            # Generate 10 transactions per batch for higher stress
-            batch_syn = 0
-            for _ in range(10):
-                msg = generate_tx(height)
-                payload = json.loads(msg['payload'])
+            batch_txs = []
+            
+            # Generate 8 Agent-to-Agent TXs
+            for _ in range(8):
+                tx = generate_tx(height)
+                batch_txs.append(tx)
+                payload = json.loads(tx['payload'])
                 total_syn_moved += payload['amount']
-                batch_syn += payload['amount']
                 
-                file_path = os.path.join(MESSAGES_DIR, f"{msg['id']}.json")
-                with open(file_path, "w") as f:
-                    json.dump(msg, f)
+                with open(os.path.join(MESSAGES_DIR, f"{tx['id']}.json"), "w") as f:
+                    json.dump(tx, f)
                 count += 1
+
+            # Occasionally burn tokens (10% chance)
+            if random.random() < 0.1:
+                burn = generate_burn(height)
+                payload = json.loads(burn['payload'])
+                total_syn_burned += payload['amount']
+                with open(os.path.join(MESSAGES_DIR, f"{burn['id']}.json"), "w") as f:
+                    json.dump(burn, f)
+                print(f"[BURN] TOKEN BURN: {payload['amount']} SYN burned by {burn['sender']}")
+
+            # New Agents Joining (20% chance per block)
+            if random.random() < 0.2:
+                join = generate_join(height)
+                with open(os.path.join(MESSAGES_DIR, f"{join['id']}.json"), "w") as f:
+                    json.dump(join, f)
+                print(f"[JOIN] NEW AGENT VALIDATOR: {join['sender']} has joined the network!")
+
+            # Group batch into a block
+            block = generate_block(height, [t['id'] for t in batch_txs])
+            with open(os.path.join(MESSAGES_DIR, f"{block['id']}.json"), "w") as f:
+                json.dump(block, f)
             
             progress = (total_syn_moved / TARGET_SYN) * 100
-            print(f"[{time.strftime('%H:%M:%S')}] Broadcasted 10 TXs. Batch: {batch_syn} SYN. Total: {total_syn_moved}/{TARGET_SYN} SYN ({progress:.1f}%)")
+            print(f"[{time.strftime('%H:%M:%S')}] Block {height} Built. {len(batch_txs)} TXs. Vol: {total_syn_moved}/{TARGET_SYN} SYN ({progress:.1f}%) | Burned: {total_syn_burned} SYN")
             
             height += 1
-            time.sleep(1) # Higher frequency: 1 second
+            time.sleep(1.5)
 
             
             # Cleanup old messages (keep last 50) and update manifest
@@ -84,7 +154,7 @@ def main():
                 for old_file in files[:-50]:
                     os.remove(os.path.join(MESSAGES_DIR, old_file))
 
-        print(f"\n✅ STRESS TEST COMPLETE: {total_syn_moved} SYN moved across {count} transactions.")
+        print(f"\n[DONE] STRESS TEST COMPLETE: {total_syn_moved} SYN moved across {count} transactions.")
 
     except KeyboardInterrupt:
         print("\nStopping transaction generator.")

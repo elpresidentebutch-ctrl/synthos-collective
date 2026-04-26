@@ -85,6 +85,9 @@ export class ChainDO {
     this.selfUrl = env.SELF_URL || "";
     this.registryUrl = env.REGISTRY_URL || "";
     this.registrySecret = env.REGISTRY_SECRET || "";
+    // Block relay: push finalized blocks to the dashboard relay
+    this.relayUrl = env.RELAY_URL || "";
+    this.relaySecret = env.RELAY_SECRET || "";
     // Dynamic peer list — starts with fallback, gets replaced by registry data
     this.peers = FALLBACK_PEERS.filter((url) => !url.includes(this.selfName));
     this.validatorOrder = [...FALLBACK_VALIDATOR_ORDER];
@@ -389,6 +392,9 @@ export class ChainDO {
     }
     this.chain.blocks.push(block);
 
+    // ── Block Detection: push to dashboard relay (fire-and-forget) ──
+    this.pushBlockToRelay(block).catch(() => {});
+
     return true;
   }
 
@@ -447,7 +453,36 @@ export class ChainDO {
     this.chain.heartbeat.blocks_auto_proposed++;
 
     console.log(`[BLOCK] #${block.header.height} by ${this.selfName} with ${includedTxs.length} TXs — hash ${block.hash}`);
+
+    // ── Block Detection: push to dashboard relay (fire-and-forget) ──
+    this.pushBlockToRelay(block).catch(() => {});
+
     return block;
+  }
+
+  // ─── Block Relay Push ────────────────────────────────────────────────────
+
+  /**
+   * Push a finalized block to the synthos-block-relay worker so all dashboards
+   * receive it without polling individual validators.
+   * Called fire-and-forget — never throws.
+   */
+  async pushBlockToRelay(block) {
+    if (!this.relayUrl) return;
+    try {
+      await fetch(`${this.relayUrl}/push-block`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(this.relaySecret ? { "X-Relay-Secret": this.relaySecret } : {}),
+        },
+        body: JSON.stringify({ block, validator: this.selfName }),
+        signal: AbortSignal.timeout(4000),
+      });
+      console.log(`[RELAY] Pushed block #${block.header.height} to relay`);
+    } catch (e) {
+      console.log(`[RELAY] Push failed: ${e.message}`);
+    }
   }
 
   // ─── Persistence ────────────────────────────────────────────────────────
@@ -510,6 +545,7 @@ export class ChainDO {
             height: this.tip().header.height,
             validator: this.selfName,
             gossip: true,
+            block_relay: this.relayUrl || null,
             endpoints: [
               "/health", "/status", "/account", "/balance", "/mempool",
               "/blocks", "/heartbeat", "/peers", "/submitTx", "/proposeBlock",
@@ -724,6 +760,9 @@ export class ChainDO {
 
     // Push to next proposer only (not broadcast)
     await this.pushToNextProposer(block);
+
+    // ── Block Detection: push to dashboard relay (fire-and-forget) ──
+    this.pushBlockToRelay(block).catch(() => {});
 
     return json({
       ok: true,
