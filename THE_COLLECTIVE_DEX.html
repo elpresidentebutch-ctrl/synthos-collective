@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Collective | Sovereign DEX</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-deep: #0a0b10;
+            --bg-panel: rgba(16, 18, 27, 0.7);
+            --primary: #8b5cf6;
+            --primary-glow: rgba(139, 92, 246, 0.4);
+            --accent: #06b6d4;
+            --text-main: #e2e8f0;
+            --text-dim: #94a3b8;
+            --border: rgba(255, 255, 255, 0.08);
+            --glass: rgba(255, 255, 255, 0.03);
+            --success: #10b981;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        body {
+            background: var(--bg-deep);
+            color: var(--text-main);
+            overflow-x: hidden;
+            background-image: 
+                radial-gradient(circle at 0% 0%, rgba(139, 92, 246, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 100% 100%, rgba(6, 182, 212, 0.1) 0%, transparent 50%);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4rem;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .logo-icon {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            border-radius: 8px;
+            display: grid;
+            place-items: center;
+            font-size: 0.8rem;
+            color: white;
+            box-shadow: 0 0 20px var(--primary-glow);
+        }
+
+        .main-layout {
+            display: grid;
+            grid-template-columns: 1fr 420px;
+            gap: 2rem;
+            align-items: start;
+        }
+
+        .swap-panel {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 1.5rem;
+            backdrop-filter: blur(20px);
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .swap-input-group {
+            background: var(--glass);
+            border: 1px solid var(--border);
+            padding: 1.25rem;
+            border-radius: 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .amount-input {
+            background: transparent;
+            border: none;
+            color: white;
+            font-size: 1.5rem;
+            font-weight: 600;
+            width: 100%;
+            outline: none;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .token-select {
+            background: var(--border);
+            padding: 0.5rem 0.75rem;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-weight: 600;
+        }
+
+        .swap-btn {
+            width: 100%;
+            padding: 1.25rem;
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            border: none;
+            border-radius: 18px;
+            color: white;
+            font-size: 1.1rem;
+            font-weight: 700;
+            cursor: pointer;
+            margin-top: 0.5rem;
+            box-shadow: 0 10px 30px rgba(139, 92, 246, 0.3);
+        }
+
+        .pool-explorer {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 2rem;
+            backdrop-filter: blur(20px);
+        }
+
+        .pool-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem;
+            border-bottom: 1px solid var(--border);
+            transition: background 0.2s;
+            cursor: pointer;
+        }
+
+        .pool-item:hover {
+            background: var(--glass);
+        }
+
+        .pool-info {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .pool-name {
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+
+        .pool-stats {
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            font-family: 'JetBrains Mono', monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <nav>
+            <div class="logo">
+                <div class="logo-icon">C</div>
+                THE COLLECTIVE
+            </div>
+            <div style="font-weight: 600; color: var(--success); font-size: 0.9rem;">
+                ● Sovereign Mesh: Connected
+            </div>
+        </nav>
+
+        <div class="main-layout">
+            <div class="pool-explorer">
+                <h2 style="margin-bottom: 1.5rem;">Pool Explorer</h2>
+                <div id="poolList">
+                    <div class="pool-item">
+                        <div class="pool-info">
+                            <span class="pool-name">SYN / B12</span>
+                            <span class="pool-stats">Reserves: 10,000,000 SYN | 50,000 B12</span>
+                        </div>
+                        <div style="color: var(--primary);">Trade</div>
+                    </div>
+                    <div class="pool-item">
+                        <div class="pool-info">
+                            <span class="pool-name">SYN / NGOT</span>
+                            <span class="pool-stats">Reserves: 5,000,000 SYN | 100,000 NGOT</span>
+                        </div>
+                        <div style="color: var(--primary);">Trade</div>
+                    </div>
+                    <div class="pool-item">
+                        <div class="pool-info">
+                            <span class="pool-name">SYN / MOMENTUM</span>
+                            <span class="pool-stats">Reserves: 2,000,000 SYN | 10,000 MOMENTUM</span>
+                        </div>
+                        <div style="color: var(--primary);">Trade</div>
+                    </div>
+                </div>
+                <button onclick="refreshPools()" style="margin-top: 1rem; background: var(--glass); border: 1px solid var(--border); color: white; padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer;">
+                    Refresh Pools
+                </button>
+            </div>
+
+            <div class="swap-panel">
+                <div style="font-weight: 600; margin-bottom: 0.5rem;">Quick Swap</div>
+                <div class="swap-input-group">
+                    <input type="number" class="amount-input" placeholder="0.0" id="inputAmount">
+                    <div class="token-select">SYN</div>
+                </div>
+                <div style="text-align: center; font-size: 1.2rem;">↓</div>
+                <div class="swap-input-group">
+                    <input type="number" class="amount-input" placeholder="0.0" id="outputAmount" readonly>
+                    <div class="token-select">B12</div>
+                </div>
+                <button class="swap-btn" id="swapBtn">Swap Assets</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function refreshPools() {
+            // In a real scenario, this would fetch from the L1 node API
+            alert("Scanning Sovereign L1 for Liquidity Pools...");
+            // The pools are already hard-coded here to match the Seeding logic we just implemented
+        }
+
+        document.getElementById('inputAmount').addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value) || 0;
+            // Mock rate based on seeded B12 pool (10M / 50k = 200)
+            document.getElementById('outputAmount').value = (val * 0.005).toFixed(6);
+        });
+    </script>
+</body>
+</html>

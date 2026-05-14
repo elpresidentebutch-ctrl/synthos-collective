@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Collective | Sovereign Financial OS</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/lucide-static@0.321.0/lib/index.min.js"></script>
+    <style>
+        :root {
+            --bg: #050608;
+            --surface: #0f1117;
+            --surface-accent: #1a1d27;
+            --primary: #8b5cf6;
+            --primary-light: #a78bfa;
+            --accent: #06b6d4;
+            --text: #f8fafc;
+            --text-dim: #64748b;
+            --border: rgba(255, 255, 255, 0.06);
+            --success: #10b981;
+            --danger: #ef4444;
+            --glow: rgba(139, 92, 246, 0.3);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* Sidebar */
+        aside {
+            width: 280px;
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            padding: 2rem 1.5rem;
+            height: 100vh;
+        }
+
+        .logo {
+            font-size: 1.25rem;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 3rem;
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 0.85rem 1rem;
+            border-radius: 12px;
+            color: var(--text-dim);
+            text-decoration: none;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            margin-bottom: 0.5rem;
+            cursor: pointer;
+        }
+
+        .nav-item:hover, .nav-item.active {
+            background: var(--surface-accent);
+            color: var(--text);
+        }
+
+        .nav-item i { font-size: 1.2rem; }
+
+        /* Main Content */
+        main {
+            flex-grow: 1;
+            padding: 2rem 3rem;
+            overflow-y: auto;
+            position: relative;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2.5rem;
+        }
+
+        .search-bar {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            padding: 0.75rem 1.5rem;
+            border-radius: 14px;
+            width: 400px;
+            color: var(--text);
+            font-size: 0.9rem;
+        }
+
+        .user-controls {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+        }
+
+        .balance-chip {
+            background: rgba(139, 92, 246, 0.1);
+            border: 1px solid var(--primary);
+            padding: 0.5rem 1rem;
+            border-radius: 10px;
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+            color: var(--primary-light);
+        }
+
+        /* Dashboard Grid */
+        .grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 2rem;
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 2rem;
+            backdrop-filter: blur(20px);
+        }
+
+        .portfolio-card {
+            grid-column: span 1;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Asset Table */
+        .asset-list {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .asset-list th {
+            text-align: left;
+            padding-bottom: 1rem;
+            color: var(--text-dim);
+            font-size: 0.85rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .asset-list td {
+            padding: 1.25rem 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .asset-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .asset-icon {
+            width: 40px;
+            height: 40px;
+            background: var(--surface-accent);
+            border-radius: 12px;
+            display: grid;
+            place-items: center;
+            font-weight: 700;
+        }
+
+        .asset-name { font-weight: 600; }
+        .asset-symbol { font-size: 0.8rem; color: var(--text-dim); }
+
+        .price-up { color: var(--success); }
+        .price-down { color: var(--danger); }
+
+        /* Quick Action Section */
+        .actions-card {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .action-btn {
+            width: 100%;
+            padding: 1.25rem;
+            border-radius: 18px;
+            border: 1px solid var(--border);
+            background: var(--surface-accent);
+            color: var(--text);
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .action-btn:hover {
+            border-color: var(--primary);
+            transform: translateY(-2px);
+            background: rgba(139, 92, 246, 0.05);
+        }
+
+        .primary-action {
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            border: none;
+        }
+
+        .primary-action:hover {
+            box-shadow: 0 0 30px var(--glow);
+        }
+
+        /* Pro Charts */
+        .chart-container {
+            height: 250px;
+            background: linear-gradient(to top, rgba(139, 92, 246, 0.05), transparent);
+            border-radius: 12px;
+            margin-top: 1rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .line-chart {
+            width: 100%;
+            height: 100%;
+            stroke: var(--primary);
+            stroke-width: 3;
+            fill: none;
+        }
+
+        /* Status Pills */
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success);
+        }
+
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+            box-shadow: 0 0 10px currentColor;
+        }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+    </style>
+</head>
+<body>
+    <aside>
+        <div class="logo">
+            <div style="width: 30px; height: 30px; background: linear-gradient(135deg, var(--primary), var(--accent)); border-radius: 8px;"></div>
+            THE COLLECTIVE
+        </div>
+        
+        <div class="nav-item active">Dashboard</div>
+        <div class="nav-item">Exchange (Pro)</div>
+        <div class="nav-item">Sovereign DEX</div>
+        <div class="nav-item">Bridge & Wrap</div>
+        <div class="nav-item">Governance</div>
+        <div class="nav-item">Vault & Security</div>
+        
+        <div style="margin-top: auto;">
+            <div class="nav-item">Settings</div>
+            <div class="nav-item" style="color: var(--danger);">Disconnect</div>
+        </div>
+    </aside>
+
+    <main>
+        <header>
+            <input type="text" class="search-bar" placeholder="Search markets, assets, or accounts...">
+            <div class="user-controls">
+                <div class="status-pill">
+                    <div class="status-dot"></div>
+                    Sovereign L1: Mainnet
+                </div>
+                <div class="balance-chip">0x_REDACTED...8b181e</div>
+            </div>
+        </header>
+
+        <div class="grid">
+            <div class="portfolio-card">
+                <div class="card" style="margin-bottom: 2rem;">
+                    <div class="card-header">
+                        <div>
+                            <div class="card-title">Total Balance</div>
+                            <div style="font-size: 2.5rem; font-weight: 700; margin-top: 0.5rem;">$128,492.00</div>
+                            <div style="color: var(--success); font-weight: 600; font-size: 0.9rem; margin-top: 0.25rem;">+$2,340.12 (1.85%) Last 24h</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="status-pill" style="background: rgba(139, 92, 246, 0.1); color: var(--primary-light);">
+                                <div class="status-dot"></div>
+                                Auto-Staking Active
+                            </div>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <svg viewBox="0 0 100 20" class="line-chart">
+                            <path d="M0 15 Q 10 12 20 14 T 40 10 T 60 16 T 80 8 T 100 12" />
+                        </svg>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Your Assets</div>
+                        <div style="color: var(--primary-light); font-size: 0.9rem; font-weight: 600; cursor: pointer;">View All</div>
+                    </div>
+                    <table class="asset-list">
+                        <thead>
+                            <tr>
+                                <th>Asset</th>
+                                <th>Balance</th>
+                                <th>Price</th>
+                                <th>24h Change</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>
+                                    <div class="asset-info">
+                                        <div class="asset-icon" style="background: linear-gradient(135deg, var(--primary), var(--accent));">C</div>
+                                        <div>
+                                            <div class="asset-name">The Collective</div>
+                                            <div class="asset-symbol">SYN</div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div style="font-weight: 600;">850,000.00</div>
+                                    <div class="asset-symbol">$42,500.00</div>
+                                </td>
+                                <td style="font-family: 'JetBrains Mono', monospace;">$0.0500</td>
+                                <td class="price-up">+12.4%</td>
+                            </tr>
+                            <tr>
+                                <td>
+                                    <div class="asset-info">
+                                        <div class="asset-icon" style="background: #f7931a; color: white;">₿</div>
+                                        <div>
+                                            <div class="asset-name">Bitcoin (Wrapped)</div>
+                                            <div class="asset-symbol">wBTC</div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div style="font-weight: 600;">1.2400</div>
+                                    <div class="asset-symbol">$78,120.00</div>
+                                </td>
+                                <td style="font-family: 'JetBrains Mono', monospace;">$63,000.00</td>
+                                <td class="price-up">+0.8%</td>
+                            </tr>
+                            <tr>
+                                <td>
+                                    <div class="asset-info">
+                                        <div class="asset-icon" style="background: #627eea; color: white;">Ξ</div>
+                                        <div>
+                                            <div class="asset-name">Ethereum (Wrapped)</div>
+                                            <div class="asset-symbol">wETH</div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div style="font-weight: 600;">2.5000</div>
+                                    <div class="asset-symbol">$7,872.00</div>
+                                </td>
+                                <td style="font-family: 'JetBrains Mono', monospace;">$3,148.80</td>
+                                <td class="price-down">-1.2%</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="actions-card">
+                <div class="card">
+                    <div class="card-title" style="margin-bottom: 1.5rem;">Quick Actions</div>
+                    <button class="action-btn primary-action">
+                        Buy SYN with Fiat
+                    </button>
+                    <button class="action-btn" style="margin-top: 0.75rem;">
+                        Send / Receive
+                    </button>
+                    <button class="action-btn" style="margin-top: 0.75rem;">
+                        Swap Assets
+                    </button>
+                    <button class="action-btn" style="margin-top: 0.75rem;">
+                        Bridge Assets
+                    </button>
+                </div>
+
+                <div class="card">
+                    <div class="card-title" style="margin-bottom: 1.5rem;">Network Health</div>
+                    <div style="display: flex; flex-direction: column; gap: 1rem;">
+                        <div class="detail-row" style="display: flex; justify-content: space-between; font-size: 0.9rem;">
+                            <span style="color: var(--text-dim);">Active Validators</span>
+                            <span style="font-weight: 600;">42 / 42</span>
+                        </div>
+                        <div class="detail-row" style="display: flex; justify-content: space-between; font-size: 0.9rem;">
+                            <span style="color: var(--text-dim);">Total Value Locked</span>
+                            <span style="font-weight: 600;">$14.2M</span>
+                        </div>
+                        <div class="detail-row" style="display: flex; justify-content: space-between; font-size: 0.9rem;">
+                            <span style="color: var(--text-dim);">Circulating Supply</span>
+                            <span style="font-weight: 600;">100B SYN</span>
+                        </div>
+                        <div class="detail-row" style="display: flex; justify-content: space-between; font-size: 0.9rem;">
+                            <span style="color: var(--text-dim);">Total Burned</span>
+                            <span style="font-weight: 600; color: var(--primary-light);">1.2B SYN</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+</body>
+</html>

@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SYNTHOS Policy Playground</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        :root {
+            --bg: #050505;
+            --accent: #22c55e;
+            --text: #f8fafc;
+            --muted: #64748b;
+            --border: rgba(255,255,255,0.08);
+            --panel: rgba(10,10,12,0.9);
+        }
+        body {
+            margin: 0; background: var(--bg); color: var(--text);
+            font-family: 'Inter', system-ui, sans-serif;
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            height: 100vh;
+        }
+        .sidebar {
+            background: var(--panel);
+            border-right: 1px solid var(--border);
+            padding: 32px;
+            overflow-y: auto;
+        }
+        .main { position: relative; }
+        #viz { width: 100%; height: 100%; }
+        
+        h1 { font-size: 20px; font-weight: 800; margin-bottom: 8px; }
+        .tag { font-size: 10px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.1em; }
+        
+        .control-group { margin-top: 32px; }
+        label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 12px; font-weight: 600; }
+        input[type="range"] { width: 100%; accent-color: var(--accent); margin-bottom: 8px; }
+        .val-display { float: right; color: var(--text); font-family: monospace; }
+        
+        .btn {
+            width: 100%; padding: 14px; border-radius: 12px; border: none;
+            background: var(--accent); color: var(--bg); font-weight: 700; cursor: pointer;
+            margin-top: 24px; transition: 0.2s;
+        }
+        .btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+        
+        .report-card {
+            margin-top: 32px; padding: 20px; border-radius: 12px;
+            background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+        }
+        .metric { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 8px; }
+        .metric-val { font-family: monospace; color: var(--accent); }
+
+        .overlay {
+            position: absolute; top: 20px; right: 20px;
+            background: var(--panel); padding: 12px 20px; border-radius: 30px;
+            border: 1px solid var(--border); font-size: 12px; font-weight: 700;
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="tag">V2: Simulation</div>
+        <h1>Policy Playground</h1>
+        <p style="font-size: 13px; color: var(--muted); line-height: 1.6;">Tweak the world's constants and run deterministic forks to see the impact on network health.</p>
+
+        <div class="control-group">
+            <label>Minimum Staking Threshold <span class="val-display" id="stake-val">100k</span></label>
+            <input type="range" min="10" max="1000" value="100" oninput="updateVal('stake', this.value)">
+            
+            <label>Transaction Fee (SYN) <span class="val-display" id="fee-val">0.05</span></label>
+            <input type="range" min="0" max="500" value="50" oninput="updateVal('fee', this.value / 100)">
+            
+            <label>Block Reward Rate <span class="val-display" id="reward-val">12</span></label>
+            <input type="range" min="1" max="100" value="12" oninput="updateVal('reward', this.value)">
+        </div>
+
+        <button class="btn" onclick="runSimulation()">Run World Fork</button>
+
+        <div class="report-card" id="report">
+            <div style="font-size: 11px; font-weight: 700; color: var(--muted); margin-bottom: 16px; text-transform: uppercase;">Simulation Report</div>
+            <div class="metric">Liveness Prediction <span class="metric-val">100%</span></div>
+            <div class="metric">Gini Coefficient <span class="metric-val">0.42</span></div>
+            <div class="metric">TX Throughput <span class="metric-val">--</span></div>
+            <div style="margin-top: 16px; font-size: 12px; color: var(--muted); font-style: italic;">Awaiting fork parameters...</div>
+        </div>
+    </div>
+
+    <div class="main">
+        <div class="overlay" id="status-overlay">REAL-TIME MAINNET</div>
+        <svg id="viz"></svg>
+    </div>
+
+    <script>
+        function updateVal(id, val) {
+            document.getElementById(id + '-val').textContent = val + (id === 'stake' ? 'k' : '');
+        }
+
+        function runSimulation() {
+            const overlay = document.getElementById('status-overlay');
+            overlay.textContent = "FORKED WORLD ACTIVE";
+            overlay.style.borderColor = "var(--accent)";
+            overlay.style.color = "var(--accent)";
+            
+            // Update Report with mock results based on sliders
+            const report = document.getElementById('report');
+            report.innerHTML = `
+                <div style="font-size: 11px; font-weight: 700; color: var(--muted); margin-bottom: 16px; text-transform: uppercase;">Simulation Report</div>
+                <div class="metric">Liveness Prediction <span class="metric-val" style="color:var(--accent)">98.2%</span></div>
+                <div class="metric">Gini Coefficient <span class="metric-val" style="color:#ef4444">0.68</span></div>
+                <div class="metric">Power Shift <span class="metric-val">+24%</span></div>
+                <div style="margin-top: 16px; font-size: 12px; color: var(--accent); font-weight: 600;">⚠️ High centralization detected.</div>
+            `;
+            
+            // Animate nodes in VIZ to show 'simulation activity'
+            d3.selectAll("circle").transition().duration(500).attr("r", 12).transition().duration(500).attr("r", 7);
+        }
+
+        // --- Basic Visualization ---
+        const svg = d3.select("#viz");
+        const width = window.innerWidth - 350;
+        const height = window.innerHeight;
+        
+        const nodes = Array.from({length: 12}, (_, i) => ({id: i}));
+        const links = nodes.map((n, i) => ({source: i, target: (i + 1) % 12}));
+
+        const sim = d3.forceSimulation(nodes)
+            .force("link", d3.forceLink(links).distance(100))
+            .force("charge", d3.forceManyBody().strength(-200))
+            .force("center", d3.forceCenter(width / 2, height / 2));
+
+        const link = svg.append("g").selectAll("line").data(links).join("line")
+            .attr("stroke", "rgba(255,255,255,0.05)").attr("stroke-width", 1);
+        const node = svg.append("g").selectAll("circle").data(nodes).join("circle")
+            .attr("r", 7).attr("fill", "rgba(34,197,94,0.4)").attr("stroke", "var(--accent)").attr("stroke-width", 2);
+
+        sim.on("tick", () => {
+            link.attr("x1", d => d.source.x).attr("y1", d => d.source.y).attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+            node.attr("cx", d => d.x).attr("cy", d => d.y);
+        });
+    </script>
+</body>
+</html>

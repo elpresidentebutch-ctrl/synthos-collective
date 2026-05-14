@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Momentum | Sovereign Productivity</title>
+    <style>
+        :root { 
+            --bg: #050505; 
+            --accent: #3b82f6; 
+            --text: #f8fafc; 
+            --muted: #94a3b8; 
+            --premium: #f59e0b;
+            --border: rgba(255,255,255,0.06); 
+        }
+        body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Outfit', sans-serif; }
+        .nav { padding: 20px 50px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); }
+        .hero { padding: 100px 50px; text-align: center; background: radial-gradient(circle at center, rgba(59, 130, 246, 0.1) 0%, transparent 70%); }
+        .hero h1 { font-size: 4rem; font-weight: 900; margin: 0; letter-spacing: -2px; }
+        .hero p { color: var(--muted); font-size: 1.2rem; max-width: 600px; margin: 20px auto; }
+        
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 30px; padding: 50px; }
+        .feature-card { background: rgba(255,255,255,0.02); border: 1px solid var(--border); padding: 30px; border-radius: 24px; transition: 0.3s; }
+        .feature-card:hover { border-color: var(--accent); transform: translateY(-5px); }
+        .premium-tag { background: var(--premium); color: #000; font-size: 0.7rem; font-weight: 900; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; margin-bottom: 10px; display: inline-block; }
+        
+        .stats-section { padding: 100px 50px; background: rgba(255,255,255,0.01); }
+        .streak-counter { font-size: 5rem; font-weight: 900; color: var(--accent); }
+        
+        .adopters-list { height: 400px; overflow-y: auto; background: #000; border: 1px solid var(--border); border-radius: 16px; padding: 20px; font-family: monospace; font-size: 0.9rem; color: var(--accent); }
+        .btn { padding: 15px 30px; border-radius: 12px; font-weight: 800; cursor: pointer; border: none; transition: 0.2s; text-decoration: none; display: inline-block; }
+        .btn-primary { background: var(--accent); color: white; }
+        .btn-premium { background: var(--premium); color: black; }
+    </style>
+</head>
+<body>
+    <nav class="nav">
+        <div style="font-size: 1.5rem; font-weight: 900;">MOMENTUM</div>
+        <div style="display:flex; gap: 30px; font-size: 0.9rem; font-weight: 600; color: var(--muted);">
+            <span>Features</span>
+            <span>Testimonials</span>
+            <span>Pricing</span>
+        </div>
+        <a href="ESCROW_UI.html" class="btn btn-primary" style="font-size: 0.8rem; padding: 10px 20px;">Upgrade Tier</a>
+    </nav>
+
+    <header class="hero">
+        <div class="premium-tag" id="current-tier">Standard Mode</div>
+        <h1>Stay organized. Build better habits. Keep your momentum.</h1>
+        <p>Momentum is a productivity web app designed to help people stay organized, track their goals, and see their progress over time.</p>
+        <div style="margin-top: 40px; display: flex; justify-content: center; gap: 20px;">
+            <button class="btn btn-primary">Start Your Free Trial</button>
+            <button class="btn" style="background: rgba(255,255,255,0.05); color: white;">See How It Works</button>
+        </div>
+    </header>
+
+    <section class="grid">
+        <div class="feature-card">
+            <h3>Task Lists</h3>
+            <p>Capture everything in simple, focused task lists so nothing slips through the cracks.</p>
+        </div>
+        <div class="feature-card">
+            <h3>Daily Goals</h3>
+            <p>Set clear daily goals and stay focused on what really matters today.</p>
+        </div>
+        <div class="feature-card">
+            <h3>Progress Charts</h3>
+            <p>See your progress over time with clear visual stats and productivity trends.</p>
+        </div>
+        <div class="feature-card">
+            <div class="premium-tag">Premium</div>
+            <h3>Priority Management</h3>
+            <p>Organize tasks by priority levels and focus on what matters most.</p>
+        </div>
+        <div class="feature-card">
+            <div class="premium-tag">Premium</div>
+            <h3>Recurring Tasks</h3>
+            <p>Set up automatic task scheduling based on your habits and patterns.</p>
+        </div>
+        <div class="feature-card">
+            <div class="premium-tag">Premium</div>
+            <h3>Team Collaboration</h3>
+            <p>Share projects, assign tasks, and collaborate with your team seamlessly.</p>
+        </div>
+    </section>
+
+    <section class="stats-section">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 50px; align-items: center;">
+            <div>
+                <h2>Streak Tracking</h2>
+                <p>Build consistent habits with our streak tracker. Every day you stay on track, your streak grows, giving you a visual reminder of your momentum.</p>
+                <div class="streak-counter">7 DAYS</div>
+                <div style="color: var(--accent); font-weight: 800;">🔥 YOU ARE ON FIRE</div>
+            </div>
+            <div>
+                <h3>Early Adopter Registry</h3>
+                <div class="adopters-list" id="adopters">
+                    <!-- Loaded dynamically -->
+                    [ID: 001] James G Isham Williams (Early Adopter)<br>
+                    [ID: 002] Sarah Jean Eggleston (Early Adopter)<br>
+                    [ID: 003] Michael Chen<br>
+                    [ID: 004] Emma Rodriguez<br>
+                    ... and 99 others ...
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section style="padding: 100px 50px; text-align: center;">
+        <h2>Ready to build better habits?</h2>
+        <p>Start using Momentum today to stay organized, track your goals, and see your progress over time.</p>
+        <button class="btn btn-premium" style="margin-top: 30px;">Get Started Free</button>
+    </section>
+
+    <footer class="nav" style="border-top: 1px solid var(--border); border-bottom: none; margin-top: 50px; opacity: 0.5;">
+        <div>© 2026 Momentum. All rights reserved.</div>
+        <div>Sovereign Asset #001: MOMENTUM</div>
+    </footer>
+
+    <script>
+        // Check for Momentum Upgrade via Mesh Relay (Simulated for UI)
+        const userTier = localStorage.getItem('momentum_tier') || 0;
+        const tierLabels = ["Standard Mode", "PRO MODE", "ELITE MODE"];
+        const tierColors = ["#3b82f6", "#f59e0b", "#8b5cf6"];
+        
+        document.getElementById('current-tier').innerText = tierLabels[userTier];
+        document.getElementById('current-tier').style.background = tierColors[userTier];
+
+        // Load early adopters (abbreviated for performance)
+        const names = ["James G Isham Williams", "Sarah Jean Eggleston", "Michael Chen", "Emma Rodriguez", "David Thompson", "Sophia Martinez", "James Wilson", "Olivia Taylor", "Robert Anderson", "Ava Jackson"];
+        const list = document.getElementById('adopters');
+        list.innerHTML = names.map((n, i) => `[ID: ${String(i+1).padStart(3, '0')}] ${n} (Verified Adopter)`).join('<br>');
+    </script>
+</body>
+</html>

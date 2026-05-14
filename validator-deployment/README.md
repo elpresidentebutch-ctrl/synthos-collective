@@ -1,20 +1,20 @@
-# 15 Cloudflare Worker Validators - Quick Commands
+# 15 Cloudflare Worker Immune Nodes - Quick Commands
 
-## Deploy
+## Activate
 
 ```bash
 # Install dependencies and generate keys
 npm install
 npm run generate-keys
 
-# Deploy all 15 validators to Cloudflare
+# Activate all 15 immune nodes to Cloudflare
 npm run deploy
 ```
 
 ## Monitor
 
 ```bash
-# Watch validator-1 logs in real-time
+# Watch immune node-1 logs in real-time
 npm run logs:validator1
 
 # Or use watch command (requires 'watch' package)
@@ -27,7 +27,7 @@ npm run monitor
 # Simulate consensus locally
 npm run test
 
-# Trigger validator API manually
+# Trigger immune node API manually
 curl https://synthos-validator-1.workers.dev/
 
 # Check R2 bucket for messages
@@ -40,7 +40,7 @@ wrangler r2 object list synthos-validators
 2. **View logs:** Click any worker → Logs
 3. **View metrics:** Click worker → Analytics
 
-## Validator IDs
+## Immune Node IDs
 
 Each validator runs at:
 - `https://synthos-validator-1.workers.dev/`
@@ -50,7 +50,7 @@ Each validator runs at:
 
 ## Current Status
 
-- **Validators:** 15
+- **Immune Nodes:** 15
 - **Storage:** Cloudflare R2
 - **Network:** Mainnet
 - **Cost:** $0/month (free tier)
@@ -61,7 +61,7 @@ Each validator runs at:
 1. Run: `npm install && npm run deploy`
 2. Check: `npm run logs:validator1`
 3. Monitor consensus in real-time
-4. Scale to 100+ validators (still free!)
+4. Scale to 100+ immune nodes (still free!)
 
 ---
 

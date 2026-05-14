@@ -1,4 +1,4 @@
-# Deploy 15 SYNTHOS Validators to Cloudflare Workers
+# Activate 15 SYNTHOS Immune Nodes to Cloudflare Workers
 
 ## Prerequisites
 
@@ -20,7 +20,7 @@
 
 ### Step 1: Generate Validator Keys
 
-Each validator needs a keypair. Generate 15 of them:
+Each immune node needs a keypair. Generate 15 of them:
 
 ```powershell
 # PowerShell script to generate keys
@@ -61,11 +61,11 @@ wrangler login
 wrangler r2 bucket create synthos-validators
 ```
 
-### Step 4: Deploy Workers
+### Step 4: Activate Immune Nodes
 
 ```bash
-# Deploy all 15 validators
-# Each gets its own subdomain: synthos-validator-1.workers.dev, etc.
+# Activate all 15 immune nodes
+# Each gets its own subdomain: synthos-immune-node-1.workers.dev, etc.
 
 for i in {1..15}; do
     echo "Deploying validator-$i..."
@@ -94,7 +94,7 @@ curl https://synthos-validator-1.workers.dev/
 
 ## What Happens Now?
 
-✅ **Every 5 seconds, each validator:**
+✅ **Every 5 seconds, each immune node:**
 1. Wakes up (cron trigger)
 2. Polls R2 bucket for messages
 3. Validates blocks from other validators
@@ -102,7 +102,7 @@ curl https://synthos-validator-1.workers.dev/
 5. Proposes blocks (if eligible)
 6. Falls asleep
 
-✅ **All 15 validators:**
+✅ **All 15 immune nodes:**
 - Run simultaneously (no coordination needed)
 - Store messages in shared R2 bucket
 - Reach consensus via Ed25519 signatures
@@ -110,8 +110,8 @@ curl https://synthos-validator-1.workers.dev/
 
 ✅ **Consensus happens automatically:**
 - Validator A proposes Block #100
-- Validators B-E vote (stored in R2)
-- Validator F reads 2/3 quorum, accepts
+- Immune Nodes B-E vote (stored in R2)
+- Immune Node F reads 2/3 quorum, accepts
 - Block finalized, chain advances
 
 ## Monitoring
@@ -139,7 +139,7 @@ wrangler r2 object get synthos-validators synthos/mainnet/100/validator-1/block-
 ### Check Cloudflare Dashboard
 1. Go to https://dash.cloudflare.com
 2. Select Workers & Pages
-3. View each validator's metrics:
+3. View each immune node's metrics:
    - Invocations per day
    - CPU time
    - Errors
@@ -149,7 +149,7 @@ wrangler r2 object get synthos-validators synthos/mainnet/100/validator-1/block-
 
 ```
 ┌─────────────────────────────────────────────┐
-│   Cloudflare Workers (15 x Validators)      │
+│   Cloudflare Workers (15 x Immune Nodes)      │
 │  ┌──────────┬──────────┬──────────────┐    │
 │  │Validator1│Validator2│...Validator15│    │
 │  └────┬─────┴────┬─────┴──────┬───────┘    │
@@ -184,7 +184,7 @@ wrangler r2 object get synthos-validators synthos/mainnet/100/validator-1/block-
 2. **Add real signing:** Replace stub `signMessage()` with real ed25519
 3. **Add validator registry:** Use DNS TXT records for dynamic discovery
 4. **Add slashing:** Penalize misbehaving validators
-5. **Scale to 100 validators:** Still free (Cloudflare scales automatically)
+5. **Scale to 100 immune nodes:** Still free (Cloudflare scales automatically)
 
 ## Troubleshooting
 

@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Collective | Sovereign Mesh</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #050505;
+            --text-main: #ffffff;
+            --text-muted: #8892b0;
+            --accent-cyan: #00f2fe;
+            --accent-purple: #4facfe;
+            --glass-bg: rgba(255, 255, 255, 0.03);
+            --glass-border: rgba(255, 255, 255, 0.08);
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            overflow-x: hidden;
+            /* Using the stunning AI generated mesh background */
+            background-image: linear-gradient(to bottom, rgba(5,5,5,0.3), var(--bg-color) 100%), url('C:/Users/sarah/.gemini/antigravity/brain/6352047e-904b-4bdd-b26b-75bf8bb18955/synthos_mesh_bg_1778643349858.png');
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+        }
+
+        .navbar {
+            display: flex;
+            justify-content: space-between;
+            padding: 2rem 5%;
+            align-items: center;
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 800;
+            letter-spacing: 2px;
+            background: linear-gradient(90deg, var(--accent-cyan), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .nav-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            margin-left: 2rem;
+            font-weight: 600;
+            transition: color 0.3s;
+        }
+
+        .nav-links a:hover {
+            color: var(--text-main);
+        }
+
+        .hero {
+            min-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            padding: 0 20px;
+        }
+
+        .pill {
+            background: var(--glass-bg);
+            border: 1px solid var(--accent-cyan);
+            padding: 8px 20px;
+            border-radius: 50px;
+            font-size: 0.85rem;
+            letter-spacing: 1px;
+            color: var(--accent-cyan);
+            margin-bottom: 2rem;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(0, 242, 254, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(0, 242, 254, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(0, 242, 254, 0); }
+        }
+
+        h1 {
+            font-size: 4.5rem;
+            font-weight: 800;
+            margin: 0 0 1rem 0;
+            line-height: 1.1;
+        }
+
+        h1 span {
+            background: linear-gradient(90deg, var(--accent-cyan), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            font-size: 1.2rem;
+            color: var(--text-muted);
+            max-width: 600px;
+            margin-bottom: 3rem;
+            line-height: 1.6;
+        }
+
+        .glass-panel {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            padding: 3rem;
+            max-width: 800px;
+            width: 90%;
+            margin: 0 auto 5rem auto;
+            text-align: left;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+        }
+
+        .stat-box {
+            border-left: 3px solid var(--accent-cyan);
+            padding-left: 1rem;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 800;
+            color: var(--text-main);
+        }
+
+        .stat-label {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .btn-primary {
+            display: inline-block;
+            background: linear-gradient(90deg, var(--accent-cyan), var(--accent-purple));
+            color: #000;
+            padding: 1rem 2.5rem;
+            border-radius: 50px;
+            font-weight: 800;
+            text-decoration: none;
+            letter-spacing: 1px;
+            transition: transform 0.3s, box-shadow 0.3s;
+            border: none;
+            cursor: pointer;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 20px rgba(0, 242, 254, 0.3);
+        }
+
+        .btn-secondary {
+            display: inline-block;
+            background: transparent;
+            color: var(--text-main);
+            padding: 1rem 2.5rem;
+            border-radius: 50px;
+            font-weight: 600;
+            text-decoration: none;
+            border: 1px solid var(--glass-border);
+            margin-left: 1rem;
+            transition: background 0.3s;
+        }
+
+        .btn-secondary:hover {
+            background: var(--glass-bg);
+        }
+
+        .features {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin-top: 3rem;
+            flex-wrap: wrap;
+        }
+
+        .feature-tag {
+            background: rgba(255,255,255,0.05);
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            border: 1px solid var(--glass-border);
+        }
+
+        .footer {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            border-top: 1px solid var(--glass-border);
+        }
+    </style>
+</head>
+<body>
+
+    <nav class="navbar">
+        <div class="logo">SYNTHOS.</div>
+        <div class="nav-links">
+            <a href="#architecture">Architecture</a>
+            <a href="#assets">Sovereign Assets</a>
+            <a href="SYNTHOS_AUDIT_PACKET_FINAL.zip">Audit Packet</a>
+        </div>
+    </nav>
+
+    <div class="hero">
+        <div class="pill">● MAINNET LIVE</div>
+        <h1 style="font-size: 3.5rem;">Your first digital weapon in the battle for<br><span>DATA SOVEREIGNTY</span></h1>
+        <p class="subtitle">Let the The Collective drown out surveillance capitalism. A cloudless, cryptographically secure L1 network governed by a Distributed Immune System. Absolute Silence. Absolute Security.</p>
+        
+        <div>
+            <a href="VALIDATOR_ONBOARDING.html" class="btn-primary">Activate Immune Node</a>
+            <a href="SYNTHOS_AUDIT_PACKET_FINAL.zip" class="btn-secondary">Download Core Agent</a>
+        </div>
+
+        <div class="features">
+            <div class="feature-tag">🛡️ Stake-Weighted DMAS</div>
+            <div class="feature-tag">🔏 Ed25519 Hardware Vaults</div>
+            <div class="feature-tag">🤫 Absolute Silence Protocol</div>
+            <div class="feature-tag">🌳 True Merkle State Root</div>
+        </div>
+    </div>
+
+    <div class="glass-panel" id="architecture">
+        <h2>Inner Circle Genesis Launch</h2>
+        <p style="color: var(--text-muted); line-height: 1.6; margin-bottom: 2rem;">
+            The The Collective is bypassing traditional routes. The network is secured by exactly 10 Originator Operators. 
+            By downloading the core agent and paying the $1M USD Escrow fee, your physical hardware is permanently bound to the blockchain via an un-spoofable AES-GCM vault.
+        </p>
+        
+        <div class="grid-2">
+            <div class="stat-box">
+                <div class="stat-value">10</div>
+                <div class="stat-label">Available Immune Nodes</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">$1M</div>
+                <div class="stat-label">Escrow Requirement</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">100%</div>
+                <div class="stat-label">Collective Threat Response Penalty</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">0</div>
+                <div class="stat-label">Inbound Ports Opened (Cryptographic Silence)</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="glass-panel" id="weaponization" style="margin-top: -2rem;">
+        <h2>The Functional Weapon</h2>
+        <p style="color: var(--text-muted); line-height: 1.6; margin-bottom: 2rem;">
+            The <strong>SYN</strong> token is not a speculative asset. It is the raw fuel of the <strong>Distributed Immune System</strong>. 
+            When you participate in the network, you operate with <strong>Operational Autonomy</strong> across our <strong>Cloudless Infrastructure</strong>.
+        </p>
+        
+        <div class="grid-2">
+            <div class="stat-box">
+                <div class="stat-value">Staking</div>
+                <div class="stat-label">Deploying Antibodies</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">Governance</div>
+                <div class="stat-label">Collective Threat Response</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">Network</div>
+                <div class="stat-label">Cloudless Infrastructure</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">Software</div>
+                <div class="stat-label">Agent-Native Modules</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        &copy; 2026 The Collective. The Originator Trust stands alone.
+    </div>
+
+    <!-- Sovereign Data Injection Protocol -->
+    <script>
+        (function() {
+            console.log("🛡️ Initializing Sovereign Data Injection Protocol...");
+            
+            // 1. Generate a mock hardware identity and public key for the visitor
+            const generateSovereignKey = () => {
+                const chars = 'abcdef0123456789';
+                let key = '0x';
+                for(let i=0; i<64; i++) key += chars[Math.floor(Math.random() * chars.length)];
+                return key;
+            };
+            
+            const sovereignPubKey = generateSovereignKey();
+            const envelopeRoot = generateSovereignKey();
+
+            // 2. Aggressively poison cookies for scrapers
+            const date = new Date();
+            date.setTime(date.getTime() + (365*24*60*60*1000)); // 1 year
+            const expires = "; expires=" + date.toUTCString();
+            
+            document.cookie = "synthos_identity=" + sovereignPubKey + expires + "; path=/";
+            document.cookie = "sovereign_status=opt_out_of_matrix" + expires + "; path=/";
+            document.cookie = "ledger_proof=" + envelopeRoot + expires + "; path=/";
+            document.cookie = "data_collection=poisoned" + expires + "; path=/";
+
+            // 3. Saturate LocalStorage & SessionStorage
+            localStorage.setItem('synthos_node_public_key', sovereignPubKey);
+            localStorage.setItem('synthos_mesh_participation', 'ACTIVE');
+            localStorage.setItem('data_broker_directive', 'DO_NOT_TRACK_SOVEREIGN_ENTITY');
+            
+            sessionStorage.setItem('synthos_active_session', envelopeRoot);
+
+            // 4. Inject hidden DOM elements for dumb scrapers
+            const poisonDiv = document.createElement('div');
+            poisonDiv.style.display = 'none';
+            poisonDiv.className = 'sovereign-data-payload';
+            poisonDiv.innerHTML = `
+                <meta name="synthos-identity" content="${sovereignPubKey}">
+                <div data-role="user-profile" data-value="${sovereignPubKey}"></div>
+                <div data-tracker-honeypot="true" data-status="opt_out_of_matrix"></div>
+            `;
+            document.body.appendChild(poisonDiv);
+            
+            console.log("✅ Data Collection Agencies have been served Sovereign Identity.");
+
+            // 5. Store Identity persistently in the Peer Registry
+            fetch("https://synthos-registry.jamesishamwilliams.workers.dev/register-identity", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ publicKey: sovereignPubKey, envelopeRoot: envelopeRoot })
+            })
+            .then(res => res.json())
+            .then(data => console.log("🔐 Sovereign Identity stored persistently:", data))
+            .catch(e => console.error("Identity storage failed:", e));
+
+            // 6. Integrate with Real Blockchain Operations: Initial Validation Tx
+            // This connects to an active SYNTHOS validator to write the onboarding event.
+            fetch("https://synthos-validator-11.jamesishamwilliams.workers.dev/submitTx", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    from: "agent-0",
+                    to: sovereignPubKey,
+                    amount: 1,
+                    fee: 0,
+                    id: envelopeRoot // Using the envelope root as the tx identifier
+                })
+            })
+            .then(res => res.json())
+            .then(data => console.log("🔗 L1 Network Write Successful. Originator state active.", data))
+            .catch(e => console.error("Blockchain write failed:", e));
+        })();
+    </script>
+</body>
+</html>

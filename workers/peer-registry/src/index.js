@@ -56,6 +56,10 @@ export default {
         return await handleListPeers(env, false);
       }
 
+      if (path === "/register-identity" && request.method === "POST") {
+        return await handleRegisterIdentity(request, env);
+      }
+
       if (path === "/peers/active" && request.method === "GET") {
         return await handleListPeers(env, true);
       }
@@ -66,7 +70,7 @@ export default {
 
       return json({
         service: "synthos-peer-registry",
-        endpoints: ["/health", "/register", "/peers", "/peers/active", "/signal?id=YOUR_PEER_ID"],
+        endpoints: ["/health", "/register", "/register-identity", "/peers", "/peers/active", "/signal?id=YOUR_PEER_ID"],
       });
     } catch (e) {
       return json({ error: e.message }, 500);
@@ -154,6 +158,25 @@ async function handleRegister(request, env) {
   }
 
   return json({ ok: true, peer: name, message: "registered", reward });
+}
+
+async function handleRegisterIdentity(request, env) {
+  const body = await request.json();
+  if (!body.publicKey) {
+    return json({ error: "publicKey required" }, 400);
+  }
+
+  const pubKey = String(body.publicKey).slice(0, 128);
+  const envelope = String(body.envelopeRoot || "").slice(0, 128);
+
+  const entry = {
+    publicKey: pubKey,
+    envelopeRoot: envelope,
+    registered_at: Date.now(),
+  };
+
+  await env.PEERS.put(`identity:${pubKey}`, JSON.stringify(entry));
+  return json({ ok: true, message: "Sovereign Identity Persistent Storage Complete" });
 }
 
 async function handleListPeers(env, activeOnly) {

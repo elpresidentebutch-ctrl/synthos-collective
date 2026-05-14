@@ -12,6 +12,8 @@ import (
 type Chain struct {
 	ChainID string
 	State   *State
+	DEX     *DEX
+	Oracle  *Oracle
 
 	Blocks  []*Block
 	Mempool map[string]Tx
@@ -30,6 +32,8 @@ func NewChain(genesis Genesis) (*Chain, error) {
 	c := &Chain{
 		ChainID: genesis.ChainID,
 		State:   st,
+		DEX:     NewDEX(),
+		Oracle:  NewOracle(),
 		Blocks:  make([]*Block, 0, 1024),
 		Mempool: make(map[string]Tx),
 	}
@@ -80,7 +84,7 @@ func (c *Chain) BlocksFrom(from int) []*Block {
 
 func (c *Chain) SubmitTx(tx Tx) error {
 	if tx.ID == "" {
-		_ = (&tx).ComputeID()
+		return errors.New("missing transaction ID")
 	}
 	if err := tx.Verify(); err != nil {
 		return err
@@ -189,7 +193,10 @@ func (c *Chain) ValidateBlock(b *Block) error {
 	// SECURITY: Verify all transaction signatures before applying
 	for _, tx := range b.Tx {
 		if err := tx.Verify(); err != nil {
-			return fmt.Errorf("invalid transaction signature in block: %w", err)
+			// ENFORCER: Slash the proposer for submitting invalid transactions
+			proposerAddr := Address("0x" + b.Header.ProposerID)
+			c.State.Slash(proposerAddr, 10) // 10% penalty
+			return fmt.Errorf("invalid transaction signature in block: %w (Proposer slashed)", err)
 		}
 	}
 
@@ -221,12 +228,18 @@ func (c *Chain) FinalizeBlock(b *Block) error {
 		delete(c.Mempool, tx.ID)
 	}
 
-	// Distribute collected fees to block proposer
+	// Distribute collected fees: Proposer gets a cut, the rest is recycled
 	if totalFees > 0 && b.Header.ProposerID != "" {
-		proposerAddr := Address("0x" + b.Header.ProposerID) // Convert proposer ID to address
+		burnAmount := (totalFees * BURN_PERCENT) / 100
+		rewardAmount := totalFees - burnAmount
+		
+		proposerAddr := Address("0x" + b.Header.ProposerID)
 		proposer := c.State.Get(proposerAddr)
-		proposer.Balance += totalFees
+		proposer.Balance += rewardAmount
 		c.State.Set(proposerAddr, proposer)
+
+		// Cryptographically burn tokens (permanently destroying them)
+		// We do not add the burnAmount to any account, removing it from circulation.
 	}
 
 	b.Finalized = true

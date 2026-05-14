@@ -30,3 +30,4 @@ venv/
 .vscode/
 .DS_Store
 Thumbs.db
+.wrangler/cache/

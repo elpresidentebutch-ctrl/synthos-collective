@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NGOT | New Green Oil Trust</title>
+    <style>
+        :root { 
+            --bg: #020617; 
+            --accent: #10b981; 
+            --secondary: #0ea5e9;
+            --text: #f1f5f9; 
+            --muted: #94a3b8; 
+            --border: rgba(16, 185, 129, 0.1); 
+        }
+        body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Outfit', sans-serif; line-height: 1.6; }
+        .nav { padding: 20px 50px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); background: rgba(2, 6, 23, 0.8); backdrop-filter: blur(10px); position: sticky; top: 0; z-index: 100; }
+        .hero { padding: 120px 50px; text-align: center; background: radial-gradient(circle at top right, rgba(16, 185, 129, 0.1), transparent), radial-gradient(circle at bottom left, rgba(14, 165, 233, 0.1), transparent); }
+        .hero h1 { font-size: 5rem; font-weight: 900; margin: 0; letter-spacing: -3px; color: var(--accent); }
+        .tagline { font-size: 1.5rem; color: var(--muted); margin-bottom: 30px; }
+        
+        .origin-card { background: rgba(255,255,255,0.02); border: 1px solid var(--border); padding: 20px; border-radius: 50px; display: inline-flex; align-items: center; gap: 15px; margin-bottom: 40px; }
+        .origin-photo { width: 40px; height: 40px; background: var(--accent); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 900; color: #000; }
+
+        .solution-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 30px; padding: 50px; }
+        .solution-step { background: rgba(255,255,255,0.01); border: 1px solid var(--border); padding: 40px; border-radius: 32px; transition: 0.3s; }
+        .step-num { font-size: 3rem; font-weight: 900; color: var(--accent); opacity: 0.2; margin-bottom: -20px; }
+        
+        .impact-section { padding: 100px 50px; display: grid; grid-template-columns: 1fr 1fr; gap: 80px; align-items: center; }
+        .status-panel { background: #000; border: 2px solid var(--accent); border-radius: 24px; padding: 40px; box-shadow: 0 0 30px rgba(16, 185, 129, 0.2); }
+        .status-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .status-label { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 2px; color: var(--muted); }
+        .status-value { font-size: 1.5rem; font-weight: 900; font-family: monospace; color: var(--accent); }
+        
+        .btn { padding: 18px 35px; border-radius: 16px; font-weight: 800; cursor: pointer; border: none; transition: 0.2s; text-decoration: none; display: inline-block; font-size: 1rem; }
+        .btn-primary { background: var(--accent); color: #000; }
+        
+        .pillar { font-size: 1.2rem; font-weight: 800; color: var(--accent); margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <nav class="nav">
+        <div style="font-size: 1.8rem; font-weight: 900; letter-spacing: -1px;">N.G.O.T</div>
+        <div class="origin-badge">TRUSTEE & CREATOR: Sarah Eggleston</div>
+        <div style="font-size: 0.7rem; font-weight: 800; color: var(--accent); border: 1px solid var(--accent); padding: 5px 10px; border-radius: 4px;">SOVEREIGN TRUST RECORD</div>
+    </nav>
+
+    <header class="hero">
+        <div class="origin-card">
+            <div class="origin-photo">SE</div>
+            <div style="text-align: left;">
+                <div style="font-size: 0.7rem; color: var(--muted); text-transform: uppercase;">Trust Stewardship</div>
+                <div style="font-size: 0.9rem; font-weight: 800;">Sarah Eggleston</div>
+            </div>
+        </div>
+        <h1>Sovereign Proof of Trust</h1>
+        <div class="tagline">Asset Holder: New Green Oil Trust (NGOT)</div>
+        <p>This entry serves as the non-dilutable proof of concept and intellectual property for the conversion of abandoned offshore infrastructure, held in stewardship by the Trustee.</p>
+    </header>
+
+    <section class="solution-grid">
+        <div class="solution-step">
+            <div class="step-num">01</div>
+            <div class="pillar">ACQUIRE</div>
+            <p>Identify and secure abandoned or underutilized offshore oil rigs positioned in optimal wave energy zones.</p>
+        </div>
+        <div class="solution-step">
+            <div class="step-num">02</div>
+            <div class="pillar">REPURPOSE</div>
+            <p>Transform the platform into a state-of-the-art desalination facility with advanced water treatment systems.</p>
+        </div>
+        <div class="solution-step">
+            <div class="step-num">03</div>
+            <div class="pillar">POWER</div>
+            <p>Install novel tidal turbines that convert wave movement into continuous, renewable electricity.</p>
+        </div>
+    </section>
+
+    <section class="impact-section">
+        <div>
+            <h2 style="font-size: 3rem; font-weight: 900; margin-bottom: 20px;">Harnessing the Endless Ocean</h2>
+            <p style="font-size: 1.2rem; color: var(--muted); margin-bottom: 40px;">
+                Ocean waves are an endless, renewable energy source that remains largely untapped. NGOT's innovative tidal turbines capture this kinetic energy to power reverse osmosis systems, converting seawater into pure drinking water.
+            </p>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <div style="padding: 20px; background: rgba(255,255,255,0.02); border-radius: 16px; border: 1px solid var(--border);">
+                    <div style="font-weight: 800; color: var(--accent);">💧 Clean Water</div>
+                    <div style="font-size: 0.8rem; opacity: 0.7;">2 Billion Lack Access</div>
+                </div>
+                <div style="padding: 20px; background: rgba(255,255,255,0.02); border-radius: 16px; border: 1px solid var(--border);">
+                    <div style="font-weight: 800; color: var(--accent);">⚡ Lower Bills</div>
+                    <div style="font-size: 0.8rem; opacity: 0.7;">Grid Strain Relief</div>
+                </div>
+            </div>
+        </div>
+        <div class="status-panel">
+            <div style="margin-bottom: 30px; font-weight: 900; letter-spacing: 2px;">LIVE RIG STATUS</div>
+            <div class="status-row">
+                <span class="status-label">💧 Clean Water Production</span>
+                <span class="status-value">69%</span>
+            </div>
+            <div class="status-row">
+                <span class="status-label">⚡ Energy Generation</span>
+                <span class="status-value">55%</span>
+            </div>
+            <div class="status-row" style="border: none;">
+                <span class="status-label">✓ System Status</span>
+                <span class="status-value" style="color: #10b981;">OPERATIONAL</span>
+            </div>
+            <div style="font-size: 0.7rem; color: var(--muted); text-align: center; margin-top: 20px;">
+                WAVES: ACTIVE | TURBINES: SPINNING
+            </div>
+        </div>
+    </section>
+
+    <section style="padding: 100px 50px; text-align: center; background: rgba(255,255,255,0.01);">
+        <h2 style="font-size: 2.5rem; font-weight: 900; color: var(--accent);">Our Vision</h2>
+        <p style="max-width: 800px; margin: 20px auto; font-size: 1.2rem; opacity: 0.8;">
+            "A world where abandoned oil infrastructure becomes a symbol of hope—transformed into life-giving systems that provide clean water and clean energy to communities that need it most."
+        </p>
+        <div style="margin-top: 30px; font-weight: 800; font-size: 1.1rem;">
+            Sarah Eggleston<br>
+            <span style="font-size: 0.8rem; color: var(--muted); font-weight: 600;">Concerned Mother, Visionary, and Business Woman</span>
+        </div>
+    </section>
+
+    <section style="padding: 100px 50px; text-align: center;">
+        <h2 style="font-size: 2rem; font-weight: 900;">Waves never stop. Neither will we.</h2>
+        <a href="ESCROW_UI.html" class="btn btn-primary" style="margin-top: 30px;">Become a Trust Partner</a>
+    </section>
+
+    <footer class="nav" style="border-top: 1px solid var(--border); border-bottom: none; opacity: 0.5; margin-top: 50px;">
+        <div>© 2026 NEW GREEN OIL TRUST. All rights reserved.</div>
+        <div>Sovereign Asset #002: NGOT</div>
+    </footer>
+</body>
+</html>

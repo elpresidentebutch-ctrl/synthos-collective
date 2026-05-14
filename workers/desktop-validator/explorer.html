@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Synthos Chain Intelligence Explorer</title>
+  <style>
+    :root {
+      --bg: #030303;
+      --card: #0a0a0c;
+      --accent: #22c55e;
+      --text: #f1f5f9;
+      --muted: #64748b;
+      --border: rgba(255,255,255,0.05);
+    }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0; padding: 24px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+    }
+    .title {
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 16px;
+    }
+    .metric {
+      font-size: 32px;
+      font-weight: 800;
+      font-family: monospace;
+      color: var(--accent);
+    }
+    .chart-placeholder {
+      height: 150px;
+      background: linear-gradient(0deg, rgba(34,197,94,0.1), transparent);
+      border-bottom: 2px solid var(--accent);
+      margin-top: 20px;
+    }
+    .v-item {
+      display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border);
+    }
+    .v-id { font-family: monospace; font-size: 13px; }
+    .v-rep { font-weight: 700; color: var(--accent); }
+  </style>
+</head>
+<body>
+  <h1 style="margin-bottom: 32px; font-weight: 900; letter-spacing: -1px;">⬡ Intelligence Dashboard</h1>
+  
+  <div class="grid">
+    <div class="card">
+      <div class="title">Network Throughput</div>
+      <div class="metric" id="tps">12.4 <span style="font-size: 14px; color: var(--muted);">TPS</span></div>
+      <div class="chart-placeholder"></div>
+    </div>
+    
+    <div class="card">
+      <div class="title">Total Staked</div>
+      <div class="metric">4.2M <span style="font-size: 14px; color: var(--muted);">SYN</span></div>
+      <div style="margin-top: 10px; color: var(--muted); font-size: 13px;">+12% in last 24h</div>
+    </div>
+    
+    <div class="card">
+      <div class="title">Autonomous Agents Online</div>
+      <div class="metric" id="agent-count">152</div>
+      <div style="margin-top: 10px; display: flex; gap: 4px;">
+        <div style="height: 4px; width: 30%; background: var(--accent); border-radius: 2px;"></div>
+        <div style="height: 4px; width: 60%; background: var(--muted); border-radius: 2px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid" style="margin-top: 24px; grid-template-columns: 2fr 1fr;">
+    <div class="card">
+      <div class="title">Active Validators (by Reputation)</div>
+      <div id="validator-list">
+        <!-- Mock Data -->
+        <div class="v-item"><span class="v-id">agent-super-gamma</span> <span class="v-rep">99.8%</span></div>
+        <div class="v-item"><span class="v-id">node-bravo-9</span> <span class="v-rep">98.2%</span></div>
+        <div class="v-item"><span class="v-id">validator-11</span> <span class="v-rep">95.4%</span></div>
+        <div class="v-item"><span class="v-id">synthos-mobile-x2</span> <span class="v-rep">92.1%</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="title">Recent Governance Decisions</div>
+      <div style="font-size: 13px; line-height: 1.6;">
+        <div style="margin-bottom: 10px;"><b>Prop #42: Fee Reduction</b> <span style="color: var(--accent);">PASSED</span></div>
+        <div style="margin-bottom: 10px; color: var(--muted);">Passed by autonomous consensus. 82% of stake voted YES.</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // In a real deployment, this would fetch from the Super-Agent's local API
+    setInterval(() => {
+      const tps = (10 + Math.random() * 5).toFixed(1);
+      document.getElementById('tps').innerHTML = `${tps} <span style="font-size: 14px; color: var(--muted);">TPS</span>`;
+    }, 2000);
+  </script>
+</body>
+</html>

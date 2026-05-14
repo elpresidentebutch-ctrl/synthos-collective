@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SYNTHOS Reputation Pulse</title>
+    <style>
+        :root {
+            --bg: #030304;
+            --accent: #22c55e;
+            --text: #f8fafc;
+            --muted: #64748b;
+            --border: rgba(255,255,255,0.06);
+            --card: rgba(13,13,15,0.9);
+        }
+        body {
+            margin: 0; background: var(--bg); color: var(--text);
+            font-family: 'Inter', system-ui, sans-serif;
+            display: grid;
+            grid-template-columns: 1fr 340px;
+            height: 650px; /* B12 Section Height */
+            overflow: hidden;
+            border-radius: 16px;
+        }
+        .pulse-view { position: relative; padding: 40px; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+        .sidebar { background: var(--card); border-left: 1px solid var(--border); padding: 32px; display: flex; flex-direction: column; }
+        
+        /* Reputation Gauge */
+        .gauge-container { position: relative; width: 280px; height: 280px; }
+        .gauge-ring { width: 100%; height: 100%; border-radius: 50%; border: 20px solid rgba(255,255,255,0.03); box-sizing: border-box; }
+        .gauge-fill {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            border-radius: 50%; border: 20px solid var(--accent); box-sizing: border-box;
+            border-bottom-color: transparent; border-left-color: transparent;
+            transform: rotate(45deg); transition: 1s ease-in-out;
+            box-shadow: 0 0 20px rgba(34,197,94,0.2);
+        }
+        .gauge-val { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
+        .gauge-num { font-size: 48px; font-weight: 900; font-family: monospace; }
+        .gauge-lbl { font-size: 11px; font-weight: 800; color: var(--muted); text-transform: uppercase; margin-top: 4px; }
+
+        /* Social Feed */
+        .feed-header { font-size: 11px; font-weight: 800; color: var(--muted); text-transform: uppercase; margin-bottom: 24px; border-bottom: 1px solid var(--border); padding-bottom: 12px; }
+        .feed-item {
+            font-size: 12px; margin-bottom: 20px; padding: 12px; border-radius: 10px;
+            background: rgba(255,255,255,0.02); border: 1px solid var(--border);
+            animation: slideIn 0.3s ease-out forwards;
+        }
+        @keyframes slideIn { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: translateX(0); } }
+        .feed-meta { font-family: monospace; color: var(--accent); font-weight: 700; margin-bottom: 4px; }
+        
+        .tag { font-size: 10px; font-weight: 800; color: var(--accent); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; display: block; }
+        h1 { margin: 0; font-size: 24px; font-weight: 900; }
+        p { color: var(--muted); font-size: 13px; margin-top: 12px; text-align: center; max-width: 400px; }
+    </style>
+</head>
+<body>
+    <div class="pulse-view">
+        <span class="tag">Network Sentiment</span>
+        <h1>Reputation Pulse</h1>
+        <p>A real-time heartbeat of collective trust. This gauge measures the aggregate social proofs gossiped between agents.</p>
+        
+        <div class="gauge-container" style="margin-top: 40px;">
+            <div class="gauge-ring"></div>
+            <div class="gauge-fill" id="gauge-fill"></div>
+            <div class="gauge-val">
+                <div class="gauge-num" id="reputation-num">98.4</div>
+                <div class="gauge-lbl">Consensus Score</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="sidebar">
+        <div class="feed-header">Live Social Proofs</div>
+        <div id="social-feed">
+            <div class="feed-item">
+                <div class="feed-meta">agent-alpha → agent-beta</div>
+                Vouched for signature liveness (Depth 14)
+            </div>
+            <div class="feed-item">
+                <div class="feed-meta">agent-gamma → agent-mesh-01</div>
+                Consensus verification successful.
+            </div>
+        </div>
+        
+        <div style="margin-top: auto;">
+            <div style="font-size: 11px; font-weight: 800; color: var(--muted); margin-bottom: 8px;">GLOBAL TRUST TREND</div>
+            <div style="height: 4px; width: 100%; background: rgba(255,255,255,0.05); border-radius: 2px;">
+                <div style="height: 100%; width: 85%; background: var(--accent); border-radius: 2px;"></div>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 9px; margin-top: 8px; font-weight: 700;">
+                <span>VULNERABLE</span>
+                <span>STABLE</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const feed = document.getElementById('social-feed');
+        const num = document.getElementById('reputation-num');
+        const fill = document.getElementById('gauge-fill');
+
+        const logs = [
+            "Verified block proposal integrity",
+            "Signed cross-agent state transition",
+            "Gossiped reputation score +0.05",
+            "Completed liveness proof check",
+            "Synced state root with trust anchor"
+        ];
+
+        setInterval(() => {
+            // Update Gauge
+            const val = (95 + Math.random() * 4.5).toFixed(1);
+            num.textContent = val;
+            fill.style.transform = `rotate(${45 + (Math.random() * 10)}deg)`;
+
+            // Add Feed Item
+            const item = document.createElement('div');
+            item.className = 'feed-item';
+            item.innerHTML = `
+                <div class="feed-meta">agent-${Math.random().toString(36).substr(2, 5)} → agent-mesh</div>
+                ${logs[Math.floor(Math.random() * logs.length)]}
+            `;
+            feed.prepend(item);
+            if(feed.children.length > 5) feed.lastChild.remove();
+        }, 3000);
+    </script>
+</body>
+</html>

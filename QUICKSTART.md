@@ -45,7 +45,7 @@ pytest tests/test_roles.py -v
 ## Project Structure
 
 ```
-SYNTHOS COLLECTIVE/
+THE COLLECTIVE/
 ├── src/
 │   ├── core/              # Core framework (agent, state, events)
 │   ├── roles/             # Seven core roles

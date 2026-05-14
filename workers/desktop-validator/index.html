@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="theme-color" content="#050505" />
+  <link rel="manifest" href="data:application/manifest+json;base64,ewogICJnameIjogIlNZTlRIT1MiLAogICJzaG9ydF9uYW1lIjogIlNZTlRIT1MiLAogICJzdGFydF91cmwiOiAiLiIsCiAgImRpc3BsYXkiOiAic3RhbmRhbG9uZSIsCiAgImJhY2tncm91bmRfY29sb3IiOiAiIzA1MDUwNSIsCiAgInRoZW1lX2NvbG9yIjogIiMyMmM1NWUiLAogICJpY29ucyI6IFsKICAgIHsKICAgICAgInNyYyI6ICJodHRwczovL3N5bnRob3MubmxwLnVzLXdlc3QtMi5tYWluLmxvY2FsL2xvZ28ucG5nIiwKICAgICAgInNpemVzIjogIjE5MngxOTIiLAogICAgICAidHlwZSI6ICJpbWFnZS9wbmciCiAgICB9CiAgXQp9">
+  <title>SYNTHOS Cell Node</title>
+  <style>
+    :root {
+      --bg: #050505;
+      --panel: rgba(20, 20, 24, 0.6);
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --border: rgba(255, 255, 255, 0.08);
+      --accent: #22c55e;
+      --green: #4ade80;
+      --red: #f87171;
+      --orange: #f59e0b;
+      --radius: 16px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --sans: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--text);
+      overflow-x: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    /* Gradient Blobs */
+    .blob {
+      position: fixed;
+      width: 40vw; height: 40vw;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(34,197,94,0.1) 0%, transparent 70%);
+      filter: blur(100px);
+      z-index: -1;
+    }
+    .blob-1 { top: -10%; left: -10%; }
+    .blob-2 { bottom: -10%; right: -10%; background: radial-gradient(circle, rgba(139,92,246,0.1) 0%, transparent 70%); }
+
+    .app {
+      width: 100%;
+      max-width: 1600px;
+      margin: 0 auto;
+      padding: 32px;
+      flex: 1;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 32px;
+    }
+    .header h1 {
+      font-size: 28px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #fff, #cbd5e1);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .status-badge {
+      display: flex;
+      align-items: center;
+      background: rgba(255,255,255,0.05);
+      padding: 6px 16px;
+      border-radius: 20px;
+      font-size: 14px;
+      font-weight: 600;
+      border: 1px solid var(--border);
+    }
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      margin-right: 10px;
+      box-shadow: 0 0 10px currentColor;
+    }
+
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: 350px 1fr 350px;
+      gap: 24px;
+    }
+
+    .card {
+      background: var(--panel);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+    .card-title {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      margin-bottom: 20px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .stat {
+      background: rgba(0,0,0,0.2);
+      padding: 16px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.02);
+    }
+    .stat-value {
+      font-size: 24px;
+      font-weight: 700;
+      font-family: var(--mono);
+      color: var(--accent);
+    }
+    .stat-label {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    .log {
+      height: 300px;
+      overflow-y: auto;
+      font-family: var(--mono);
+      font-size: 11px;
+      background: rgba(0,0,0,0.4);
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+    }
+    .log-entry { padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.02); }
+    .log-entry .ts { color: rgba(255,255,255,0.2); margin-right: 8px; }
+
+    .peer-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+    .peer-status {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+    .tab {
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 13px;
+    }
+    .tab.active {
+      background: var(--accent);
+      color: var(--bg);
+      border-color: var(--accent);
+    }
+
+    .btn {
+      width: 100%;
+      padding: 12px;
+      border-radius: 10px;
+      border: none;
+      font-weight: 700;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    .btn-primary { background: var(--accent); color: var(--bg); }
+    .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    .btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+
+    input, select {
+      width: 100%;
+      padding: 10px 14px;
+      background: rgba(0,0,0,0.3);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: var(--mono);
+      margin-bottom: 12px;
+    }
+
+    /* Landing */
+    .landing {
+      display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; text-align: center;
+    }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+
+  <div class="landing" id="landing">
+    <h1 style="font-size: 48px; margin-bottom: 16px;">Synthos Super-Agent</h1>
+    <p style="color: var(--muted); max-width: 500px; margin-bottom: 32px;">Initialize a high-bandwidth desktop node with autonomous P2P signaling and bridging capabilities.</p>
+    <button class="btn btn-primary" style="width: 300px; height: 60px; font-size: 18px;" onclick="boot()">Launch Super-Agent</button>
+  </div>
+
+  <div class="app hidden" id="app">
+    <div class="header">
+      <h1>⬡ Super-Agent Node</h1>
+      <div class="status-badge">
+        <div class="status-dot" id="status-dot" style="background: var(--orange);"></div>
+        <span id="status-text">Booting...</span>
+      </div>
+    </div>
+
+    <div class="dashboard-grid">
+      <!-- Network & Signaling -->
+      <div class="col">
+        <div class="card">
+          <div class="card-title">Network Mesh <span id="peer-count" style="color: var(--accent);">0</span></div>
+          <div class="stat-grid" style="margin-bottom: 16px;">
+            <div class="stat">
+              <div class="stat-value" id="mesh-connected">0</div>
+              <div class="stat-label">WebRTC Peers</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value" id="signal-active">Off</div>
+              <div class="stat-label">Signal Relay</div>
+            </div>
+          </div>
+          <div id="mesh-list" style="max-height: 200px; overflow-y: auto;"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Trust Anchors (Seed Nodes)</div>
+          <div id="seed-list"></div>
+          <input type="text" id="custom-peer" placeholder="https://..." style="margin-top: 12px;">
+          <button class="btn btn-outline" onclick="addSeed()">Add Anchor</button>
+        </div>
+      </div>
+
+      <!-- Chain & Blocks -->
+      <div class="col">
+        <div class="card">
+          <div class="card-title">Global Chain State</div>
+          <div class="stat-grid" style="grid-template-columns: repeat(4, 1fr);">
+            <div class="stat">
+              <div class="stat-value" id="height">0</div>
+              <div class="stat-label">Height</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value" id="tps">0.0</div>
+              <div class="stat-label">TPS</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value" id="accounts">0</div>
+              <div class="stat-label">Accounts</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value" id="rep">100</div>
+              <div class="stat-label">Agent Rep</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">P2P Gossip Feed</div>
+          <div id="block-feed" style="max-height: 500px; overflow-y: auto;"></div>
+        </div>
+      </div>
+
+      <!-- Intel & Governance -->
+      <div class="col">
+        <div class="card">
+          <div class="card-title">Agent Decision Engine</div>
+          <div class="tabs">
+            <button class="tab active" data-tab="intel">Intel</button>
+            <button class="tab" data-tab="gov">Gov</button>
+            <button class="tab" data-tab="tx">Send</button>
+            <button class="tab" data-tab="deploy" style="color: var(--accent);">Deploy</button>
+          </div>
+
+          <div id="tab-intel" class="tab-content">
+            <div style="font-size: 13px; line-height: 1.6;">
+              <div style="margin-bottom: 12px; color: var(--accent);">● Analysis Active</div>
+              <div id="intel-output" style="color: var(--muted); font-style: italic;">Monitoring peer reputation and chain integrity...</div>
+            </div>
+          </div>
+
+          <div id="tab-gov" class="tab-content hidden">
+            <div id="gov-list">
+              <div style="color: var(--muted); text-align: center; padding: 20px;">No active proposals</div>
+            </div>
+          </div>
+
+          <div id="tab-tx" class="tab-content hidden">
+            <label style="font-size: 12px; color: var(--muted);">Recipient</label>
+            <input type="text" id="tx-to" placeholder="0x...">
+            <label style="font-size: 12px; color: var(--muted);">Amount (SYN)</label>
+            <input type="number" id="tx-amount" value="10">
+            <button class="btn btn-primary" onclick="broadcastTx()">Broadcast TX</button>
+          </div>
+
+          <div id="tab-deploy" class="tab-content hidden">
+            <div style="margin-bottom: 20px;">
+              <div style="font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 8px;">PATH 1: CELL NETWORK</div>
+              <button class="btn btn-outline" onclick="log('Triggering Master Deployer: Path Cell...')">Deploy 15 Cell Nodes</button>
+              <div style="font-size: 11px; color: var(--muted); margin-top: 6px;">Targets: Cloudflare Edge / Mobile PWA</div>
+            </div>
+            <div>
+              <div style="font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 8px;">PATH 2: SOVEREIGN DESKTOP</div>
+              <button class="btn btn-primary" onclick="log('Triggering Master Deployer: Path Desktop...')">Rebuild Local Agent</button>
+              <div style="font-size: 11px; color: var(--muted); margin-top: 6px;">Target: Local OS (Agent Identity Persistence)</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Bridge Log</div>
+          <div class="log" id="log"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // --- Configuration ---
+    const TRUST_ANCHORS = [
+      "https://synthos-validator-11.jamesishamwilliams.workers.dev",
+      "https://synthos-validator-12.jamesishamwilliams.workers.dev"
+    ];
+    let state = {
+      height: 0,
+      accounts: {},
+      blocks: [],
+      peers: new Map(),
+      stats: { tps: 0, blocksReceived: 0 },
+      localNode: { online: false, id: null, addr: null }
+    };
+    let myId = "super-agent-" + Math.random().toString(36).substr(2, 5);
+
+    // --- Boot Sequence ---
+    async function boot() {
+      document.getElementById('landing').classList.add('hidden');
+      document.getElementById('app').classList.remove('hidden');
+      log("Super-Agent initializing...");
+
+      // 1. Initialize local DB (IndexedDB)
+      await initStorage();
+
+      // 2. Start Discovery & Signaling
+      startDiscovery();
+      
+      // 3. Start Gossip Loop
+      setInterval(syncMesh, 8000);
+
+      // 4. Start Local Node Bridge Loop
+      setInterval(syncLocalNode, 2000);
+      
+      updateUI();
+    }
+
+    // --- Storage ---
+    let db;
+    async function initStorage() {
+      return new Promise((res) => {
+        const req = indexedDB.open("synthos-super-agent", 1);
+        req.onupgradeneeded = () => req.result.createObjectStore("state");
+        req.onsuccess = () => { db = req.result; res(); };
+      });
+    }
+
+    // --- Discovery & P2P ---
+    async function startDiscovery() {
+      log("Starting P2P discovery via trust anchors...");
+      for(const anchor of TRUST_ANCHORS) {
+        try {
+          const resp = await fetch(anchor + "/status");
+          if(resp.ok) {
+            log(`Found anchor: ${anchor}`);
+            addPeer(anchor, "http");
+          }
+        } catch(e) {}
+      }
+    }
+
+    function addPeer(url, type) {
+      if(!state.peers.has(url)) {
+        state.peers.set(url, { url, type, lastSeen: Date.now(), height: 0 });
+        updateUI();
+      }
+    }
+
+    async function syncMesh() {
+      // Sync from HTTP anchors
+      for(const [url, peer] of state.peers) {
+        if(peer.type === "http") {
+          try {
+            const resp = await fetch(url + "/status");
+            const data = await resp.json();
+            peer.height = data.height;
+            if(data.height > state.height) {
+              fetchBlocks(url, state.height + 1);
+            }
+          } catch(e) { peer.online = false; }
+        }
+      }
+      updateUI();
+    }
+
+    async function fetchBlocks(url, from) {
+      try {
+        const resp = await fetch(`${url}/blocks?from=${from}`);
+        const data = await resp.json();
+        for(const b of data.blocks) {
+          applyBlock(b);
+        }
+      } catch(e) {}
+    }
+
+    async function syncLocalNode() {
+      try {
+        const resp = await fetch("http://127.0.0.1:8080/status");
+        if(resp.ok) {
+          const data = await resp.json();
+          if(!state.localNode.online) log("Connected to local Go node bridge");
+          state.localNode = { online: true, id: data.agent_id || "local-core", addr: data.address };
+          if(data.height > state.height) {
+            state.height = data.height;
+            // Optionally fetch blocks from local node if needed
+          }
+        } else {
+          state.localNode.online = false;
+        }
+      } catch(e) {
+        if(state.localNode.online) log("Lost connection to local Go node");
+        state.localNode.online = false;
+      }
+      updateUI();
+    }
+
+    function applyBlock(block) {
+      if(block.header.height <= state.height) return;
+      state.blocks.push(block);
+      state.height = block.header.height;
+      log(`New Block #${state.height} applied via P2P`);
+      updateUI();
+    }
+
+    // --- UI Logic ---
+    function log(msg) {
+      const el = document.getElementById('log');
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      entry.innerHTML = `<span class="ts">${new Date().toLocaleTimeString()}</span> ${msg}`;
+      el.prepend(entry);
+    }
+
+    function updateUI() {
+      document.getElementById('height').textContent = state.height;
+      document.getElementById('mesh-connected').textContent = state.peers.size;
+      document.getElementById('peer-count').textContent = state.peers.size;
+      
+      if(state.localNode.online) {
+        document.getElementById('status-text').textContent = "Bridge Active: " + state.localNode.id;
+        document.getElementById('status-dot').style.background = "var(--accent)";
+      }
+
+      const feed = document.getElementById('block-feed');
+      feed.innerHTML = state.blocks.slice(-10).reverse().map(b => `
+        <div class="block-item" style="padding: 12px; background: rgba(255,255,255,0.03); margin-bottom: 8px; border-radius: 8px; font-size: 13px;">
+          <b style="color: var(--accent);">#${b.header.height}</b> 
+          <span style="color: var(--muted); font-family: var(--mono); margin-left: 10px;">${b.hash.substr(0,12)}...</span>
+          <span style="float: right; color: var(--muted);">${b.tx.length} tx</span>
+        </div>
+      `).join('');
+
+      const dot = document.getElementById('status-dot');
+      if(state.peers.size > 0) {
+        dot.style.background = "var(--green)";
+        document.getElementById('status-text').textContent = "Mesh Connected";
+      }
+    }
+
+    // --- Tab Logic ---
+    document.querySelectorAll('.tab').forEach(t => {
+      t.onclick = () => {
+        document.querySelectorAll('.tab').forEach(t2 => t2.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+        t.classList.add('active');
+        document.getElementById('tab-' + t.dataset.tab).classList.remove('hidden');
+      }
+    });
+
+    async function broadcastTx() {
+      const to = document.getElementById('tx-to').value;
+      const amount = parseInt(document.getElementById('tx-amount').value);
+      log(`Broadcasting transaction of ${amount} SYN to ${to}...`);
+
+      if(state.localNode.online) {
+        try {
+          const resp = await fetch("http://127.0.0.1:8080/submitTx", {
+            method: "POST",
+            body: JSON.stringify({ to, amount, from: state.localNode.addr || "agent-0" })
+          });
+          if(resp.ok) log("TX accepted by local Go node");
+        } catch(e) { log("Bridge TX failed: " + e.message); }
+      }
+
+      setTimeout(() => log(`TX successfully gossiped to ${state.peers.size} peers`), 800);
+    }
+    // PWA Installation Logic for Mobile Icons
+    let deferredPrompt;
+    window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        if(window.innerWidth < 768) {
+            const btn = document.createElement('button');
+            btn.className = 'btn btn-primary';
+            btn.style.position = 'fixed'; btn.style.bottom = '20px'; btn.style.left = '20px'; btn.style.right = '20px'; btn.style.zIndex = '1000';
+            btn.textContent = "ADD SYNTHOS ICON TO SCREEN";
+            btn.onclick = () => {
+                deferredPrompt.prompt();
+                deferredPrompt.userChoice.then(() => btn.remove());
+            };
+            document.body.appendChild(btn);
+        }
+    });
+  </script>
+</body>
+</html>

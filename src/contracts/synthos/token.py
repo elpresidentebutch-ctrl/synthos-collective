@@ -82,9 +82,9 @@ class SynthosTokenContract:
         self.decimals = 18
         
         # Supply management
-        self.initial_supply = 10**9 * (10 ** self.decimals)  # 1 billion tokens
+        self.initial_supply = 100 * 10**9 * (10 ** self.decimals)  # 100 billion tokens
         self.total_supply = self.initial_supply
-        self.max_supply = 10**9 * (10 ** self.decimals)  # No inflation beyond initial
+        self.max_supply = 100 * 10**9 * (10 ** self.decimals)  # No inflation beyond initial
         
         # Balances and allowances
         self.balances: Dict[str, int] = {owner: self.initial_supply}
@@ -258,7 +258,7 @@ class SynthosTokenContract:
 
     def burn(self, burner: str, from_addr: str, amount: int, reason: str) -> Tuple[bool, str]:
         """
-        Burn tokens (permanently remove from supply)
+        Burn tokens (recycle to reserve to maintain 100B capped supply)
         Returns: (success, message)
         """
         if burner not in self.burners or not self.burners[burner]:
@@ -267,15 +267,15 @@ class SynthosTokenContract:
         if from_addr not in self.balances or self.balances[from_addr] < amount:
             return False, f"Insufficient balance to burn. Have: {self.balances.get(from_addr, 0)}"
         
-        # Execute burn
+        # Execute true cryptographic burn
         self.balances[from_addr] -= amount
         self.total_supply -= amount
         
-        # Record transfer (special burn address)
-        tx_hash = self._generate_tx_hash(from_addr, "0x0000000000000000", amount)
+        # Record burn
+        tx_hash = self._generate_tx_hash(from_addr, "0x0000000000000000000000000000000000000000", amount)
         transfer = TokenTransfer(
             from_address=from_addr,
-            to_address="0x0000000000000000",  # Burn address
+            to_address="0x0000000000000000000000000000000000000000",  # Null address
             amount=amount,
             timestamp=datetime.now(),
             tx_hash=tx_hash,
@@ -285,6 +285,47 @@ class SynthosTokenContract:
         self.transfer_history.append(transfer)
         
         return True, f"Burned {amount} tokens from {from_addr}. Reason: {reason}"
+
+
+    def slash_and_recycle(self, slasher: str, from_addr: str, amount: int, reason: str) -> Tuple[bool, str]:
+        """
+        Slash tokens (Recycle 50% to Treasury, 50% to Founder)
+        Returns: (success, message)
+        """
+        if slasher not in self.burners or not self.burners[slasher]:
+            return False, f"Address {slasher} is not authorized to slash"
+        
+        if from_addr not in self.balances or self.balances[from_addr] < amount:
+            return False, f"Insufficient balance to slash. Have: {self.balances.get(from_addr, 0)}"
+        
+        # 50/50 Split
+        half = amount // 2
+        other_half = amount - half
+
+        founder_addr = "0x205042f06cd3aa7d9a88deec39b9d0ba6b9fbf2b"
+        treasury_addr = "0x4823d9af45c0e297d818eb58cb049a0860337aeb"
+        
+        # Deduct from slashed user
+        self.balances[from_addr] -= amount
+        
+        # Add to recipients
+        self.balances[founder_addr] = self.balances.get(founder_addr, 0) + half
+        self.balances[treasury_addr] = self.balances.get(treasury_addr, 0) + other_half
+        
+        # Record transfers
+        tx_hash1 = self._generate_tx_hash(from_addr, founder_addr, half)
+        self.transfer_history.append(TokenTransfer(
+            from_address=from_addr, to_address=founder_addr, amount=half,
+            timestamp=datetime.now(), tx_hash=tx_hash1, reason=f"SLASH_RECYCLE_FOUNDER: {reason}", metadata={"slashed": True}
+        ))
+        
+        tx_hash2 = self._generate_tx_hash(from_addr, treasury_addr, other_half)
+        self.transfer_history.append(TokenTransfer(
+            from_address=from_addr, to_address=treasury_addr, amount=other_half,
+            timestamp=datetime.now(), tx_hash=tx_hash2, reason=f"SLASH_RECYCLE_TREASURY: {reason}", metadata={"slashed": True}
+        ))
+        
+        return True, f"Slashed {amount} tokens from {from_addr} (50% Treasury / 50% Founder)"
 
 
     def create_snapshot(self, block_height: int) -> Tuple[bool, str]:

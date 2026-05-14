@@ -1,6 +1,6 @@
 # synthos_dashboard.py
 """
-A simple Flask + Dash dashboard for the Synthos Collective ecosystem.
+A simple Flask + Dash dashboard for the The Collective ecosystem.
 Run this file after installing requirements: pip install flask dash plotly pandas
 """
 import dash
@@ -61,7 +61,7 @@ app = dash.Dash(__name__, server=server, suppress_callback_exceptions=True)
 
 # Layout
 app.layout = html.Div([
-    html.H1("Synthos Collective Ecosystem Dashboard"),
+    html.H1("The Collective Ecosystem Dashboard"),
     dcc.Tabs([
         dcc.Tab(label='Agents', children=[
             dash_table.DataTable(

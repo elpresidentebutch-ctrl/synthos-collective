@@ -3,7 +3,7 @@
 ## Project Structure
 
 ```
-SYNTHOS COLLECTIVE/
+THE COLLECTIVE/
 ├── docs/
 │   ├── AGENTS_SPECIFICATION.md          # Detailed role specifications
 │   ├── FRAMEWORK_DESIGN.md              # Architecture and design

@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SYNTHOS Economy Terminal</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg: #050505;
+            --accent: #22c55e;
+            --text: #f8fafc;
+            --muted: #64748b;
+            --border: rgba(255,255,255,0.08);
+            --card: rgba(10,10,12,0.9);
+        }
+        body {
+            margin: 0; background: var(--bg); color: var(--text);
+            font-family: 'Inter', system-ui, sans-serif;
+            display: flex; justify-content: center; align-items: center;
+            height: 650px; /* B12 Section Height */
+            overflow: hidden;
+        }
+        .terminal {
+            width: 100%; max-width: 900px; height: 100%;
+            display: grid; grid-template-columns: 250px 1fr;
+            background: var(--card); border-radius: 16px; border: 1px solid var(--border);
+            overflow: hidden;
+        }
+        .stats-sidebar {
+            padding: 32px; border-right: 1px solid var(--border);
+            display: flex; flex-direction: column; gap: 32px;
+        }
+        .main-view { padding: 40px; position: relative; }
+        
+        .stat-item h3 { margin: 0; font-size: 11px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; }
+        .stat-val { font-size: 24px; font-weight: 900; font-family: monospace; color: var(--accent); margin-top: 8px; }
+        .stat-sub { font-size: 11px; color: #4ade80; font-weight: 700; margin-top: 4px; }
+
+        .chart-container { height: 280px; width: 100%; margin-top: 40px; }
+        h2 { margin: 0; font-size: 20px; font-weight: 800; }
+        p { color: var(--muted); font-size: 13px; margin-top: 8px; }
+
+        .burn-badge {
+            position: absolute; top: 40px; right: 40px;
+            background: rgba(239,68,68,0.1); color: #ef4444;
+            padding: 8px 16px; border-radius: 30px; font-size: 11px; font-weight: 800;
+            border: 1px solid rgba(239,68,68,0.2);
+        }
+    </style>
+</head>
+<body>
+    <div class="terminal">
+        <div class="stats-sidebar">
+            <div class="stat-item">
+                <h3>Total Stake</h3>
+                <div class="stat-val">84.2M</div>
+                <div class="stat-sub">↑ 4.2% (24h)</div>
+            </div>
+            <div class="stat-item">
+                <h3>Active Supply</h3>
+                <div class="stat-val">124.9M</div>
+                <div class="stat-sub">↓ 0.8% Burned</div>
+            </div>
+            <div class="stat-item">
+                <h3>Rewards Issued</h3>
+                <div class="stat-val">2.4M</div>
+                <div class="stat-sub" style="color:var(--muted)">Est. APY: 12.4%</div>
+            </div>
+        </div>
+
+        <div class="main-view">
+            <div class="burn-badge">🔥 142.3k SYN BURNED TODAY</div>
+            <h2>Economic Health Terminal</h2>
+            <p>Real-time simulation of network inflation, fee burning, and stake velocity.</p>
+
+            <div class="chart-container">
+                <canvas id="ecoChart"></canvas>
+            </div>
+
+            <div style="margin-top: 32px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <div style="font-size: 12px; color: var(--muted); padding: 16px; border: 1px solid var(--border); border-radius: 12px;">
+                    <strong>TREASURY RATIO</strong><br/>
+                    <span style="color:var(--text)">High liquidity detected in Validator Pool.</span>
+                </div>
+                <div style="font-size: 12px; color: var(--muted); padding: 16px; border: 1px solid var(--border); border-radius: 12px;">
+                    <strong>EQUILIBRIUM TARGET</strong><br/>
+                    <span style="color:var(--text)">Currently at 98.4% of stability target.</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const ctx = document.getElementById('ecoChart').getContext('2d');
+        const ecoChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+                datasets: [{
+                    label: 'Stake Velocity',
+                    data: [12, 19, 15, 25, 22, 30],
+                    borderColor: '#22c55e',
+                    borderWidth: 3,
+                    tension: 0.4,
+                    pointRadius: 0,
+                    fill: true,
+                    backgroundColor: 'rgba(34,197,94,0.05)'
+                }, {
+                    label: 'Burn Rate',
+                    data: [5, 8, 4, 12, 10, 18],
+                    borderColor: '#ef4444',
+                    borderWidth: 2,
+                    tension: 0.4,
+                    pointRadius: 0,
+                    borderDash: [5, 5]
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { display: false },
+                    y: { display: false }
+                }
+            }
+        });
+
+        // Mock live update
+        setInterval(() => {
+            ecoChart.data.datasets[0].data.push(Math.floor(Math.random() * 10) + 20);
+            ecoChart.data.datasets[0].data.shift();
+            ecoChart.update();
+        }, 3000);
+    </script>
+</body>
+</html>

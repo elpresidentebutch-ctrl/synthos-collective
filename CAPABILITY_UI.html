@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SYNTHOS Capability Registry</title>
+    <style>
+        :root {
+            --bg: #030304;
+            --accent: #22c55e;
+            --text: #f8fafc;
+            --muted: #64748b;
+            --border: rgba(255,255,255,0.06);
+            --card: rgba(15,15,18,0.9);
+            --code: #3b82f6;
+        }
+        body {
+            margin: 0; background: var(--bg); color: var(--text);
+            font-family: 'Inter', system-ui, sans-serif;
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            height: 650px; /* B12 section */
+            overflow: hidden;
+            border-radius: 16px;
+        }
+        .main { padding: 40px; overflow-y: auto; scrollbar-width: none; }
+        .main::-webkit-scrollbar { display: none; }
+        .sidebar {
+            background: var(--card); border-left: 1px solid var(--border);
+            padding: 32px; display: flex; flex-direction: column;
+        }
+        
+        h1 { font-size: 24px; font-weight: 900; margin-bottom: 8px; }
+        .tag { font-size: 10px; font-weight: 800; color: var(--accent); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 24px; display: block; }
+        
+        /* Capability Grid */
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .cap-card {
+            background: rgba(255,255,255,0.02); border: 1px solid var(--border);
+            padding: 24px; border-radius: 16px; transition: 0.3s; cursor: pointer;
+        }
+        .cap-card:hover { background: rgba(255,255,255,0.05); border-color: var(--accent); transform: translateY(-2px); }
+        .cap-id { font-family: monospace; font-size: 14px; color: var(--accent); margin-bottom: 8px; font-weight: 700; }
+        .cap-desc { font-size: 12px; color: var(--muted); line-height: 1.5; }
+        
+        /* Intent Router */
+        .router-header { font-size: 14px; font-weight: 800; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 12px; }
+        .intent-item {
+            margin-bottom: 20px; padding: 16px; border-radius: 12px;
+            background: rgba(0,0,0,0.2); border: 1px solid var(--border);
+            font-size: 12px; position: relative;
+        }
+        .intent-status { position: absolute; top: 16px; right: 16px; font-size: 9px; font-weight: 900; color: var(--accent); }
+        .plan-step { font-family: monospace; font-size: 11px; color: var(--code); margin-top: 8px; padding-left: 12px; border-left: 2px solid var(--code); }
+        
+        .composer { margin-top: auto; }
+        .input {
+            width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border);
+            background: rgba(255,255,255,0.03); color: var(--text); font-size: 13px; margin-bottom: 12px;
+        }
+        .btn {
+            width: 100%; padding: 14px; border-radius: 8px; border: none;
+            background: var(--accent); color: var(--bg); font-weight: 800; cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="main">
+        <span class="tag">v4: Orchestration Layer</span>
+        <h1>Capability Registry</h1>
+        <p style="color: var(--muted); font-size: 14px; margin-bottom: 40px;">Canonical registry of autonomous actions. Agents discover these capabilities to compose complex intents.</p>
+
+        <div class="grid">
+            <div class="cap-card">
+                <div class="cap-id">stake(amount, peer)</div>
+                <div class="cap-desc">Binds SYN liquidity to a peer node to increase network validation weight and earn rewards.</div>
+            </div>
+            <div class="cap-card">
+                <div class="cap-id">vote(proposal, side)</div>
+                <div class="cap-desc">Casts a cryptographic ballot on active governance proposals. Weight is derived from stake.</div>
+            </div>
+            <div class="cap-card">
+                <div class="cap-id">rebalance(target)</div>
+                <div class="cap-desc">High-level capability to shift liquidity across anchors for optimal liveness resilience.</div>
+            </div>
+            <div class="cap-card">
+                <div class="cap-id">detect_anomaly(peer)</div>
+                <div class="cap-desc">Uses AI inference to monitor peer gossip for behavioral deviations or liveness risk.</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="sidebar">
+        <div class="router-header">INTENT ROUTER</div>
+        
+        <div id="intent-log">
+            <div class="intent-item">
+                <div class="intent-status">ROUTED</div>
+                <strong>"Secure Network Equilibrium"</strong>
+                <div class="desc">Intent: Increase redundancy by 3 nodes.</div>
+                <div class="plan-step">> identify_stable_anchors()</div>
+                <div class="plan-step">> stake(50k, peer_alpha)</div>
+            </div>
+            
+            <div class="intent-item">
+                <div class="intent-status">EXECUTING</div>
+                <strong>"Optimize Yield Profile"</strong>
+                <div class="desc">Intent: Shift stake to high-trust validators.</div>
+                <div class="plan-step">> unstake(10k, low_rep_node)</div>
+                <div class="plan-step">> stake(10k, high_rep_node)</div>
+            </div>
+        </div>
+
+        <div class="composer">
+            <div style="font-size: 11px; font-weight: 800; margin-bottom: 10px; color: var(--muted);">DRAFT INTENT</div>
+            <input type="text" class="input" id="intent-input" placeholder="e.g. 'Rebalance for liveness'">
+            <button class="btn" onclick="submitIntent()">Route Intent</button>
+        </div>
+    </div>
+
+    <script>
+        function submitIntent() {
+            const input = document.getElementById('intent-input');
+            const log = document.getElementById('intent-log');
+            if(!input.value) return;
+
+            const newItem = document.createElement('div');
+            newItem.className = 'intent-item';
+            newItem.innerHTML = `
+                <div class="intent-status" style="color:var(--code)">PLANNING</div>
+                <strong>"${input.value}"</strong>
+                <div class="desc">Routing intent to available capabilities...</div>
+                <div class="plan-step" style="opacity:0.5">> discovery_phase()</div>
+            `;
+            log.prepend(newItem);
+            input.value = '';
+            
+            setTimeout(() => {
+                newItem.querySelector('.intent-status').textContent = 'ROUTED';
+                newItem.querySelector('.intent-status').style.color = 'var(--accent)';
+                newItem.querySelector('.desc').textContent = 'Intent successfully mapped to 2 capabilities.';
+                newItem.innerHTML += `
+                    <div class="plan-step">> evaluate_risk_threshold()</div>
+                    <div class="plan-step">> execute_capability_composed()</div>
+                `;
+            }, 1500);
+        }
+    </script>
+</body>
+</html>

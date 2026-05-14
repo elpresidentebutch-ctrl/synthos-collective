@@ -612,12 +612,12 @@ gov = SynthosGovernanceContract("0xowner", token)
 
 # Scenario: Community votes on protocol upgrade
 # 1. Give voting power to community members
-token.transfer("0xowner", "0xcommunity1", 10000 * 10**18, reason="grant_voting_power")
-token.transfer("0xowner", "0xcommunity2", 5000 * 10**18, reason="grant_voting_power")
+token.transfer("0xowner", "0x4823d9af45c0e297d818eb58cb049a0860337aeb1", 10000 * 10**18, reason="grant_voting_power")
+token.transfer("0xowner", "0x4823d9af45c0e297d818eb58cb049a0860337aeb2", 5000 * 10**18, reason="grant_voting_power")
 
 # 2. Create proposal
 success, proposal_id = gov.propose(
-    proposer="0xcommunity1",
+    proposer="0x4823d9af45c0e297d818eb58cb049a0860337aeb1",
     title="Protocol Upgrade to v2.0",
     description="Enable sharding and improve consensus",
     actions=[],
@@ -625,8 +625,8 @@ success, proposal_id = gov.propose(
 )
 
 # 3. Community votes
-gov.cast_vote("0xcommunity1", proposal_id, VoteType.FOR, reason="Support sharding")
-gov.cast_vote("0xcommunity2", proposal_id, VoteType.FOR, reason="Improves throughput")
+gov.cast_vote("0x4823d9af45c0e297d818eb58cb049a0860337aeb1", proposal_id, VoteType.FOR, reason="Support sharding")
+gov.cast_vote("0x4823d9af45c0e297d818eb58cb049a0860337aeb2", proposal_id, VoteType.FOR, reason="Improves throughput")
 
 # 4. Voting period closes
 gov.advance_block(blocks=100)

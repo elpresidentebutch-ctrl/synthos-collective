@@ -149,8 +149,9 @@ func (r *RelayTransport) Start() error {
 	r.registerSelf(ctx)
 	r.refreshPeers(ctx)
 
-	// Background heartbeat loop.
+	// Background loops.
 	go r.heartbeatLoop(ctx)
+	go r.pollMailboxLoop(ctx)
 	return nil
 }
 
@@ -259,6 +260,48 @@ func (r *RelayTransport) heartbeatLoop(ctx context.Context) {
 		case <-ticker.C:
 			r.registerSelf(ctx)
 			r.refreshPeers(ctx)
+		}
+	}
+}
+
+func (r *RelayTransport) pollMailboxLoop(ctx context.Context) {
+	ticker := time.NewTicker(5 * time.Second) // Poll every 5s for mail
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			r.fetchMail(ctx)
+		}
+	}
+}
+
+func (r *RelayTransport) fetchMail(ctx context.Context) {
+	if r.RegistryURL == "" || r.SelfName == "" {
+		return
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.RegistryURL+"/mailbox?name="+r.SelfName, nil)
+	if err != nil {
+		return
+	}
+	if r.RegistrySecret != "" {
+		req.Header.Set("X-Registry-Secret", r.RegistrySecret)
+	}
+
+	resp, err := r.httpClient.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		var messages [][]byte
+		if err := json.NewDecoder(resp.Body).Decode(&messages); err == nil {
+			for _, msg := range messages {
+				r.DeliverInbound("relay", msg)
+			}
 		}
 	}
 }

@@ -1,7 +1,7 @@
 """
 fragmented_ledger.py
 
-Agent-Native Fragmented Ledger Protocol for Synthos Collective
+Agent-Native Fragmented Ledger Protocol for The Collective
 
 Features:
 - Ledger is split into fragments, each managed by a subset of agents.

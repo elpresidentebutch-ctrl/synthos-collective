@@ -8,9 +8,9 @@ This repository contains a minimal L1 ledger (`internal/chain`), a 2/3+ vote fin
 
 ## 🚀 Revolutionary Serverless Decentralization
 
-**The Innovation: Run validators as cloud functions. No ports. No permission. No firewalls.**
+**The Innovation: Run immune nodes as cloud functions. No ports. No permission. No firewalls.**
 
-SYNTHOS introduces a completely novel approach to blockchain decentralization: **validators are serverless functions** that poll shared object storage instead of listening on ports.
+SYNTHOS introduces a completely novel approach to blockchain decentralization: **immune nodes are serverless functions** that poll shared object storage instead of listening on ports.
 
 ### Why This Matters
 
@@ -21,11 +21,11 @@ Traditional blockchains require:
 - ❌ High cost ($100-500/month per validator)
 - ❌ Constant uptime requirement
 
-SYNTHOS serverless validators:
+SYNTHOS serverless immune nodes:
 - ✅ No listening ports (outbound-only polling)
 - ✅ Works behind ANY firewall (NAT, corporate, residential)
 - ✅ Real decentralization (no central relays/RPC needed)
-- ✅ **$0/month cost** (Cloudflare free tier supports 35+ validators)
+- ✅ **$0/month cost** (Cloudflare free tier supports 35+ immune nodes)
 - ✅ No uptime penalties (Byzantine tolerant)
 
 ### Complete Benefits Breakdown
@@ -52,7 +52,7 @@ Cloudflare Worker #2 ──┤
 ... (up to 35+) ───────┼──→ Cloudflare R2 Bucket (Shared Bulletin Board)
 Cloudflare Worker #35 ─┘
                           ↓
-     Validators poll, read blocks from other validators
+     Immune Nodes poll, read blocks from other nodes
      Verify signatures → Publish votes → Consensus reached
      No listening ports. No firewall rules. Permission-less.
 ```
@@ -65,7 +65,7 @@ Cloudflare Worker #35 ─┘
 
 | Feature | SYNTHOS Serverless | Ethereum | Solana | Cosmos |
 |---------|-------------------|----------|--------|--------|
-| **Cost per validator** | **$0/month** | $100-500/month | $50-200/month | $50-500/month |
+| **Cost per immune node** | **$0/month** | $100-500/month | $50-200/month | $50-500/month |
 | **Needs listening port** | ❌ No | ✅ Yes | ✅ Yes | ✅ Yes |
 | **Works behind firewall** | ✅ Always | ⚠️ Needs config | ⚠️ Needs config | ⚠️ Needs config |
 | **Works from corporate network** | ✅ Yes | ❌ Usually blocked | ❌ Usually blocked | ❌ Usually blocked |
@@ -84,9 +84,9 @@ Cloudflare Worker #35 ─┘
 - SYNTHOS: Works anywhere (cafes, cars, corporate networks, home WiFi)
 
 **2. Radical Cost Reduction**
-- Other blockchains: $100-500/month per validator
-- SYNTHOS: $0 for 35+ validators (free tier)
-- 1000 validators: $2,100/month (vs $100k+ for Ethereum)
+- Other blockchains: $100-500/month per node
+- SYNTHOS: $0 for 35+ immune nodes (free tier)
+- 1000 immune nodes: $2,100/month (vs $100k+ for Ethereum)
 
 **3. No Centralization Trade-off**
 - Other blockchains: Run fewer validators to control costs
@@ -108,7 +108,7 @@ Cloudflare Worker #35 ─┘
 - Can migrate providers without code changes
 - Not dependent on any single vendor
 
-### Deploy 15 Validators for FREE
+### Activate 15 Immune Nodes for FREE
 
 ```bash
 cd validator-deployment
@@ -117,11 +117,11 @@ npm run deploy
 npm run logs:validator1
 ```
 
-That's it. 15 globally-distributed validators reaching Byzantine consensus for **$0/month**.
+That's it. 15 globally-distributed immune nodes reaching Byzantine consensus for **$0/month**.
 
 ### Architecture
 
-- **Validators:** Cloudflare Workers (serverless functions on free tier)
+- **Immune Nodes:** Cloudflare Workers (serverless functions on free tier)
 - **Storage:** Cloudflare R2 (object storage, free first 10GB)
 - **Messages:** Read/write JSON to R2 with Ed25519 signatures
 - **Discovery:** Bootstrap list + DNS TXT records
@@ -146,9 +146,9 @@ Every other L1 blockchain requires infrastructure setup, constant uptime, firewa
 
 ## Core Concept
 
-A SYNTHOS Agent is a sovereign computational entity with seven integrated roles:
+A SYNTHOS Operator utilizes a sovereign computational Agent with seven integrated roles:
 
-1. **Validator** - Verifies transactions and block validity
+1. **Immune Node (Validator)** - Verifies transactions and block validity
 2. **Economist** - Manages incentives and resource allocation
 3. **Governor** - Coordinates collective decision-making
 4. **Communicator** - Enables peer-to-peer coordination
@@ -159,7 +159,7 @@ A SYNTHOS Agent is a sovereign computational entity with seven integrated roles:
 ## Project Structure
 
 ```
-SYNTHOS COLLECTIVE/
+THE COLLECTIVE/
 ├── cmd/                          # Entrypoints
 │   ├── node/                     # Minimal single-process demo node
 │   ├── devnet/                   # In-memory multi-node demo (no open ports)
@@ -261,7 +261,7 @@ SYNTHOS Agents possess four levels of intelligence:
 
 ## Quick start (Go)
 
-Run the in-memory devnet (4 validators + 3 non-validator replicas):
+Run the in-memory devnet (4 immune nodes + 3 non-immune replicas):
 
 ```bash
 go run ./cmd/devnet
@@ -275,7 +275,7 @@ go run ./cmd/rpcnode
 
 ## Quick Start (Serverless - Recommended)
 
-Deploy 15 validators to Cloudflare in 3 commands:
+Activate 15 immune nodes to Cloudflare in 3 commands:
 
 ```bash
 cd validator-deployment
@@ -288,7 +288,7 @@ Watch consensus in real-time:
 npm run logs:validator1
 ```
 
-**Cost:** $0/month. **Latency:** 5-10 seconds. **Scale:** Works for 35+ validators.
+**Cost:** $0/month. **Latency:** 5-10 seconds. **Scale:** Works for 35+ immune nodes.
 
 See [validator-deployment/README.md](validator-deployment/README.md) for details.
 

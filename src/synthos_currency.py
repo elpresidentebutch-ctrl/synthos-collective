@@ -154,7 +154,7 @@ class SynthosCurrency:
     
     def burn_coins(self, from_addr: str, amount: int, reason: str = "burn") -> Tuple[bool, str]:
         """
-        Burn coins
+        Burn coins (Recycled to maintain capped supply)
         
         Args:
             from_addr: Address to burn from
@@ -170,20 +170,61 @@ class SynthosCurrency:
         if self.holders[from_addr].balance < amount:
             return False, "Insufficient balance"
         
+        # Deduct from sender
         self.holders[from_addr].balance -= amount
-        self.total_burned += amount
+        
+        # True Cryptographic Burn (destroy coins completely)
         self.total_circulating -= amount
+        self.total_burned += amount
         
         self.burn_history.append({
             'timestamp': datetime.now().isoformat(),
             'block': self.block_height,
             'address': from_addr,
             'amount': amount,
-            'reason': reason,
+            'reason': f"burn_{reason}",
             'circulating': self.total_circulating
         })
         
-        return True, f"Burned {amount / (10 ** 18):.2f} SYNTHOS"
+        return True, f"Burned {amount / (10 ** 18):.2f} SYNTHOS from {from_addr}"
+
+    def slash_and_recycle_coins(self, from_addr: str, amount: int, reason: str = "slash") -> Tuple[bool, str]:
+        """
+        Slash coins (Recycled 50% to Treasury, 50% to Founder)
+        """
+        if from_addr not in self.holders:
+            return False, "Address not found"
+        
+        if self.holders[from_addr].balance < amount:
+            return False, "Insufficient balance"
+            
+        founder_addr = "0x205042f06cd3aa7d9a88deec39b9d0ba6b9fbf2b"
+        treasury_addr = "0x4823d9af45c0e297d818eb58cb049a0860337aeb"
+        
+        for addr in [founder_addr, treasury_addr]:
+            if addr not in self.holders:
+                self.holders[addr] = CoinHolder(address=addr, balance=0, coin_type=CoinType.STANDARD)
+        
+        # Deduct
+        self.holders[from_addr].balance -= amount
+        
+        # Split
+        half = amount // 2
+        other_half = amount - half
+        
+        self.holders[founder_addr].balance += half
+        self.holders[treasury_addr].balance += other_half
+        
+        self.burn_history.append({
+            'timestamp': datetime.now().isoformat(),
+            'block': self.block_height,
+            'address': from_addr,
+            'amount': amount,
+            'reason': f"slash_recycle_{reason}",
+            'circulating': self.total_circulating
+        })
+        
+        return True, f"Slashed {amount / (10 ** 18):.2f} SYNTHOS (50% Treasury / 50% Founder)"
     
     def transfer(self, from_addr: str, to_addr: str, amount: int) -> Tuple[bool, str]:
         """
