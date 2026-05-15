@@ -1,13 +1,10 @@
-# Deploys ishamwilliams-site (Vite build) to GitHub Pages.
-# This repo can host only one Pages site. To deploy workers/mobile-validator again,
-# use another repo, or swap this workflow back and host the marketing site elsewhere.
-name: Deploy ishamwilliams-site to GitHub Pages
+name: Deploy Mobile Validator PWA to GitHub Pages
 
 on:
   push:
     branches: [main]
     paths:
-      - 'ishamwilliams-site/**'
+      - 'workers/mobile-validator/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -29,31 +26,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: ishamwilliams-site/package-lock.json
-
-      # Project: https://<user>.github.io/<repo>/
-      # Optional: Settings → Variables → PAGES_VITE_BASE=/ for custom domain at site root
-      - name: Install and build
-        working-directory: ishamwilliams-site
-        env:
-          VITE_BASE: ${{ vars.PAGES_VITE_BASE || format('/{0}/', github.event.repository.name) }}
-        run: |
-          npm ci
-          npm run build
-          cp dist/index.html dist/404.html
-
       - name: Setup Pages
         uses: actions/configure-pages@v4
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ishamwilliams-site/dist
+          path: workers/mobile-validator
 
       - name: Deploy to GitHub Pages
         id: deployment
