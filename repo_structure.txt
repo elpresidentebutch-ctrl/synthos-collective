@@ -56,16 +56,12 @@ C:.
 |   |   SMART_CONTRACTS.md
 |   |   
 |   +---scripts
-|   |       deploy-gemini.js
 |   |       deploy-synthos.js
 |   |       
 |   +---src
 |   |   |   RewardDistributor.sol
 |   |   |   
-|   |   +---gemini
 |   |   |       CrossChainBridge.sol
-|   |   |       GeminiLiquidityPool.sol
-|   |   |       GeminiOracle.sol
 |   |   |       GEMToken.sol
 |   |   |       
 |   |   \---synthos
@@ -180,9 +176,7 @@ C:.
 |   |   |       manager.py
 |   |   |       __init__.py
 |   |   |       
-|   |   +---gemini
 |   |   |       defi.py
-|   |   |       megachain.py
 |   |   |       __init__.py
 |   |   |       
 |   |   \---synthos

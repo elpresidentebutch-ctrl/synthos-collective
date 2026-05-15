@@ -4,105 +4,536 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Synthos Validator Onboarding</title>
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Join the Synthos Collective - Decentralized AI">
+  <meta property="og:description" content="Run a serverless validator node on your phone or PC. First 200 nodes earn 5 SYN. No ports, no setup, just decentralization.">
+  <meta property="og:image" content="synthos_icon_1777121197289.png">
+
+  <!-- Twitter -->
+  <meta property="twitter:card" content="summary_large_image">
+  <meta property="twitter:title" content="Join the Synthos Collective - Decentralized AI">
+  <meta property="twitter:description" content="Run a serverless validator node on your phone or PC. First 200 nodes earn 5 SYN. No ports, no setup, just decentralization.">
+  <meta property="twitter:image" content="synthos_icon_1777121197289.png">
+
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
   <style>
-    body { font-family: system-ui, sans-serif; background: #0b0e14; color: #fff; margin: 0; }
-    .container { max-width: 420px; margin: 40px auto; background: rgba(255,255,255,0.04); border-radius: 18px; box-shadow: 0 4px 32px #0002; padding: 32px 24px; }
-    h1 { font-size: 2rem; margin-bottom: 8px; background: linear-gradient(135deg, #8b5cf6, #22c55e); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-    .badge { display: inline-block; background: #22c55e22; color: #22c55e; border-radius: 16px; padding: 6px 16px; font-weight: 600; margin-bottom: 18px; }
-    .step { margin-bottom: 18px; }
-    .step-title { font-size: 1.1rem; font-weight: 600; margin-bottom: 6px; }
-    .input { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #333; background: #181c24; color: #fff; margin-bottom: 10px; }
-    .btn { width: 100%; padding: 12px; border-radius: 10px; border: none; font-size: 1rem; font-weight: 700; background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; cursor: pointer; margin-bottom: 10px; }
-    .qr { display: flex; justify-content: center; margin: 18px 0; }
-    .success { color: #22c55e; font-weight: 600; margin-top: 10px; }
-    .error { color: #ef4444; font-weight: 600; margin-top: 10px; }
-    @media (max-width: 600px) { .container { margin: 0; border-radius: 0; min-height: 100vh; } }
+    :root {
+      --bg: #050505;
+      --card-bg: rgba(20, 20, 24, 0.6);
+      --border: rgba(255, 255, 255, 0.08);
+      --accent-1: #8b5cf6;
+      --accent-2: #22c55e;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+    
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    /* Animated background gradients */
+    body::before, body::after {
+      content: "";
+      position: absolute;
+      width: 60vw;
+      height: 60vw;
+      border-radius: 50%;
+      filter: blur(120px);
+      z-index: -1;
+      opacity: 0.15;
+      animation: float 20s infinite alternate ease-in-out;
+    }
+    body::before {
+      background: radial-gradient(circle, var(--accent-1) 0%, transparent 70%);
+      top: -20%;
+      left: -10%;
+    }
+    body::after {
+      background: radial-gradient(circle, var(--accent-2) 0%, transparent 70%);
+      bottom: -20%;
+      right: -10%;
+      animation-delay: -10s;
+    }
+
+    @keyframes float {
+      0% { transform: translate(0, 0) scale(1); }
+      100% { transform: translate(5%, 10%) scale(1.1); }
+    }
+
+    .container {
+      width: 100%;
+      max-width: 900px;
+      padding: 40px 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 48px;
+    }
+
+    .hero h1 {
+      font-family: 'Outfit', sans-serif;
+      font-size: 3.5rem;
+      font-weight: 800;
+      margin-bottom: 1rem;
+      background: linear-gradient(135deg, #fff 0%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.03em;
+    }
+
+    .live-activity {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(34, 197, 94, 0.1);
+      border: 1px solid rgba(34, 197, 94, 0.2);
+      color: var(--accent-2);
+      padding: 6px 16px;
+      border-radius: 99px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-bottom: 24px;
+      animation: pulse-border 2s infinite;
+    }
+
+    .activity-dot {
+      width: 8px;
+      height: 8px;
+      background: var(--accent-2);
+      border-radius: 50%;
+      box-shadow: 0 0 10px var(--accent-2);
+    }
+
+    @keyframes pulse-border {
+      0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }
+      70% { box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+    }
+
+    .subtitle {
+      font-size: 1.1rem;
+      color: var(--text-muted);
+      max-width: 600px;
+      line-height: 1.6;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      background: rgba(34, 197, 94, 0.15);
+      color: #4ade80;
+      border: 1px solid rgba(34, 197, 94, 0.3);
+      border-radius: 999px;
+      padding: 8px 20px;
+      font-weight: 600;
+      font-size: 0.95rem;
+      margin-bottom: 24px;
+      box-shadow: 0 0 20px rgba(34, 197, 94, 0.1);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }
+      70% { box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 32px;
+      width: 100%;
+    }
+
+    .card {
+      background: var(--card-bg);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 32px;
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+    }
+
+    .card-mobile {
+      background: linear-gradient(180deg, var(--card-bg) 0%, rgba(139, 92, 246, 0.05) 100%);
+    }
+
+    .card-desktop {
+      background: linear-gradient(180deg, var(--card-bg) 0%, rgba(34, 197, 94, 0.05) 100%);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      margin-bottom: 24px;
+    }
+
+    .card-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      margin-right: 16px;
+    }
+
+    .mobile-icon {
+      background: rgba(139, 92, 246, 0.2);
+      color: #a78bfa;
+    }
+
+    .desktop-icon {
+      background: rgba(34, 197, 94, 0.2);
+      color: #4ade80;
+    }
+
+    h2 {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.5rem;
+      font-weight: 700;
+    }
+
+    .qr-container {
+      background: #fff;
+      padding: 16px;
+      border-radius: 16px;
+      align-self: center;
+      margin: 20px 0;
+      transition: transform 0.3s;
+    }
+
+    .qr-container:hover {
+      transform: scale(1.05);
+    }
+
+    .qr-container img {
+      display: block;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 16px;
+      border-radius: 12px;
+      border: none;
+      font-family: 'Inter', sans-serif;
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #fff;
+      cursor: pointer;
+      text-decoration: none;
+      text-align: center;
+      transition: all 0.2s;
+      position: relative;
+      overflow: hidden;
+      margin-top: auto;
+    }
+
+    .btn::after {
+      content: '';
+      position: absolute;
+      top: 0; left: -100%;
+      width: 100%; height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+      transition: left 0.5s;
+    }
+
+    .btn:hover::after {
+      left: 100%;
+    }
+
+    .btn:active {
+      transform: scale(0.98);
+    }
+
+    .btn-mobile {
+      background: linear-gradient(135deg, #7c3aed, #8b5cf6);
+      box-shadow: 0 8px 20px rgba(124, 58, 237, 0.3);
+    }
+
+    .btn-desktop {
+      background: linear-gradient(135deg, #16a34a, #22c55e);
+      box-shadow: 0 8px 20px rgba(34, 197, 94, 0.3);
+    }
+
+    .buy-section {
+      width: 100%;
+      margin-top: 48px;
+      background: var(--card-bg);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 40px;
+    }
+
+    .buy-section h3 {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.8rem;
+      margin-bottom: 12px;
+    }
+
+    .buy-section p {
+      color: var(--text-muted);
+      margin-bottom: 24px;
+    }
+
+    .input-group {
+      display: flex;
+      gap: 16px;
+    }
+
+    .input {
+      flex: 1;
+      padding: 16px 20px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(0, 0, 0, 0.4);
+      color: #fff;
+      font-family: 'Inter', sans-serif;
+      font-size: 1.1rem;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      outline: none;
+    }
+
+    .input:focus {
+      border-color: var(--accent-1);
+      box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
+    }
+
+    .btn-buy {
+      padding: 16px 32px;
+      background: #f59e0b;
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 1.1rem;
+      cursor: pointer;
+      box-shadow: 0 8px 20px rgba(245, 158, 11, 0.3);
+      transition: all 0.2s;
+    }
+
+    .btn-buy:hover {
+      background: #d97706;
+      transform: translateY(-2px);
+    }
+
+    .status-msg {
+      margin-top: 16px;
+      font-weight: 500;
+      font-size: 1rem;
+    }
+    .success { color: #4ade80; }
+    .error { color: #f87171; }
+
+    @media (max-width: 768px) {
+      .grid { grid-template-columns: 1fr; }
+      h1 { font-size: 2.5rem; }
+      .input-group { flex-direction: column; }
+    }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>Synthos Validator</h1>
-    <div class="badge">🎁 First 200 validators earn 5 SYN</div>
-    <div class="step">
-      <div class="step-title">1. Choose your device</div>
-      <div>Run a validator from your phone or computer. Mobile users: scan the QR code below. Desktop: click the link.</div>
+    <div class="hero">
+      <div class="live-activity">
+        <span class="activity-dot"></span>
+        <span id="live-count">15</span> Validators Online
+      </div>
+      <h1>The Synthos Collective</h1>
+      <div class="badge flash-badge" id="rewardBadge">⚡ FLASH EVENT: 50 SYN for new nodes</div>
+      <div id="flashTimer" style="font-size: 0.85rem; color: var(--accent-2); margin-top: 8px; font-weight: 700;">
+        Ending in: <span id="timer">05:00</span>
+      </div>
+      <p class="subtitle">Join the decentralized AI network. Run a validator node directly from your browser, sync blocks, and earn rewards instantly.</p>
     </div>
-    <div class="qr">
-      <canvas id="qr" width="128" height="128"></canvas>
+
+    <div class="grid">
+      <!-- Mobile Node Card -->
+      <div class="card card-mobile">
+        <div class="card-header">
+          <div class="card-icon mobile-icon">📱</div>
+          <h2>Mobile Validator</h2>
+        </div>
+        <p style="color: var(--text-muted); line-height: 1.5; margin-bottom: 16px;">
+          Scan the QR code with your phone's camera to instantly launch a lightweight validator node in your mobile browser.
+        </p>
+        <div class="qr-container" id="qr-wrapper">
+          <canvas id="qr" width="160" height="160"></canvas>
+        </div>
+        <a href="/workers/mobile-validator/index.html" class="btn btn-mobile">Launch Mobile Node</a>
+      </div>
+
+      <!-- Desktop Node Card -->
+      <div class="card card-desktop">
+        <div class="card-header">
+          <div class="card-icon desktop-icon">💻</div>
+          <h2>Desktop Validator</h2>
+        </div>
+        <p style="color: var(--text-muted); line-height: 1.5; margin-bottom: 24px;">
+          Run the full desktop dashboard experience. Sync the network, verify transactions, and monitor the WebRTC mesh network with an expansive UI.
+        </p>
+        <div style="flex:1; display:flex; align-items:center; justify-content:center; opacity: 0.8; margin-bottom:24px;">
+          <svg width="120" height="120" viewBox="0 0 24 24" fill="none" stroke="url(#green-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <defs>
+              <linearGradient id="green-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#4ade80" />
+                <stop offset="100%" stop-color="#22c55e" />
+              </linearGradient>
+            </defs>
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+            <line x1="8" y1="21" x2="16" y2="21"></line>
+            <line x1="12" y1="17" x2="12" y2="21"></line>
+          </svg>
+        </div>
+        <button id="desktopBtn" class="btn btn-desktop">Run Desktop Validator</button>
+      </div>
     </div>
-    <div style="text-align:center;margin-bottom:18px;">
-      <a href="/workers/mobile-validator/index.html" class="btn">Start Mobile Validator</a>
-      <a href="/workers/validator/index.html" class="btn" style="background:linear-gradient(135deg,#22c55e,#8b5cf6);margin-top:6px;">Start Desktop Validator</a>
+
+    <!-- Token Acquisition Section -->
+    <div class="buy-section">
+      <h3>Acquire SYN Tokens</h3>
+      <p>Need more SYN for staking? Request tokens from the Synthos Treasury. (SYN currently has no monetary value and is used for network utility only.)</p>
+      
+      <div class="input-group">
+        <input class="input" id="buyAmount" type="number" min="1" placeholder="Amount of SYN to request" />
+        <button class="btn-buy" id="buyBtn">Request SYN</button>
+      </div>
+      <div class="status-msg" id="buyStatus"></div>
     </div>
-    <div class="step">
-      <div class="step-title">2. Connect to the Network</div>
-      <div>Signaling server URL (pre-filled):</div>
-      <input class="input" id="signalUrl" value="wss://good-lynx-27.elpresidentebutch-ctrl.deno.net/signal" readonly />
-    </div>
-    <div class="step">
-      <div class="step-title">3. Claim your 5 SYN</div>
-      <div>When you run your validator for the first time, your address will be registered. The first 200 unique addresses will receive 5 SYN tokens automatically.</div>
-    </div>
-    <div class="step">
-      <div class="step-title">4. Buy SYN with MetaMask</div>
-      <div>Want more SYN tokens? Buy directly using MetaMask:</div>
-      <input class="input" id="buyAmount" type="number" min="1" placeholder="Amount of SYN to buy" />
-      <button class="btn" id="buyBtn">Buy SYN with MetaMask</button>
-      <div id="buyStatus"></div>
-    </div>
-    <div id="status"></div>
   </div>
+
   <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
   <script>
     // Generate QR code for mobile onboarding
     var qr = qrcode(0, 'L');
     qr.addData(window.location.origin + '/workers/mobile-validator/index.html');
     qr.make();
-    document.getElementById('qr').outerHTML = qr.createImgTag(6);
+    document.getElementById('qr-wrapper').innerHTML = qr.createImgTag(5);
+    
+    // Make sure the image inherits some styling
+    const img = document.querySelector('#qr-wrapper img');
+    if(img) {
+      img.style.borderRadius = '8px';
+      img.style.display = 'block';
+      img.style.margin = '0 auto';
+    }
+
     // --- MetaMask Buy SYN Logic ---
-    // Replace with your actual SYN token sale contract address and ABI
-    const SYN_TOKEN_ADDRESS = "YOUR_SYN_TOKEN_CONTRACT_ADDRESS"; // <-- Replace this
-    const SALE_ADDRESS = "YOUR_SALE_CONTRACT_OR_WALLET_ADDRESS"; // <-- Replace this
-    const SYN_DECIMALS = 18; // Usually 18 for ERC-20
-    // Optional: ABI for direct contract interaction (if needed)
-    // const SYN_ABI = [ ... ];
+    const SALE_ADDRESS = "0x0000000000000000000000000000000000000000"; // Placeholder
 
     document.getElementById('buyBtn').onclick = async function() {
       const status = document.getElementById('buyStatus');
       status.textContent = '';
       if (!window.ethereum) {
-        status.textContent = 'MetaMask not detected. Please install MetaMask.';
-        status.className = 'error';
+        status.textContent = 'MetaMask not detected. Please install the extension.';
+        status.className = 'status-msg error';
         return;
       }
       const amount = document.getElementById('buyAmount').value;
       if (!amount || isNaN(amount) || Number(amount) <= 0) {
-        status.textContent = 'Enter a valid SYN amount.';
-        status.className = 'error';
+        status.textContent = 'Please enter a valid SYN amount.';
+        status.className = 'status-msg error';
         return;
       }
       try {
         await window.ethereum.request({ method: 'eth_requestAccounts' });
         const accounts = await window.ethereum.request({ method: 'eth_accounts' });
         const account = accounts[0];
-        // Set your price per SYN (in ETH or native token)
-        const pricePerSYN = 0.01; // Example: 0.01 ETH per SYN (change as needed)
+        
+        const pricePerSYN = 0.01; 
         const value = (Number(amount) * pricePerSYN).toString();
-        // Convert to wei
         const valueWei = (BigInt(Math.floor(Number(value) * 1e18))).toString();
-        // Send ETH to sale address (simple sale)
+        
         const tx = await window.ethereum.request({
           method: 'eth_sendTransaction',
           params: [{
             from: account,
             to: SALE_ADDRESS,
             value: '0x' + BigInt(valueWei).toString(16),
-            // Optionally add data for contract call if needed
           }]
         });
         status.textContent = 'Transaction sent! TX Hash: ' + tx;
-        status.className = 'success';
+        status.className = 'status-msg success';
       } catch (err) {
         status.textContent = 'Error: ' + (err.message || err);
-        status.className = 'error';
-      
+        status.className = 'status-msg error';
+      }
+    // --- Desktop Validator Logic ---
+    document.getElementById('desktopBtn').onclick = function() {
+      // 1. Open the animated chainstate in a new tab
+      window.open('workers/desktop-validator/chainstate.html', '_blank');
+
+      // 2. Create and download a .url shortcut for the desktop
+      const shortcutContent = `[InternetShortcut]
+URL=${window.location.origin}/workers/desktop-validator/chainstate.html
+IDList=
+[{000214A0-0000-0000-C000-000000000046}]
+Prop3=19,2
+`;
+      const blob = new Blob([shortcutContent], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'SynthosValidator.url';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    };
+
+    // --- Flash Reward Timer Logic ---
+    const flashEndTime = new Date().getTime() + (5 * 60 * 1000);
+    const timerEl = document.getElementById('timer');
+    const badgeEl = document.getElementById('rewardBadge');
+    const timerContainer = document.getElementById('flashTimer');
+
+    const timerInterval = setInterval(() => {
+      const now = new Date().getTime();
+      const distance = flashEndTime - now;
+
+      if (distance < 0) {
+        clearInterval(timerInterval);
+        timerContainer.style.display = 'none';
+        badgeEl.innerHTML = '🎁 First 200 validators earn 5 SYN tokens';
+        badgeEl.classList.remove('flash-badge');
+        return;
+      }
+
+      const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+      timerEl.innerHTML = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    }, 1000);
+  </script>
+</body>
+</html>

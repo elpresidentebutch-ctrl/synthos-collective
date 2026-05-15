@@ -69,7 +69,7 @@ class TokenMintEvent:
 class SynthosTokenContract:
     """
     SYNTHOS ERC20-compatible token contract
-    - 1 billion total supply
+    - 100 billion total supply
     - 18 decimals
     - Governance voting integration
     - Snapshot mechanism for voting
@@ -82,9 +82,9 @@ class SynthosTokenContract:
         self.decimals = 18
         
         # Supply management
-        self.initial_supply = 100 * 10**9 * (10 ** self.decimals)  # 100 billion tokens
+        self.initial_supply = 10**11 * (10 ** self.decimals)  # 100 billion tokens
         self.total_supply = self.initial_supply
-        self.max_supply = 100 * 10**9 * (10 ** self.decimals)  # No inflation beyond initial
+        self.max_supply = 10**11 * (10 ** self.decimals)  # No inflation beyond initial
         
         # Balances and allowances
         self.balances: Dict[str, int] = {owner: self.initial_supply}
@@ -109,6 +109,15 @@ class SynthosTokenContract:
         # Pause mechanism
         self.paused = False
         self.transfer_whitelist: Dict[str, bool] = {}
+
+        # First 200 Validators Reward (5 SYN)
+        self.rewarded_validators: Dict[str, bool] = {}
+        self.reward_count = 0
+        self.MAX_REWARDED = 200
+        self.BASE_REWARD = 5 * (10 ** self.decimals)
+        self.FLASH_REWARD = 50 * (10 ** self.decimals)
+        # 5-minute flash reward window from current time
+        self.FLASH_END_TIME = datetime.now() + timedelta(minutes=5)
 
 
     def balance_of(self, address: str) -> int:
@@ -448,6 +457,30 @@ class SynthosTokenContract:
         
         return history[-limit:]
 
+
+    def grant_validator_reward(self, validator_addr: str) -> Tuple[bool, str]:
+        """
+        Grant SYN reward to the first 200 validators.
+        Temporarily boosted to 50 SYN during the 5-minute flash event.
+        """
+        if self.reward_count >= self.MAX_REWARDED:
+            return False, "Maximum rewarded validators reached"
+        
+        if self.rewarded_validators.get(validator_addr):
+            return False, "Validator already rewarded"
+
+        # Check if we are in the 5-minute flash window
+        reward_amount = self.FLASH_REWARD if datetime.now() < self.FLASH_END_TIME else self.BASE_REWARD
+        
+        # Execute reward transfer from owner (treasury)
+        success, res = self.transfer(self.owner, validator_addr, reward_amount, reason="EARLY_VALIDATOR_REWARD")
+        if success:
+            self.rewarded_validators[validator_addr] = True
+            self.reward_count += 1
+            amt_display = reward_amount // (10**self.decimals)
+            return True, f"Rewarded {validator_addr} with {amt_display} SYN"
+        
+        return False, f"Reward transfer failed: {res}"
 
     def get_contract_state(self) -> Dict:
         """Get full contract state"""

@@ -3,9 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <meta name="theme-color" content="#050505" />
-  <link rel="manifest" href="data:application/manifest+json;base64,ewogICJnameIjogIlNZTlRIT1MiLAogICJzaG9ydF9uYW1lIjogIlNZTlRIT1MiLAogICJzdGFydF91cmwiOiAiLiIsCiAgImRpc3BsYXkiOiAic3RhbmRhbG9uZSIsCiAgImJhY2tncm91bmRfY29sb3IiOiAiIzA1MDUwNSIsCiAgInRoZW1lX2NvbG9yIjogIiMyMmM1NWUiLAogICJpY29ucyI6IFsKICAgIHsKICAgICAgInNyYyI6ICJodHRwczovL3N5bnRob3MubmxwLnVzLXdlc3QtMi5tYWluLmxvY2FsL2xvZ28ucG5nIiwKICAgICAgInNpemVzIjogIjE5MngxOTIiLAogICAgICAidHlwZSI6ICJpbWFnZS9wbmciCiAgICB9CiAgXQp9">
-  <title>SYNTHOS Cell Node</title>
+  <meta name="theme-color" content="#0b0e14" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Synthos Mobile Validator</title>
+  <link rel="manifest" href="manifest.json" />
   <style>
     :root {
       --bg: #050505;
@@ -22,27 +24,28 @@
       --sans: 'Inter', system-ui, -apple-system, sans-serif;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
     body {
       font-family: var(--sans);
       background: var(--bg);
       color: var(--text);
+      -webkit-font-smoothing: antialiased;
       overflow-x: hidden;
       display: flex;
       flex-direction: column;
-      min-height: 100vh;
     }
 
-    /* Gradient Blobs */
-    .blob {
+    /* Animated background */
+    body::before {
+      content: "";
       position: fixed;
-      width: 40vw; height: 40vw;
+      top: -20%; left: -10%;
+      width: 50vw; height: 50vw;
       border-radius: 50%;
       background: radial-gradient(circle, rgba(34,197,94,0.1) 0%, transparent 70%);
       filter: blur(100px);
       z-index: -1;
     }
-    .blob-1 { top: -10%; left: -10%; }
-    .blob-2 { bottom: -10%; right: -10%; background: radial-gradient(circle, rgba(139,92,246,0.1) 0%, transparent 70%); }
 
     .app {
       width: 100%;
@@ -50,8 +53,11 @@
       margin: 0 auto;
       padding: 32px;
       flex: 1;
+      display: flex;
+      flex-direction: column;
     }
 
+    /* Header */
     .header {
       display: flex;
       align-items: center;
@@ -71,482 +77,1305 @@
       align-items: center;
       gap: 12px;
     }
-    .status-badge {
-      display: flex;
-      align-items: center;
-      background: rgba(255,255,255,0.05);
-      padding: 6px 16px;
-      border-radius: 20px;
-      font-size: 14px;
-      font-weight: 600;
-      border: 1px solid var(--border);
-    }
     .status-dot {
-      width: 8px; height: 8px;
+      width: 12px; height: 12px;
       border-radius: 50%;
-      margin-right: 10px;
-      box-shadow: 0 0 10px currentColor;
+      background: var(--red);
+      display: inline-block;
+      margin-right: 8px;
+      box-shadow: 0 0 10px var(--red);
     }
+    .status-dot.connected { 
+      background: var(--green); 
+      box-shadow: 0 0 10px var(--green);
+    }
+    .status-dot.syncing { 
+      background: var(--orange); 
+      box-shadow: 0 0 10px var(--orange);
+      animation: pulse 1s infinite; 
+    }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+    .status-label { font-size: 15px; color: var(--text); display: flex; align-items: center; font-weight: 500; }
 
+    /* Dashboard Grid Layout */
     .dashboard-grid {
       display: grid;
-      grid-template-columns: 350px 1fr 350px;
+      grid-template-columns: 320px 1fr 320px;
       gap: 24px;
+      align-items: start;
     }
 
+    /* Cards */
     .card {
       background: var(--panel);
       backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 24px;
       margin-bottom: 24px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
     }
     .card-title {
-      font-size: 12px;
+      font-size: 13px;
       text-transform: uppercase;
-      letter-spacing: 0.1em;
+      letter-spacing: 0.08em;
       color: var(--muted);
-      margin-bottom: 20px;
+      margin-bottom: 16px;
       font-weight: 700;
       display: flex;
       align-items: center;
       justify-content: space-between;
     }
-
     .stat-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 16px;
     }
-    .stat {
-      background: rgba(0,0,0,0.2);
+    .stat { 
+      background: rgba(0,0,0,0.3);
       padding: 16px;
       border-radius: 12px;
-      border: 1px solid rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.03);
+      text-align: center; 
     }
     .stat-value {
-      font-size: 24px;
+      font-size: 28px;
       font-weight: 700;
       font-family: var(--mono);
       color: var(--accent);
+      line-height: 1.2;
     }
     .stat-label {
-      font-size: 11px;
+      font-size: 12px;
       color: var(--muted);
-      margin-top: 4px;
+      margin-top: 6px;
     }
 
-    .log {
-      height: 300px;
-      overflow-y: auto;
-      font-family: var(--mono);
-      font-size: 11px;
-      background: rgba(0,0,0,0.4);
-      padding: 12px;
-      border-radius: 10px;
-      border: 1px solid var(--border);
-    }
-    .log-entry { padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.02); }
-    .log-entry .ts { color: rgba(255,255,255,0.2); margin-right: 8px; }
-
+    /* Peer list */
     .peer-item {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 8px 0;
+      padding: 10px 0;
       border-bottom: 1px solid var(--border);
-      font-size: 13px;
+      font-size: 14px;
+      font-family: var(--mono);
     }
-    .peer-status {
-      width: 6px; height: 6px;
-      border-radius: 50%;
-    }
+    .peer-item:last-child { border-bottom: none; }
+    .peer-name { color: var(--text); }
+    .peer-height { color: var(--muted); font-size: 12px; }
+    .peer-status { font-size: 11px; padding: 4px 10px; border-radius: 6px; font-weight: 600; }
+    .peer-status.ok { background: rgba(34,197,94,0.15); color: var(--green); }
+    .peer-status.down { background: rgba(239,68,68,0.15); color: var(--red); }
 
-    .tabs {
+    /* Blocks feed */
+    .block-item {
       display: flex;
-      gap: 8px;
-      margin-bottom: 20px;
+      align-items: center;
+      padding: 12px 16px;
+      margin-bottom: 8px;
+      background: rgba(0,0,0,0.2);
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.03);
+      font-size: 14px;
     }
-    .tab {
-      padding: 8px 16px;
-      border-radius: 8px;
-      border: 1px solid var(--border);
-      background: transparent;
+    .block-height {
+      font-family: var(--mono);
+      font-weight: 700;
+      color: var(--accent);
+      min-width: 60px;
+    }
+    .block-hash {
+      font-family: var(--mono);
       color: var(--muted);
-      cursor: pointer;
-      font-weight: 600;
       font-size: 13px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1;
+      margin: 0 16px;
     }
-    .tab.active {
-      background: var(--accent);
-      color: var(--bg);
-      border-color: var(--accent);
+    .block-txs { color: var(--text); font-size: 12px; font-weight: 600; white-space: nowrap; background: rgba(255,255,255,0.1); padding: 4px 10px; border-radius: 20px; }
+
+    /* Forms & Inputs */
+    .form-group { margin-bottom: 16px; }
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 6px;
+      font-weight: 600;
     }
+    .form-group input, .node-select {
+      width: 100%;
+      padding: 12px 16px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(0,0,0,0.4);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 14px;
+      outline: none;
+      transition: all 0.2s;
+    }
+    .form-group input:focus, .node-select:focus { 
+      border-color: var(--accent); 
+      box-shadow: 0 0 0 2px rgba(34,197,94,0.2);
+    }
+    .node-select option { background: var(--bg); }
 
     .btn {
       width: 100%;
+      padding: 14px;
+      border-radius: 12px;
+      border: none;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #16a34a, #22c55e);
+      color: white;
+      box-shadow: 0 4px 15px rgba(34,197,94,0.3);
+    }
+    .btn-primary:active { transform: scale(0.98); }
+    .btn-primary:disabled { opacity: 0.5; }
+    .btn-danger {
+      background: rgba(239,68,68,0.15);
+      color: var(--red);
+      border: 1px solid rgba(239,68,68,0.3);
+    }
+    .btn-danger:hover { background: rgba(239,68,68,0.25); }
+
+    .tx-result {
+      font-size: 13px;
+      font-family: var(--mono);
       padding: 12px;
       border-radius: 10px;
+      margin-top: 12px;
+      word-break: break-all;
+    }
+    .tx-result.success { background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.2); color: var(--green); }
+    .tx-result.error { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.2); color: var(--red); }
+
+    /* Log */
+    .log {
+      max-height: 400px;
+      overflow-y: auto;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.6;
+      background: rgba(0,0,0,0.3);
+      padding: 16px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.03);
+    }
+    .log-entry { padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.02); }
+    .log-entry:last-child { border-bottom: none; }
+    .log-entry .ts { color: rgba(255,255,255,0.3); margin-right: 8px; }
+
+    /* Hide tabs styling since we use grid */
+    .tabs { display: none; }
+    .tab-content { display: block !important; }
+
+    .warn-banner {
+      padding: 16px;
+      border-radius: 12px;
+      background: rgba(245,158,11,0.12);
+      border: 1px solid rgba(245,158,11,0.3);
+      color: var(--orange);
+      font-size: 14px;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    /* ─── Connect Landing Screen ─────────────────────────────── */
+    .landing {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      text-align: center;
+      padding: 32px 24px;
+      background: radial-gradient(circle at center, rgba(34,197,94,0.15) 0%, transparent 50%);
+    }
+    .landing-logo {
+      font-size: 72px;
+      margin-bottom: 16px;
+      filter: drop-shadow(0 0 20px rgba(34,197,94,0.4));
+    }
+    .landing h1 {
+      font-size: 48px;
+      font-weight: 800;
+      letter-spacing: -1px;
+      margin-bottom: 16px;
+      background: linear-gradient(135deg, #fff, #cbd5e1);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .landing p {
+      color: var(--muted);
+      font-size: 18px;
+      max-width: 500px;
+      margin-bottom: 40px;
+      line-height: 1.6;
+    }
+    .connect-btn {
+      width: 100%;
+      max-width: 360px;
+      padding: 20px 32px;
       border: none;
+      border-radius: 16px;
+      background: linear-gradient(135deg, #16a34a, #22c55e);
+      color: #fff;
+      font-size: 20px;
       font-weight: 700;
       cursor: pointer;
-      transition: 0.2s;
+      transition: all 0.2s;
+      box-shadow: 0 10px 30px rgba(34,197,94,0.3);
     }
-    .btn-primary { background: var(--accent); color: var(--bg); }
-    .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
-    .btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
-
-    input, select {
-      width: 100%;
-      padding: 10px 14px;
-      background: rgba(0,0,0,0.3);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      color: var(--text);
-      font-family: var(--mono);
-      margin-bottom: 12px;
-    }
-
-    /* Landing */
-    .landing {
-      display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; text-align: center;
-    }
-    .hidden { display: none !important; }
+    .connect-btn:hover { transform: translateY(-2px); box-shadow: 0 15px 40px rgba(34,197,94,0.4); }
+    .connect-btn:active { transform: scale(0.98); }
+    .app.hidden { display: none; }
   </style>
 </head>
 <body>
-  <div class="blob blob-1"></div>
-  <div class="blob blob-2"></div>
-
-  <div class="landing" id="landing">
-    <h1 style="font-size: 48px; margin-bottom: 16px;">Synthos Super-Agent</h1>
-    <p style="color: var(--muted); max-width: 500px; margin-bottom: 32px;">Initialize a high-bandwidth desktop node with autonomous P2P signaling and bridging capabilities.</p>
-    <button class="btn btn-primary" style="width: 300px; height: 60px; font-size: 18px;" onclick="boot()">Launch Super-Agent</button>
+  <!-- ─── Connect Landing Screen ─────────────────────────────── -->
+  <div class="landing" id="landingScreen">
+    <div class="landing-logo">💻</div>
+    <h1>Synthos Desktop</h1>
+    <p>Launch the full desktop validator dashboard. Sync the blockchain, monitor peers, and manage transactions directly from your browser.</p>
+    <button class="connect-btn" id="connectBtn" onclick="connectToNetwork()">Initialize Desktop Node</button>
   </div>
 
-  <div class="app hidden" id="app">
+  <!-- ─── Validator App ───────────────── -->
+  <div class="app hidden" id="validatorApp">
     <div class="header">
-      <h1>⬡ Super-Agent Node</h1>
-      <div class="status-badge">
-        <div class="status-dot" id="status-dot" style="background: var(--orange);"></div>
-        <span id="status-text">Booting...</span>
+      <h1><span style="font-size:32px;">⬡</span> Synthos Desktop Validator</h1>
+      <div class="status-label">
+        <span class="status-dot" id="connDot"></span>
+        <span id="connLabel">Connecting to Network...</span>
       </div>
     </div>
 
+    <div id="warnBanner" class="warn-banner" style="display:none">
+      <span style="font-size:24px;">⚠️</span>
+      <span id="warnBannerText"></span>
+    </div>
+
+    <!-- Dashboard Grid -->
     <div class="dashboard-grid">
-      <!-- Network & Signaling -->
-      <div class="col">
+      
+      <!-- Left Column: Network & P2P -->
+      <div class="col-left">
         <div class="card">
-          <div class="card-title">Network Mesh <span id="peer-count" style="color: var(--accent);">0</span></div>
-          <div class="stat-grid" style="margin-bottom: 16px;">
-            <div class="stat">
-              <div class="stat-value" id="mesh-connected">0</div>
-              <div class="stat-label">WebRTC Peers</div>
-            </div>
-            <div class="stat">
-              <div class="stat-value" id="signal-active">Off</div>
-              <div class="stat-label">Signal Relay</div>
-            </div>
+          <div class="card-title">Network Peers</div>
+          <div id="peersList">
+            <div style="color:var(--muted);font-size:13px;">Scanning global validators...</div>
           </div>
-          <div id="mesh-list" style="max-height: 200px; overflow-y: auto;"></div>
+          <div class="form-group" style="margin-top:20px;">
+            <input type="text" id="customPeer" placeholder="Add custom peer URL..." />
+          </div>
+          <button class="btn btn-primary" style="padding:10px;font-size:13px;" onclick="addCustomPeer()">Add Peer</button>
         </div>
 
         <div class="card">
-          <div class="card-title">Trust Anchors (Seed Nodes)</div>
-          <div id="seed-list"></div>
-          <input type="text" id="custom-peer" placeholder="https://..." style="margin-top: 12px;">
-          <button class="btn btn-outline" onclick="addSeed()">Add Anchor</button>
+          <div class="card-title">WebRTC Mesh Status</div>
+          <div class="stat-grid" style="margin-bottom:20px;">
+            <div class="stat">
+              <div class="stat-value" id="p2pConnected">0</div>
+              <div class="stat-label">Connected</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value" id="p2pBlocks">0</div>
+              <div class="stat-label">Blocks/P2P</div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Your Node ID</label>
+            <div style="font-family:var(--mono);font-size:11px;background:rgba(0,0,0,0.3);padding:10px;border-radius:8px;color:var(--accent);word-break:break-all;" id="myPeerId">--</div>
+          </div>
+          <div class="card-title" style="margin-top:20px;">P2P Connections</div>
+          <div id="p2pPeersList" style="margin-bottom:16px;">
+            <div style="color:var(--muted);font-size:13px;">No WebRTC peers yet</div>
+          </div>
+          <div class="form-group">
+            <input type="text" id="signalUrl" placeholder="wss://synthos-peer-registry.../signal" />
+          </div>
+          <div style="display:flex;gap:10px;">
+            <button class="btn btn-primary" style="padding:10px;font-size:13px;" onclick="connectSignaling()">Connect</button>
+            <button class="btn btn-danger" style="padding:10px;font-size:13px;" onclick="disconnectP2P()">Disconnect</button>
+          </div>
         </div>
       </div>
 
-      <!-- Chain & Blocks -->
-      <div class="col">
+      <!-- Center Column: Chain State & Blocks -->
+      <div class="col-center">
         <div class="card">
-          <div class="card-title">Global Chain State</div>
+          <div class="card-title">Local Chain State</div>
           <div class="stat-grid" style="grid-template-columns: repeat(4, 1fr);">
             <div class="stat">
-              <div class="stat-value" id="height">0</div>
-              <div class="stat-label">Height</div>
+              <div class="stat-value" id="localHeight">0</div>
+              <div class="stat-label">Block Height</div>
             </div>
             <div class="stat">
-              <div class="stat-value" id="tps">0.0</div>
-              <div class="stat-label">TPS</div>
+              <div class="stat-value" id="localTxs">0</div>
+              <div class="stat-label">Total TXs</div>
             </div>
             <div class="stat">
-              <div class="stat-value" id="accounts">0</div>
+              <div class="stat-value" id="localAccounts">0</div>
               <div class="stat-label">Accounts</div>
             </div>
             <div class="stat">
-              <div class="stat-value" id="rep">100</div>
-              <div class="stat-label">Agent Rep</div>
+              <div class="stat-value" id="totalValidators">0</div>
+              <div class="stat-label">Global Validators</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value" id="syncStatus">--</div>
+              <div class="stat-label">Sync Status</div>
             </div>
           </div>
         </div>
 
         <div class="card">
-          <div class="card-title">P2P Gossip Feed</div>
-          <div id="block-feed" style="max-height: 500px; overflow-y: auto;"></div>
+          <div class="card-title">Live Blocks Feed</div>
+          <div id="blocksFeed" style="max-height: 600px; overflow-y: auto; padding-right: 8px;">
+            <div style="color:var(--muted);font-size:14px;text-align:center;padding:40px;">Waiting for blocks...</div>
+          </div>
         </div>
       </div>
 
-      <!-- Intel & Governance -->
-      <div class="col">
+      <!-- Right Column: Transactions & Logs -->
+      <div class="col-right">
         <div class="card">
-          <div class="card-title">Agent Decision Engine</div>
-          <div class="tabs">
-            <button class="tab active" data-tab="intel">Intel</button>
-            <button class="tab" data-tab="gov">Gov</button>
-            <button class="tab" data-tab="tx">Send</button>
-            <button class="tab" data-tab="deploy" style="color: var(--accent);">Deploy</button>
+          <div class="card-title">Submit Transaction</div>
+          <div class="form-group">
+            <label>Relay Node</label>
+            <select class="node-select" id="txTarget"></select>
           </div>
-
-          <div id="tab-intel" class="tab-content">
-            <div style="font-size: 13px; line-height: 1.6;">
-              <div style="margin-bottom: 12px; color: var(--accent);">● Analysis Active</div>
-              <div id="intel-output" style="color: var(--muted); font-style: italic;">Monitoring peer reputation and chain integrity...</div>
-            </div>
+          <div class="form-group">
+            <label>Sender Address</label>
+            <input type="text" id="txFrom" placeholder="agent-0" value="agent-0" />
           </div>
-
-          <div id="tab-gov" class="tab-content hidden">
-            <div id="gov-list">
-              <div style="color: var(--muted); text-align: center; padding: 20px;">No active proposals</div>
-            </div>
+          <div class="form-group">
+            <label>Recipient Address</label>
+            <input type="text" id="txTo" placeholder="0x..." />
           </div>
-
-          <div id="tab-tx" class="tab-content hidden">
-            <label style="font-size: 12px; color: var(--muted);">Recipient</label>
-            <input type="text" id="tx-to" placeholder="0x...">
-            <label style="font-size: 12px; color: var(--muted);">Amount (SYN)</label>
-            <input type="number" id="tx-amount" value="10">
-            <button class="btn btn-primary" onclick="broadcastTx()">Broadcast TX</button>
+          <div class="form-group">
+            <label>Amount (SYN)</label>
+            <input type="number" id="txAmount" placeholder="100" min="1" />
           </div>
-
-          <div id="tab-deploy" class="tab-content hidden">
-            <div style="margin-bottom: 20px;">
-              <div style="font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 8px;">PATH 1: CELL NETWORK</div>
-              <button class="btn btn-outline" onclick="log('Triggering Master Deployer: Path Cell...')">Deploy 15 Cell Nodes</button>
-              <div style="font-size: 11px; color: var(--muted); margin-top: 6px;">Targets: Cloudflare Edge / Mobile PWA</div>
-            </div>
-            <div>
-              <div style="font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 8px;">PATH 2: SOVEREIGN DESKTOP</div>
-              <button class="btn btn-primary" onclick="log('Triggering Master Deployer: Path Desktop...')">Rebuild Local Agent</button>
-              <div style="font-size: 11px; color: var(--muted); margin-top: 6px;">Target: Local OS (Agent Identity Persistence)</div>
-            </div>
-          </div>
+          <button class="btn btn-primary" id="txSubmitBtn" onclick="submitTx()">Broadcast Transaction</button>
+          <div id="txResult"></div>
         </div>
 
         <div class="card">
-          <div class="card-title">Bridge Log</div>
-          <div class="log" id="log"></div>
+          <div class="card-title">Account Lookup</div>
+          <div style="display:flex;gap:10px;">
+            <input type="text" id="lookupAddr" class="node-select" placeholder="Address..." style="margin:0;" />
+            <button class="btn btn-primary" style="width:auto;padding:0 20px;" onclick="lookupAccount()">Query</button>
+          </div>
+          <div id="lookupResult" style="margin-top:12px;"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">System Log</div>
+          <div class="log" id="logArea"></div>
+          <button class="btn btn-danger" style="margin-top:16px;padding:10px;font-size:13px;" onclick="resetLocalChain()">Hard Reset DB</button>
         </div>
       </div>
     </div>
   </div>
 
-  <script>
-    // --- Configuration ---
-    const TRUST_ANCHORS = [
-      "https://synthos-validator-11.jamesishamwilliams.workers.dev",
-      "https://synthos-validator-12.jamesishamwilliams.workers.dev"
+<script>
+// ─── Connect Landing ────────────────────────────────────────────────────────
+function connectToNetwork() {
+  document.getElementById("landingScreen").style.display = "none";
+  const app = document.getElementById("validatorApp");
+  app.classList.remove("hidden");
+  boot();
+}
+
+// ─── Plugin Loader Integration ─────────────────────────────────────────────
+let agent = null;
+async function loadPlugins() {
+  // Dynamically import plugin loader and plugins (works in modern browsers)
+  try {
+    const loader = await import('/plugins/js/pluginLoader.js');
+    agent = new loader.Agent();
+    // List of plugins to load (add more as needed)
+    const plugins = [
+      await import('/plugins/js/negotiation.js'),
+      // Add more plugins here
     ];
-    let state = {
-      height: 0,
-      accounts: {},
-      blocks: [],
-      peers: new Map(),
-      stats: { tps: 0, blocksReceived: 0 },
-      localNode: { online: false, id: null, addr: null }
+    for (const p of plugins) {
+      await agent.loadPlugin(p);
+    }
+    updatePluginsUI();
+  } catch (e) {
+    document.getElementById("pluginsList").innerHTML = `<div style='color:var(--red)'>Plugin load error: ${e.message}</div>`;
+  }
+}
+
+function updatePluginsUI() {
+  if (!agent) return;
+  const list = document.getElementById("pluginsList");
+  if (agent.plugins.length === 0) {
+    list.innerHTML = '<div style="color:var(--muted);font-size:13px;">No plugins loaded</div>';
+    return;
+  }
+  list.innerHTML = agent.plugins.map((p, i) => `
+    <div style="margin-bottom:10px">
+      <b>Plugin #${i+1}</b><br/>
+      <span style="font-size:12px;color:var(--muted)">Capabilities:</span><br/>
+      <ul style="margin:0 0 0 18px;padding:0;font-size:13px;">
+        ${(p.capabilities||[]).map(c => `<li>${c}</li>`).join('')}
+      </ul>
+    </div>
+  `).join('');
+}
+
+// ─── Synthos Mobile Light Validator ─────────────────────────────────────────
+// Runs entirely in-browser. Syncs from network peers, validates blocks locally,
+// and can submit transactions. Uses IndexedDB for persistent chain state.
+
+const KNOWN_PEERS = [
+  "https://synthos-validator-11.jamesishamwilliams.workers.dev",
+  "https://synthos-validator-12.jamesishamwilliams.workers.dev",
+  "https://synthos-validator-13.jamesishamwilliams.workers.dev",
+  "https://synthos-validator-14.jamesishamwilliams.workers.dev",
+  "https://synthos-validator-15.jamesishamwilliams.workers.dev",
+];
+
+const SYNC_INTERVAL_MS = 8000;
+const DB_NAME = "synthos-mobile-validator";
+const DB_VERSION = 1;
+
+let db = null;
+let chain = null;
+let peerStatus = {};
+let syncTimer = null;
+const logs = [];
+
+// ─── IndexedDB Persistence ──────────────────────────────────────────────────
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = () => {
+      const d = req.result;
+      if (!d.objectStoreNames.contains("state")) d.createObjectStore("state");
+      if (!d.objectStoreNames.contains("peers")) d.createObjectStore("peers");
     };
-    let myId = "super-agent-" + Math.random().toString(36).substr(2, 5);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
 
-    // --- Boot Sequence ---
-    async function boot() {
-      document.getElementById('landing').classList.add('hidden');
-      document.getElementById('app').classList.remove('hidden');
-      log("Super-Agent initializing...");
+async function loadChain() {
+  const tx = db.transaction("state", "readonly");
+  const store = tx.objectStore("state");
+  return new Promise((resolve) => {
+    const req = store.get("chain");
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => resolve(null);
+  });
+}
 
-      // 1. Initialize local DB (IndexedDB)
-      await initStorage();
+async function saveChain() {
+  const tx = db.transaction("state", "readwrite");
+  const store = tx.objectStore("state");
+  store.put(chain, "chain");
+}
 
-      // 2. Start Discovery & Signaling
-      startDiscovery();
-      
-      // 3. Start Gossip Loop
-      setInterval(syncMesh, 8000);
+async function loadCustomPeers() {
+  const tx = db.transaction("peers", "readonly");
+  const store = tx.objectStore("peers");
+  return new Promise((resolve) => {
+    const req = store.get("custom");
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => resolve([]);
+  });
+}
 
-      // 4. Start Local Node Bridge Loop
-      setInterval(syncLocalNode, 2000);
-      
-      updateUI();
-    }
+async function saveCustomPeers(peers) {
+  const tx = db.transaction("peers", "readwrite");
+  const store = tx.objectStore("peers");
+  store.put(peers, "custom");
+}
 
-    // --- Storage ---
-    let db;
-    async function initStorage() {
-      return new Promise((res) => {
-        const req = indexedDB.open("synthos-super-agent", 1);
-        req.onupgradeneeded = () => req.result.createObjectStore("state");
-        req.onsuccess = () => { db = req.result; res(); };
-      });
-    }
+// ─── Genesis ────────────────────────────────────────────────────────────────
 
-    // --- Discovery & P2P ---
-    async function startDiscovery() {
-      log("Starting P2P discovery via trust anchors...");
-      for(const anchor of TRUST_ANCHORS) {
-        try {
-          const resp = await fetch(anchor + "/status");
-          if(resp.ok) {
-            log(`Found anchor: ${anchor}`);
-            addPeer(anchor, "http");
+function genesisChain() {
+  const alloc = { "agent-0": 100_000_000_000, "0x4ab2003c0391f25013f15539c9123e770d3c5a67": 10000 };
+  const accounts = {};
+  for (const [addr, bal] of Object.entries(alloc)) {
+    accounts[addr] = { balance: bal, nonce: 0 };
+  }
+  const stateRoot = computeStateRoot(accounts);
+  const genesis = {
+    header: { height: 0, parent_hash: "0x0", timestamp: "1970-01-01T00:00:00.000Z", proposer_id: "genesis", state_root: stateRoot },
+    tx: [], hash: "", validator_votes: {}, finalized: true,
+  };
+  return {
+    chain_id: "synthos-l1-devnet",
+    accounts,
+    blocks: [genesis],
+  };
+}
+
+// ─── Crypto (matching the Worker implementation) ────────────────────────────
+
+function computeStateRoot(accounts) {
+  const sorted = Object.keys(accounts).sort();
+  const items = sorted.map(addr => ({ addr, balance: accounts[addr].balance, nonce: accounts[addr].nonce }));
+  const data = JSON.stringify(items);
+  let hash = 0;
+  for (let i = 0; i < data.length; i++) {
+    const chr = data.charCodeAt(i);
+    hash = ((hash << 5) - hash + chr) | 0;
+  }
+  return "0x" + Math.abs(hash).toString(16).padStart(16, "0");
+}
+
+async function computeBlockHash(block) {
+  const payload = JSON.stringify({ header: block.header, tx: block.tx });
+  const buf = new TextEncoder().encode(payload);
+  const hashBuf = await crypto.subtle.digest("SHA-256", buf);
+  const arr = new Uint8Array(hashBuf).slice(0, 16);
+  return "0x" + Array.from(arr, b => b.toString(16).padStart(2, "0")).join("");
+}
+
+// ─── Block Validation ───────────────────────────────────────────────────────
+
+async function validateBlock(block, parentBlock, accounts) {
+  // Check parent hash
+  if (block.header.parent_hash !== parentBlock.hash) return "parent_hash mismatch";
+  // Check height
+  if (block.header.height !== parentBlock.header.height + 1) return "height mismatch";
+
+  // Re-execute all transactions
+  const tmpAccounts = JSON.parse(JSON.stringify(accounts));
+  for (const tx of block.tx) {
+    const sender = tmpAccounts[tx.from];
+    if (!sender) return `unknown sender: ${tx.from}`;
+    const total = (tx.amount || 0) + (tx.fee || 0);
+    if (sender.balance < total) return `insufficient funds: ${tx.from}`;
+    if (tx.nonce !== undefined && tx.nonce !== sender.nonce) return `bad nonce for ${tx.from}`;
+    sender.balance -= total;
+    sender.nonce += 1;
+    if (!tmpAccounts[tx.to]) tmpAccounts[tx.to] = { balance: 0, nonce: 0 };
+    tmpAccounts[tx.to].balance += tx.amount;
+  }
+
+  // Verify state root
+  const expectedRoot = computeStateRoot(tmpAccounts);
+  if (block.header.state_root !== expectedRoot) return "state_root mismatch";
+
+  // Verify block hash
+  const expectedHash = await computeBlockHash(block);
+  if (block.hash !== expectedHash) return "block_hash mismatch";
+
+  return null; // valid
+}
+
+// ─── Sync with Network ─────────────────────────────────────────────────────
+
+async function getAllPeers() {
+  const custom = await loadCustomPeers();
+  const all = [...KNOWN_PEERS, ...custom];
+  return [...new Set(all)];
+}
+
+async function syncFromNetwork() {
+  const peers = await getAllPeers();
+  let synced = 0;
+  let anyOnline = false;
+
+  for (const peer of peers) {
+    try {
+      // Get peer status
+      const ctrl = new AbortController();
+      const timeout = setTimeout(() => ctrl.abort(), 8000);
+      const resp = await fetch(`${peer}/status`, { signal: ctrl.signal });
+      clearTimeout(timeout);
+
+      if (!resp.ok) {
+        peerStatus[peer] = { online: false, error: `HTTP ${resp.status}` };
+        continue;
+      }
+
+      const status = await resp.json();
+      peerStatus[peer] = { online: true, height: status.height, validator: status.validator };
+      anyOnline = true;
+
+      // Need blocks?
+      const myHeight = chain.blocks[chain.blocks.length - 1].header.height;
+      if (status.height > myHeight) {
+        log(`Syncing from ${shortName(peer)}: ${myHeight} → ${status.height}`);
+
+        const blocksResp = await fetch(`${peer}/blocks?from=${myHeight + 1}`, {
+          signal: AbortSignal.timeout(15000),
+        });
+        if (!blocksResp.ok) continue;
+
+        const data = await blocksResp.json();
+        for (const block of data.blocks) {
+          if (block.header.height <= chain.blocks[chain.blocks.length - 1].header.height) continue;
+
+          const parent = chain.blocks[chain.blocks.length - 1];
+          const err = await validateBlock(block, parent, chain.accounts);
+          if (err) {
+            log(`INVALID block #${block.header.height} from ${shortName(peer)}: ${err}`, "error");
+            break;
           }
-        } catch(e) {}
-      }
-    }
 
-    function addPeer(url, type) {
-      if(!state.peers.has(url)) {
-        state.peers.set(url, { url, type, lastSeen: Date.now(), height: 0 });
-        updateUI();
-      }
-    }
-
-    async function syncMesh() {
-      // Sync from HTTP anchors
-      for(const [url, peer] of state.peers) {
-        if(peer.type === "http") {
-          try {
-            const resp = await fetch(url + "/status");
-            const data = await resp.json();
-            peer.height = data.height;
-            if(data.height > state.height) {
-              fetchBlocks(url, state.height + 1);
-            }
-          } catch(e) { peer.online = false; }
-        }
-      }
-      updateUI();
-    }
-
-    async function fetchBlocks(url, from) {
-      try {
-        const resp = await fetch(`${url}/blocks?from=${from}`);
-        const data = await resp.json();
-        for(const b of data.blocks) {
-          applyBlock(b);
-        }
-      } catch(e) {}
-    }
-
-    async function syncLocalNode() {
-      try {
-        const resp = await fetch("http://127.0.0.1:8080/status");
-        if(resp.ok) {
-          const data = await resp.json();
-          if(!state.localNode.online) log("Connected to local Go node bridge");
-          state.localNode = { online: true, id: data.agent_id || "local-core", addr: data.address };
-          if(data.height > state.height) {
-            state.height = data.height;
-            // Optionally fetch blocks from local node if needed
+          // Apply block
+          for (const tx of block.tx) {
+            const sender = chain.accounts[tx.from];
+            const total = (tx.amount || 0) + (tx.fee || 0);
+            sender.balance -= total;
+            sender.nonce += 1;
+            if (!chain.accounts[tx.to]) chain.accounts[tx.to] = { balance: 0, nonce: 0 };
+            chain.accounts[tx.to].balance += tx.amount;
           }
-        } else {
-          state.localNode.online = false;
+          chain.blocks.push(block);
+          synced++;
         }
-      } catch(e) {
-        if(state.localNode.online) log("Lost connection to local Go node");
-        state.localNode.online = false;
-      }
-      updateUI();
-    }
 
-    function applyBlock(block) {
-      if(block.header.height <= state.height) return;
-      state.blocks.push(block);
-      state.height = block.header.height;
-      log(`New Block #${state.height} applied via P2P`);
-      updateUI();
-    }
-
-    // --- UI Logic ---
-    function log(msg) {
-      const el = document.getElementById('log');
-      const entry = document.createElement('div');
-      entry.className = 'log-entry';
-      entry.innerHTML = `<span class="ts">${new Date().toLocaleTimeString()}</span> ${msg}`;
-      el.prepend(entry);
-    }
-
-    function updateUI() {
-      document.getElementById('height').textContent = state.height;
-      document.getElementById('mesh-connected').textContent = state.peers.size;
-      document.getElementById('peer-count').textContent = state.peers.size;
-      
-      if(state.localNode.online) {
-        document.getElementById('status-text').textContent = "Bridge Active: " + state.localNode.id;
-        document.getElementById('status-dot').style.background = "var(--accent)";
-      }
-
-      const feed = document.getElementById('block-feed');
-      feed.innerHTML = state.blocks.slice(-10).reverse().map(b => `
-        <div class="block-item" style="padding: 12px; background: rgba(255,255,255,0.03); margin-bottom: 8px; border-radius: 8px; font-size: 13px;">
-          <b style="color: var(--accent);">#${b.header.height}</b> 
-          <span style="color: var(--muted); font-family: var(--mono); margin-left: 10px;">${b.hash.substr(0,12)}...</span>
-          <span style="float: right; color: var(--muted);">${b.tx.length} tx</span>
-        </div>
-      `).join('');
-
-      const dot = document.getElementById('status-dot');
-      if(state.peers.size > 0) {
-        dot.style.background = "var(--green)";
-        document.getElementById('status-text').textContent = "Mesh Connected";
-      }
-    }
-
-    // --- Tab Logic ---
-    document.querySelectorAll('.tab').forEach(t => {
-      t.onclick = () => {
-        document.querySelectorAll('.tab').forEach(t2 => t2.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
-        t.classList.add('active');
-        document.getElementById('tab-' + t.dataset.tab).classList.remove('hidden');
-      }
-    });
-
-    async function broadcastTx() {
-      const to = document.getElementById('tx-to').value;
-      const amount = parseInt(document.getElementById('tx-amount').value);
-      log(`Broadcasting transaction of ${amount} SYN to ${to}...`);
-
-      if(state.localNode.online) {
-        try {
-          const resp = await fetch("http://127.0.0.1:8080/submitTx", {
-            method: "POST",
-            body: JSON.stringify({ to, amount, from: state.localNode.addr || "agent-0" })
-          });
-          if(resp.ok) log("TX accepted by local Go node");
-        } catch(e) { log("Bridge TX failed: " + e.message); }
-      }
-
-      setTimeout(() => log(`TX successfully gossiped to ${state.peers.size} peers`), 800);
-    }
-    // PWA Installation Logic for Mobile Icons
-    let deferredPrompt;
-    window.addEventListener('beforeinstallprompt', (e) => {
-        e.preventDefault();
-        deferredPrompt = e;
-        if(window.innerWidth < 768) {
-            const btn = document.createElement('button');
-            btn.className = 'btn btn-primary';
-            btn.style.position = 'fixed'; btn.style.bottom = '20px'; btn.style.left = '20px'; btn.style.right = '20px'; btn.style.zIndex = '1000';
-            btn.textContent = "ADD SYNTHOS ICON TO SCREEN";
-            btn.onclick = () => {
-                deferredPrompt.prompt();
-                deferredPrompt.userChoice.then(() => btn.remove());
-            };
-            document.body.appendChild(btn);
+        if (synced > 0) {
+          await saveChain();
+          log(`Applied ${synced} blocks. Height: ${chain.blocks[chain.blocks.length - 1].header.height}`);
         }
+      }
+    } catch (e) {
+      peerStatus[peer] = { online: false, error: e.message };
+    }
+  }
+
+  updateUI(anyOnline, synced);
+}
+
+// ─── Transaction Submission ─────────────────────────────────────────────────
+
+async function submitTx() {
+  const btn = document.getElementById("txSubmitBtn");
+  const resultEl = document.getElementById("txResult");
+  btn.disabled = true;
+
+  const target = document.getElementById("txTarget").value;
+  const from = document.getElementById("txFrom").value.trim();
+  const to = document.getElementById("txTo").value.trim();
+  const amount = parseInt(document.getElementById("txAmount").value, 10);
+
+  if (!from || !to || !amount || amount <= 0) {
+    resultEl.className = "tx-result error";
+    resultEl.textContent = "Fill in all fields with valid values";
+    btn.disabled = false;
+    return;
+  }
+
+  try {
+    const resp = await fetch(`${target}/submitTx`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from, to, amount, fee: 0 }),
+      signal: AbortSignal.timeout(10000),
     });
-  </script>
+    const data = await resp.json();
+    if (data.ok) {
+      resultEl.className = "tx-result success";
+      resultEl.textContent = `TX submitted: ${data.tx_id}`;
+      log(`TX sent via ${shortName(target)}: ${from} → ${to} (${amount} SYN)`);
+    } else {
+      resultEl.className = "tx-result error";
+      resultEl.textContent = data.error || "Submission failed";
+    }
+  } catch (e) {
+    resultEl.className = "tx-result error";
+    resultEl.textContent = e.message;
+  }
+  btn.disabled = false;
+}
+
+async function lookupAccount() {
+  const addr = document.getElementById("lookupAddr").value.trim();
+  const el = document.getElementById("lookupResult");
+  if (!addr) return;
+
+  const acct = chain.accounts[addr];
+  if (acct) {
+    el.className = "tx-result success";
+    el.textContent = `Balance: ${acct.balance.toLocaleString()} SYN | Nonce: ${acct.nonce}`;
+  } else {
+    el.className = "tx-result error";
+    el.textContent = "Account not found in local state";
+  }
+}
+
+function addCustomPeer() {
+  const input = document.getElementById("customPeer");
+  const url = input.value.trim();
+  if (!url || !url.startsWith("https://")) {
+    alert("Enter a valid HTTPS URL");
+    return;
+  }
+  loadCustomPeers().then(peers => {
+    if (!peers.includes(url)) {
+      peers.push(url);
+      saveCustomPeers(peers);
+      log(`Added custom peer: ${url}`);
+      input.value = "";
+      syncFromNetwork();
+    }
+  });
+}
+
+function resetLocalChain() {
+  if (!confirm("Reset local chain to genesis? This only affects your phone.")) return;
+  chain = genesisChain();
+  saveChain();
+  peerStatus = {};
+  log("Chain reset to genesis");
+  updateUI(false, 0);
+}
+
+// ─── UI Updates ─────────────────────────────────────────────────────────────
+
+function updateUI(anyOnline, newBlocks) {
+  const tip = chain.blocks[chain.blocks.length - 1];
+
+  // Connection status
+  const dot = document.getElementById("connDot");
+  const label = document.getElementById("connLabel");
+  if (anyOnline) {
+    const maxPeerHeight = Math.max(...Object.values(peerStatus).filter(p => p.online).map(p => p.height || 0));
+    if (tip.header.height >= maxPeerHeight) {
+      dot.className = "status-dot connected";
+      label.textContent = "Synced";
+    } else {
+      dot.className = "status-dot syncing";
+      label.textContent = "Syncing...";
+    }
+  } else {
+    dot.className = "status-dot";
+    label.textContent = "Offline";
+  }
+
+  // Warn banner for CF rate limit
+  const allDown = Object.values(peerStatus).every(p => !p.online);
+  const banner = document.getElementById("warnBanner");
+  if (allDown && Object.keys(peerStatus).length > 0) {
+    banner.style.display = "block";
+    banner.textContent = "All peers unreachable — Cloudflare free tier may be rate-limited. Add non-CF peers below.";
+  } else {
+    banner.style.display = "none";
+  }
+
+  // Stats
+  document.getElementById("localHeight").textContent = tip.header.height;
+  document.getElementById("localAccounts").textContent = Object.keys(chain.accounts).length;
+  document.getElementById("localTxs").textContent = chain.blocks.reduce((a, b) => a + b.tx.length, 0);
+  document.getElementById("totalValidators").textContent = (Object.keys(peerStatus).filter(p => peerStatus[p].online).length + 15);
+
+  // Verify latest block's state root
+  const computedRoot = computeStateRoot(chain.accounts);
+  const verified = computedRoot === tip.header.state_root;
+  const verifiedEl = document.getElementById("syncStatus");
+  verifiedEl.textContent = verified ? "✓" : "✗";
+  verifiedEl.style.color = verified ? "var(--green)" : "var(--red)";
+
+  // Recent blocks
+  const feed = document.getElementById("blocksFeed");
+  const recent = chain.blocks.slice(-8).reverse();
+  feed.innerHTML = recent.map(b => `
+    <div class="block-item">
+      <span class="block-height">#${b.header.height}</span>
+      <span class="block-hash">${b.hash || '0x0'}</span>
+      <span class="block-txs">${b.tx.length} tx</span>
+    </div>
+  `).join("");
+
+  // Peers
+  const peersList = document.getElementById("peersList");
+  const peerEntries = Object.entries(peerStatus);
+  if (peerEntries.length > 0) {
+    peersList.innerHTML = peerEntries.map(([url, s]) => `
+      <div class="peer-item">
+        <span class="peer-name">${shortName(url)}</span>
+        <span class="peer-height">${s.online ? 'h=' + (s.height || '?') : s.error || 'down'}</span>
+        <span class="peer-status ${s.online ? 'ok' : 'down'}">${s.online ? 'online' : 'offline'}</span>
+      </div>
+    `).join("");
+  }
+
+  // TX target selector
+  const select = document.getElementById("txTarget");
+  const onlinePeers = peerEntries.filter(([_, s]) => s.online).map(([url]) => url);
+  if (onlinePeers.length > 0) {
+    const current = select.value;
+    select.innerHTML = onlinePeers.map(url =>
+      `<option value="${url}" ${url === current ? 'selected' : ''}>${shortName(url)}</option>`
+    ).join("");
+  }
+}
+
+function log(msg, level = "info") {
+  const now = new Date().toLocaleTimeString();
+  logs.unshift({ ts: now, msg, level });
+  if (logs.length > 200) logs.length = 200;
+  const el = document.getElementById("logArea");
+  el.innerHTML = logs.slice(0, 50).map(l =>
+    `<div class="log-entry"><span class="ts">${l.ts}</span> ${l.msg}</div>`
+  ).join("");
+}
+
+function shortName(url) {
+  try { return new URL(url).hostname.split(".")[0]; } catch { return url; }
+}
+
+// ─── Tabs ───────────────────────────────────────────────────────────────────
+
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    document.querySelectorAll(".tab-content").forEach(t => t.classList.remove("active"));
+    tab.classList.add("active");
+    document.getElementById("tab-" + tab.dataset.tab).classList.add("active");
+    if (tab.dataset.tab === "plugins") loadPlugins();
+  });
+});
+
+// ─── WebRTC Peer-to-Peer Gossip ─────────────────────────────────────────────
+// Phones connect to a signaling server (WebSocket), exchange WebRTC offers/answers,
+// then gossip blocks and transactions directly phone-to-phone over data channels.
+
+let myPeerId = null;
+let signalingWs = null;
+const rtcPeers = new Map(); // peerId -> { pc: RTCPeerConnection, dc: RTCDataChannel, connected: bool }
+const p2pStats = { blocksReceived: 0, txsReceived: 0 };
+const ICE_SERVERS = [
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun1.l.google.com:19302" },
+];
+
+function connectSignaling() {
+  const input = document.getElementById("signalUrl");
+  let url = input.value.trim();
+  if (!url) {
+    log("Enter a signaling server URL", "error");
+    return;
+  }
+
+  // Convert https to wss for the WebSocket connection
+  if (url.startsWith("https://")) {
+    url = "wss://" + url.slice(8);
+  }
+  if (!url.includes("/signal")) {
+    url = url.replace(/\/$/, "") + "/signal";
+  }
+  url += (url.includes("?") ? "&" : "?") + "id=" + encodeURIComponent(myPeerId);
+
+  localStorage.setItem("synthos-signal-url", input.value.trim());
+
+  if (signalingWs) {
+    try { signalingWs.close(); } catch {}
+  }
+
+  log(`Connecting to signaling: ${url.split("?")[0]}`);
+  signalingWs = new WebSocket(url);
+
+  signalingWs.onopen = () => {
+    log("Signaling connected");
+    updateP2PUI();
+  };
+
+  signalingWs.onmessage = async (event) => {
+    let msg;
+    try { msg = JSON.parse(event.data); } catch { return; }
+
+    switch (msg.type) {
+      case "peer-list":
+        log(`Signaling: ${msg.peers.length} peers online`);
+        // Initiate connections to all existing peers
+        for (const peerId of msg.peers) {
+          if (!rtcPeers.has(peerId)) {
+            await createOffer(peerId);
+          }
+        }
+        break;
+
+      case "peer-joined":
+        log(`Peer joined: ${msg.peerId}`);
+        // New peer connects to us — they'll send an offer, we wait
+        break;
+
+      case "peer-left":
+        log(`Peer left: ${msg.peerId}`);
+        closePeer(msg.peerId);
+        break;
+
+      case "offer":
+        await handleOffer(msg.from, msg.sdp);
+        break;
+
+      case "answer":
+        await handleAnswer(msg.from, msg.sdp);
+        break;
+
+      case "ice-candidate":
+        await handleIceCandidate(msg.from, msg.candidate);
+        break;
+    }
+    updateP2PUI();
+  };
+
+  signalingWs.onclose = () => {
+    log("Signaling disconnected");
+    updateP2PUI();
+  };
+
+  signalingWs.onerror = () => {
+    log("Signaling error", "error");
+  };
+}
+
+function createPeerConnection(remotePeerId) {
+  const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+
+  pc.onicecandidate = (event) => {
+    if (event.candidate && signalingWs?.readyState === WebSocket.OPEN) {
+      signalingWs.send(JSON.stringify({
+        type: "ice-candidate",
+        to: remotePeerId,
+        candidate: event.candidate,
+      }));
+    }
+  };
+
+  pc.onconnectionstatechange = () => {
+    const peer = rtcPeers.get(remotePeerId);
+    if (peer) {
+      peer.connected = pc.connectionState === "connected";
+      if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
+        log(`P2P disconnected from ${remotePeerId}`);
+        closePeer(remotePeerId);
+      }
+    }
+    updateP2PUI();
+  };
+
+  rtcPeers.set(remotePeerId, { pc, dc: null, connected: false });
+  return pc;
+}
+
+async function createOffer(remotePeerId) {
+  const pc = createPeerConnection(remotePeerId);
+
+  // Create data channel for gossiping
+  const dc = pc.createDataChannel("synthos-gossip", { ordered: true });
+  setupDataChannel(dc, remotePeerId);
+  rtcPeers.get(remotePeerId).dc = dc;
+
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+
+  signalingWs.send(JSON.stringify({
+    type: "offer",
+    to: remotePeerId,
+    sdp: offer,
+  }));
+
+  log(`Sent offer to ${remotePeerId}`);
+}
+
+async function handleOffer(fromPeerId, sdp) {
+  const pc = createPeerConnection(fromPeerId);
+
+  pc.ondatachannel = (event) => {
+    const dc = event.channel;
+    setupDataChannel(dc, fromPeerId);
+    rtcPeers.get(fromPeerId).dc = dc;
+  };
+
+  await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+
+  signalingWs.send(JSON.stringify({
+    type: "answer",
+    to: fromPeerId,
+    sdp: answer,
+  }));
+
+  log(`Sent answer to ${fromPeerId}`);
+}
+
+async function handleAnswer(fromPeerId, sdp) {
+  const peer = rtcPeers.get(fromPeerId);
+  if (peer) {
+    await peer.pc.setRemoteDescription(new RTCSessionDescription(sdp));
+  }
+}
+
+async function handleIceCandidate(fromPeerId, candidate) {
+  const peer = rtcPeers.get(fromPeerId);
+  if (peer) {
+    await peer.pc.addIceCandidate(new RTCIceCandidate(candidate));
+  }
+}
+
+function setupDataChannel(dc, remotePeerId) {
+  dc.onopen = () => {
+    log(`P2P data channel open with ${remotePeerId}`);
+    const peer = rtcPeers.get(remotePeerId);
+    if (peer) peer.connected = true;
+    updateP2PUI();
+
+    // Send our chain status so they know our height
+    dc.send(JSON.stringify({
+      type: "status",
+      height: chain.blocks[chain.blocks.length - 1].header.height,
+      peerId: myPeerId,
+    }));
+  };
+
+  dc.onmessage = async (event) => {
+    let msg;
+    try { msg = JSON.parse(event.data); } catch { return; }
+    await handleP2PMessage(msg, remotePeerId);
+  };
+
+  dc.onclose = () => {
+    const peer = rtcPeers.get(remotePeerId);
+    if (peer) peer.connected = false;
+    updateP2PUI();
+  };
+}
+
+async function handleP2PMessage(msg, fromPeerId) {
+  switch (msg.type) {
+    case "status": {
+      // Peer is telling us their height — request blocks if they're ahead
+      const myHeight = chain.blocks[chain.blocks.length - 1].header.height;
+      if (msg.height > myHeight) {
+        const peer = rtcPeers.get(fromPeerId);
+        if (peer?.dc?.readyState === "open") {
+          peer.dc.send(JSON.stringify({
+            type: "request-blocks",
+            from: myHeight + 1,
+          }));
+        }
+      }
+      break;
+    }
+
+    case "request-blocks": {
+      // Peer wants blocks from a certain height
+      const blocks = chain.blocks.slice(msg.from);
+      const peer = rtcPeers.get(fromPeerId);
+      if (peer?.dc?.readyState === "open") {
+        peer.dc.send(JSON.stringify({
+          type: "blocks",
+          blocks,
+        }));
+      }
+      break;
+    }
+
+    case "blocks": {
+      // Received blocks from a peer — validate and apply
+      if (!Array.isArray(msg.blocks)) break;
+      let applied = 0;
+      for (const block of msg.blocks) {
+        if (block.header.height <= chain.blocks[chain.blocks.length - 1].header.height) continue;
+        const parent = chain.blocks[chain.blocks.length - 1];
+        const err = await validateBlock(block, parent, chain.accounts);
+        if (err) {
+          log(`P2P: Invalid block #${block.header.height} from ${fromPeerId}: ${err}`, "error");
+          break;
+        }
+        // Apply block
+        for (const tx of block.tx) {
+          const sender = chain.accounts[tx.from];
+          const total = (tx.amount || 0) + (tx.fee || 0);
+          sender.balance -= total;
+          sender.nonce += 1;
+          if (!chain.accounts[tx.to]) chain.accounts[tx.to] = { balance: 0, nonce: 0 };
+          chain.accounts[tx.to].balance += tx.amount;
+        }
+        chain.blocks.push(block);
+        applied++;
+      }
+      if (applied > 0) {
+        await saveChain();
+        p2pStats.blocksReceived += applied;
+        log(`P2P: Applied ${applied} blocks from ${fromPeerId}. Height: ${chain.blocks[chain.blocks.length - 1].header.height}`);
+        updateUI(true, applied);
+        // Re-broadcast to other P2P peers
+        broadcastP2P({ type: "new-block", block: chain.blocks[chain.blocks.length - 1] }, fromPeerId);
+      }
+      break;
+    }
+
+    case "new-block": {
+      // Real-time block broadcast from another phone
+      const block = msg.block;
+      if (!block || block.header.height <= chain.blocks[chain.blocks.length - 1].header.height) break;
+      const parent = chain.blocks[chain.blocks.length - 1];
+      const err = await validateBlock(block, parent, chain.accounts);
+      if (err) break;
+      for (const tx of block.tx) {
+        const sender = chain.accounts[tx.from];
+        const total = (tx.amount || 0) + (tx.fee || 0);
+        sender.balance -= total;
+        sender.nonce += 1;
+        if (!chain.accounts[tx.to]) chain.accounts[tx.to] = { balance: 0, nonce: 0 };
+        chain.accounts[tx.to].balance += tx.amount;
+      }
+      chain.blocks.push(block);
+      await saveChain();
+      p2pStats.blocksReceived++;
+      log(`P2P: New block #${block.header.height} from ${fromPeerId}`);
+      updateUI(true, 1);
+      // Relay to other peers
+      broadcastP2P({ type: "new-block", block }, fromPeerId);
+      break;
+    }
+
+    case "new-tx": {
+      // Transaction gossiped from another phone — forward to an HTTP validator
+      p2pStats.txsReceived++;
+      log(`P2P: TX from ${fromPeerId}: ${msg.tx?.from} → ${msg.tx?.to}`);
+      // Relay to other P2P peers
+      broadcastP2P({ type: "new-tx", tx: msg.tx }, fromPeerId);
+      break;
+    }
+  }
+  updateP2PUI();
+}
+
+function broadcastP2P(message, excludePeerId) {
+  const data = JSON.stringify(message);
+  for (const [peerId, peer] of rtcPeers) {
+    if (peerId === excludePeerId) continue;
+    if (peer.dc?.readyState === "open") {
+      try { peer.dc.send(data); } catch {}
+    }
+  }
+}
+
+function closePeer(peerId) {
+  const peer = rtcPeers.get(peerId);
+  if (peer) {
+    try { peer.dc?.close(); } catch {}
+    try { peer.pc?.close(); } catch {}
+    rtcPeers.delete(peerId);
+  }
+  updateP2PUI();
+}
+
+function disconnectP2P() {
+  for (const peerId of [...rtcPeers.keys()]) {
+    closePeer(peerId);
+  }
+  if (signalingWs) {
+    try { signalingWs.close(); } catch {}
+    signalingWs = null;
+  }
+  log("Disconnected from all P2P peers");
+  updateP2PUI();
+}
+
+function updateP2PUI() {
+  const connected = [...rtcPeers.values()].filter(p => p.connected).length;
+  document.getElementById("p2pConnected").textContent = connected;
+  document.getElementById("p2pBlocks").textContent = p2pStats.blocksReceived;
+  document.getElementById("p2pTxs").textContent = p2pStats.txsReceived;
+  document.getElementById("p2pSignal").textContent =
+    signalingWs?.readyState === WebSocket.OPEN ? "✓" : "✗";
+  document.getElementById("p2pSignal").style.color =
+    signalingWs?.readyState === WebSocket.OPEN ? "var(--green)" : "var(--red)";
+
+  // P2P peers list
+  const list = document.getElementById("p2pPeersList");
+  if (rtcPeers.size > 0) {
+    list.innerHTML = [...rtcPeers.entries()].map(([id, p]) => `
+      <div class="peer-item">
+        <span class="peer-name">${id}</span>
+        <span class="peer-status ${p.connected ? 'ok' : 'down'}">${p.connected ? 'connected' : 'connecting'}</span>
+      </div>
+    `).join("");
+  } else {
+    list.innerHTML = '<div style="color:var(--muted);font-size:13px;">No WebRTC peers yet</div>';
+  }
+}
+
+// ─── Boot ───────────────────────────────────────────────────────────────────
+
+async function boot() {
+  log("Synthos Mobile Validator starting...");
+
+  // Generate or load persistent peer ID
+  myPeerId = localStorage.getItem("synthos-peer-id");
+  if (!myPeerId) {
+    myPeerId = "mobile-" + crypto.randomUUID().slice(0, 8);
+    localStorage.setItem("synthos-peer-id", myPeerId);
+  }
+  document.getElementById("myPeerId").textContent = myPeerId;
+
+  db = await openDB();
+
+  const stored = await loadChain();
+  if (stored && stored.blocks && stored.accounts) {
+    chain = stored;
+    log(`Loaded chain from storage. Height: ${chain.blocks[chain.blocks.length - 1].header.height}`);
+  } else {
+    chain = genesisChain();
+    await saveChain();
+    log("Initialized with genesis block");
+  }
+
+  updateUI(false, 0);
+
+  // First HTTP sync
+  await syncFromNetwork();
+
+  // Periodic HTTP sync
+  syncTimer = setInterval(syncFromNetwork, SYNC_INTERVAL_MS);
+  log(`HTTP sync loop started (every ${SYNC_INTERVAL_MS / 1000}s)`);
+
+  // Auto-connect to signaling if URL is saved
+  const savedSignalUrl = localStorage.getItem("synthos-signal-url");
+  if (savedSignalUrl) {
+    document.getElementById("signalUrl").value = savedSignalUrl;
+    connectSignaling();
+  }
+
+  // Register service worker
+  if ("serviceWorker" in navigator) {
+    try {
+      await navigator.serviceWorker.register("sw.js");
+      log("Service Worker registered");
+    } catch (e) {
+      log("Service Worker registration skipped: " + e.message);
+    }
+  }
+
+  // Preload plugins for returning users
+  loadPlugins();
+}
+
+// Auto-boot if returning user (already has chain data), otherwise show landing
+if (localStorage.getItem("synthos-peer-id")) {
+  connectToNetwork();
+}
+</script>
 </body>
 </html>

@@ -1,0 +1,1 @@
+{"id": "join-6fc8310e8f9e3a75ff3741b2", "type": "join", "sender": "Agent-8934faa9", "height": 124082, "timestamp": 1777135162, "payload": "{\"agent_type\": \"Validator\", \"capabilities\": [\"Compute\", \"Verification\"]}"}

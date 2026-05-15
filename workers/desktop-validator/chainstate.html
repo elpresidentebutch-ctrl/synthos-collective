@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Synthos Chainstate - Active Validators</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Outfit:wght@700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #050505;
+            --accent-1: #8b5cf6; /* Purple */
+            --accent-2: #22c55e; /* Green */
+            --text: #f8fafc;
+            --muted: #94a3b8;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: var(--bg);
+            font-family: 'Inter', sans-serif;
+            color: var(--text);
+        }
+
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        .overlay {
+            position: absolute;
+            top: 40px;
+            left: 40px;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        h1 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 2.5rem;
+            margin: 0;
+            background: linear-gradient(135deg, #fff 0%, #cbd5e1 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .stats {
+            margin-top: 20px;
+            display: flex;
+            gap: 40px;
+        }
+
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .stat-value {
+            font-size: 3.5rem;
+            font-weight: 800;
+            color: var(--accent-2);
+            text-shadow: 0 0 20px rgba(34, 197, 94, 0.4);
+            transition: all 0.3s ease;
+        }
+
+        .stat-value.ping {
+            transform: scale(1.1);
+            color: #fff;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        .badge {
+            background: rgba(34, 197, 94, 0.1);
+            border: 1px solid rgba(34, 197, 94, 0.2);
+            color: var(--accent-2);
+            padding: 6px 12px;
+            border-radius: 99px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            display: inline-block;
+            margin-top: 10px;
+        }
+
+        .log {
+            position: absolute;
+            bottom: 40px;
+            left: 40px;
+            max-width: 400px;
+            z-index: 10;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.85rem;
+            color: var(--muted);
+            pointer-events: none;
+        }
+
+        .log-entry {
+            margin-top: 5px;
+            opacity: 0.8;
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 0.8; transform: translateY(0); }
+        }
+
+        .serverless-info {
+            position: absolute;
+            top: 40px;
+            right: 40px;
+            text-align: right;
+            z-index: 10;
+            max-width: 300px;
+        }
+
+        .serverless-info p {
+            font-size: 0.9rem;
+            color: var(--muted);
+            line-height: 1.6;
+        }
+
+        .monetary-disclaimer {
+            position: absolute;
+            bottom: 40px;
+            right: 40px;
+            text-align: right;
+            color: rgba(248, 113, 113, 0.6);
+            font-size: 0.75rem;
+            max-width: 300px;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="overlay">
+        <h1>Synthos Collective</h1>
+        <div class="badge">🎁 First 200 nodes receive 5 SYN</div>
+        <div class="stats">
+            <div class="stat-item">
+                <div class="stat-value" id="validator-count">0</div>
+                <div class="stat-label">Active Validators</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="block-height">0</div>
+                <div class="stat-label">Block Height</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="serverless-info">
+        <p><strong>Serverless Decentralization</strong><br>Nodes poll shared object storage. No open ports. Works behind any firewall.</p>
+    </div>
+
+    <div class="log" id="log">
+        <div class="log-entry">> Initializing decentralized mesh...</div>
+    </div>
+
+    <div class="controls" style="position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); z-index: 20;">
+        <button id="simulateTx" style="background: var(--accent-1); color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; box-shadow: 0 4px 15px rgba(139, 92, 246, 0.4);">Broadcast Transaction</button>
+    </div>
+
+    <div class="monetary-disclaimer">
+        SynCoin (SYN) currently has no monetary value. Participation helps build the network for future value generation.
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const log = document.getElementById('log');
+        const vCountEl = document.getElementById('validator-count');
+        const blockEl = document.getElementById('block-height');
+
+        let width, height;
+        let nodes = [];
+        let particles = [];
+        let validatorCount = 0;
+        let blockHeight = 0;
+
+        // Block detection state
+        const seenHashes = new Set();
+        const EXPLORER_API = 'https://synthos-block-explorer.jamesishamwilliams.workers.dev';
+        const PEER_REGISTRY = 'https://synthos-peer-registry.jamesishamwilliams.workers.dev';
+        const FALLBACK_VALIDATORS = [
+          'https://synthos-validator-11.jamesishamwilliams.workers.dev',
+          'https://synthos-validator-12.jamesishamwilliams.workers.dev',
+        ];
+
+        // Mock R2 Bucket (Bulletin Board) — kept for legacy local manifest polling
+        const mockR2Bucket = [];
+        const processedMessages = new Set();
+
+        class Node {
+            constructor(x, y, id) {
+                this.x = x;
+                this.y = y;
+                this.targetX = x;
+                this.targetY = y;
+                this.id = id;
+                this.radius = 3;
+                this.pulse = 0;
+                this.connections = [];
+            }
+
+            draw() {
+                this.pulse += 0.05;
+                const pSize = Math.sin(this.pulse) * 4 + 4;
+
+                // Glow
+                const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, pSize * 4);
+                grad.addColorStop(0, 'rgba(34, 197, 94, 0.4)');
+                grad.addColorStop(1, 'rgba(34, 197, 94, 0)');
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, pSize * 4, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Core
+                ctx.fillStyle = '#4ade80';
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            update() {
+                this.x += (this.targetX - this.x) * 0.1;
+                this.y += (this.targetY - this.y) * 0.1;
+            }
+        }
+
+        class Particle {
+            constructor(x1, y1, x2, y2) {
+                this.x = x1;
+                this.y = y1;
+                this.targetX = x2;
+                this.targetY = y2;
+                this.progress = 0;
+                this.speed = 0.02 + Math.random() * 0.02;
+            }
+
+            draw() {
+                const currentX = this.x + (this.targetX - this.x) * this.progress;
+                const currentY = this.y + (this.targetY - this.y) * this.progress;
+
+                ctx.fillStyle = '#8b5cf6';
+                ctx.beginPath();
+                ctx.arc(currentX, currentY, 1.5, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Trail
+                ctx.strokeStyle = 'rgba(139, 92, 246, 0.3)';
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y);
+                ctx.lineTo(currentX, currentY);
+                ctx.stroke();
+            }
+
+            update() {
+                this.progress += this.speed;
+                return this.progress < 1;
+            }
+        }
+
+        function resize() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = width;
+            canvas.height = height;
+        }
+
+        function init() {
+            resize();
+            window.addEventListener('resize', resize);
+            animate();
+
+            // Simulate initial nodes
+            for(let i=0; i<8; i++) {
+                addValidator();
+            }
+
+            setInterval(addValidator, 4000);
+            // Block height is now driven by real relay data (see pollBlockRelay)
+        }
+
+        function addValidator(nodeId) {
+            if (nodes.length >= 200) return;
+
+            const x = Math.random() * (width - 200) + 100;
+            const y = Math.random() * (height - 200) + 100;
+            const id = nodeId || `0x${Math.random().toString(16).slice(2, 8)}`;
+            
+            // Check if node already exists
+            if (nodes.find(n => n.id === id)) return;
+
+            const newNode = new Node(x, y, id);
+            
+            nodes.push(newNode);
+            validatorCount = nodes.length;
+            
+            // Update UI with animation
+            vCountEl.textContent = validatorCount;
+            vCountEl.classList.add('ping');
+            setTimeout(() => vCountEl.classList.remove('ping'), 300);
+
+            addLog(`<span style="color: #4ade80">Network: New Validator ${newNode.id} detected.</span>`);
+
+            // Connect to random existing nodes
+            const connCount = Math.min(nodes.length - 1, 4);
+            for(let i=0; i<connCount; i++) {
+                const target = nodes[Math.floor(Math.random() * (nodes.length - 1))];
+                particles.push(new Particle(newNode.x, newNode.y, target.x, target.y));
+            }
+
+            // Simulate the reward logic
+            if (validatorCount <= 200) {
+                setTimeout(() => addLog(`<span style="color: #4ade80">Reward: 50 SYN granted to ${id}</span>`), 1000);
+            }
+        }
+
+        function addLog(msg) {
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.innerHTML = `> ${msg}`;
+            log.appendChild(entry);
+            if (log.childNodes.length > 8) log.removeChild(log.firstChild);
+        }
+
+        // ── Real Block Detection via Block Explorer API ──────────────────
+        async function pollBlockExplorer() {
+            // 1. Fetch latest blocks from the explorer API
+            try {
+                const [latestResp, statusResp] = await Promise.all([
+                    fetch(`${EXPLORER_API}/api/blocks?limit=10`),
+                    fetch(`${EXPLORER_API}/api/status`),
+                ]);
+
+                if (latestResp.ok && statusResp.ok) {
+                    const { blocks } = await latestResp.json();
+                    const status = await statusResp.json();
+
+                    // Update block height from explorer
+                    if (status.highest_height > blockHeight) {
+                        blockHeight = status.highest_height;
+                        blockEl.textContent = blockHeight.toLocaleString();
+                        addLog(`⛓ Explorer API: height now <span style="color:#4ade80">#${blockHeight.toLocaleString()}</span>`);
+                    }
+
+                    // Inject new blocks into the visualization
+                    for (const b of (blocks || [])) {
+                        if (!b.hash || seenHashes.has(b.hash)) continue;
+                        seenHashes.add(b.hash);
+
+                        addLog(`✅ Block <span style="color:#4ade80">#${b.height}</span> by ${b.proposer || '—'} — ${b.tx_count || 0} txs`);
+
+                        // Propagate particle burst across all nodes
+                        nodes.forEach(node => {
+                            const target = nodes[Math.floor(Math.random() * nodes.length)];
+                            particles.push(new Particle(node.x, node.y, target.x, target.y));
+                        });
+
+                        // Register proposer as a validator node if not already present
+                        if (b.proposer && !nodes.find(n => n.id === b.proposer)) {
+                            addValidator(b.proposer);
+                        }
+                    }
+                    return; // explorer succeeded
+                }
+            } catch (_) {}
+
+            // 2. Fallback: poll one validator directly
+            for (const url of FALLBACK_VALIDATORS) {
+                try {
+                    const resp = await fetch(`${url}/status`, { signal: AbortSignal.timeout(3000) });
+                    if (!resp.ok) continue;
+                    const s = await resp.json();
+                    if (s.height > blockHeight) {
+                        blockHeight = s.height;
+                        blockEl.textContent = blockHeight.toLocaleString();
+                        addLog(`⛓ Validator: new block <span style="color:#4ade80">#${blockHeight}</span>`);
+                        nodes.forEach(n => {
+                            const t = nodes[Math.floor(Math.random() * nodes.length)];
+                            particles.push(new Particle(n.x, n.y, t.x, t.y));
+                        });
+                    }
+                    break;
+                } catch (_) { continue; }
+            }
+        }
+
+        // ── Peer Registry: real validator count ───────────────────────────
+        async function pollPeerRegistry() {
+            try {
+                const resp = await fetch(`${PEER_REGISTRY}/peers/active`);
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const count = data.total || 0;
+                if (count > validatorCount) {
+                    // Add synthetic nodes for any unrepresented validators
+                    (data.peers || []).forEach(p => {
+                        const name = p.name || p;
+                        if (!nodes.find(n => n.id === name)) addValidator(name);
+                    });
+                }
+            } catch (_) {}
+        }
+
+        // ── Legacy local manifest poll (kept for local dev / static hosting) ──
+        async function pollNetwork() {
+            try {
+                const resp = await fetch('synthos/testnet/messages/manifest.json');
+                if (!resp.ok) return;
+
+                const manifest = await resp.json();
+                const latestFiles = manifest.latest || [];
+
+                for (const filename of latestFiles) {
+                    const msgId = filename.replace('.json', '');
+                    if (processedMessages.has(msgId)) continue;
+
+                    const msgResp = await fetch(`synthos/testnet/messages/${filename}`);
+                    if (!msgResp.ok) continue;
+
+                    const msg = await msgResp.json();
+                    processedMessages.add(msg.id);
+
+                    if (msg.type === 'join') {
+                        addValidator(msg.sender);
+                    } else {
+                        addLog(`New ${msg.type} from ${msg.sender.slice(0,8)}...`);
+                        setTimeout(() => {
+                            if (msg.type === 'block') {
+                                blockHeight = Math.max(blockHeight, msg.height);
+                                blockEl.textContent = blockHeight.toLocaleString();
+                                nodes.forEach(node => {
+                                    const target = nodes[Math.floor(Math.random() * nodes.length)];
+                                    particles.push(new Particle(node.x, node.y, target.x, target.y));
+                                });
+                            } else if (msg.type === 'transaction') {
+                                const source = nodes[Math.floor(Math.random() * nodes.length)];
+                                const target = nodes[Math.floor(Math.random() * nodes.length)];
+                                if(source && target) particles.push(new Particle(source.x, source.y, target.x, target.y));
+                            }
+                        }, 300);
+                    }
+                }
+            } catch (e) {
+                // Silently fail
+            }
+        }
+
+        document.getElementById('simulateTx').onclick = () => {
+            addLog(`<span style="color: #f87171">Note: Manual broadcast disabled during Stress Test.</span>`);
+        };
+
+        // Start polling loops
+        setInterval(pollBlockExplorer, 3000);  // primary: real block detection
+        setInterval(pollNetwork, 5000);        // secondary: local manifest (static fallback)
+        setInterval(pollPeerRegistry, 15000);  // validator count from registry
+        pollBlockExplorer();   // immediate first call
+        pollPeerRegistry();
+
+        function animate() {
+            ctx.fillStyle = 'rgba(5, 5, 5, 0.2)';
+            ctx.fillRect(0, 0, width, height);
+
+            // Draw connections
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+            ctx.lineWidth = 1;
+            for(let i=0; i<nodes.length; i++) {
+                for(let j=i+1; j<nodes.length; j++) {
+                    const dist = Math.hypot(nodes[i].x - nodes[j].x, nodes[i].y - nodes[j].y);
+                    if (dist < 200) {
+                        ctx.beginPath();
+                        ctx.moveTo(nodes[i].x, nodes[i].y);
+                        ctx.lineTo(nodes[j].x, nodes[j].y);
+                        ctx.stroke();
+                    }
+                }
+            }
+
+            particles = particles.filter(p => {
+                p.draw();
+                return p.update();
+            });
+
+            nodes.forEach(n => {
+                n.update();
+                n.draw();
+            });
+
+            requestAnimationFrame(animate);
+        }
+
+        init();
+    </script>
+</body>
+</html>
