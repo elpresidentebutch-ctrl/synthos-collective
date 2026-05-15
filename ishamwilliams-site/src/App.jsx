@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Link } from 'react-router-dom'
 import Navbar from './components/Navbar'
 import Footer from './components/Footer'
 import LiveStats from './components/LiveStats'
@@ -18,15 +18,21 @@ function NotFound() {
         <div style={{ fontSize: '5rem', marginBottom: 16 }}>⛓️</div>
         <h2 style={{ marginBottom: 12 }}>404 — Block Not Found</h2>
         <p style={{ color: 'var(--text-muted)', marginBottom: 28 }}>This chain doesn't have that block.</p>
-        <a href="/" className="btn btn-primary">← Return Home</a>
+        <Link to="/" className="btn btn-primary">← Return Home</Link>
       </div>
     </div>
   )
 }
 
+function routerBasename() {
+  const b = import.meta.env.BASE_URL || '/'
+  if (b === '/' || b === '') return undefined
+  return b.endsWith('/') ? b.slice(0, -1) : b
+}
+
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={routerBasename()}>
       <div className="bg-grid" />
       <div className="bg-mesh" />
       <Navbar />
