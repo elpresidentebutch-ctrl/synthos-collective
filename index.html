@@ -1,0 +1,1445 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Agent Collective — AI dev team</title>
+    <meta
+      name="description"
+      content="An AI development team for people who need engineering help but do not have a full dev org. Agents collaborate with each other and with you."
+    />
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #0b0e14;
+        --panel: rgba(255, 255, 255, 0.06);
+        --text: rgba(255, 255, 255, 0.92);
+        --muted: rgba(255, 255, 255, 0.68);
+        --border: rgba(255, 255, 255, 0.14);
+        --shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+        --accent: #8b5cf6;
+        --accent2: #22c55e;
+        --radius: 16px;
+        --radius-sm: 12px;
+        --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+          "Courier New", monospace;
+        --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,
+          "Apple Color Emoji", "Segoe UI Emoji";
+      }
+
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #f6f7fb;
+          --panel: rgba(0, 0, 0, 0.04);
+          --text: rgba(15, 23, 42, 0.92);
+          --muted: rgba(15, 23, 42, 0.66);
+          --border: rgba(15, 23, 42, 0.12);
+          --shadow: 0 18px 60px rgba(15, 23, 42, 0.16);
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        font-family: var(--sans);
+        background: radial-gradient(1100px 700px at 20% 0%, rgba(139, 92, 246, 0.22), transparent 60%),
+          radial-gradient(900px 600px at 85% 20%, rgba(34, 197, 94, 0.18), transparent 55%),
+          var(--bg);
+        color: var(--text);
+      }
+
+      .wrap {
+        max-width: 1140px;
+        margin: 0 auto;
+        padding: 44px 18px 72px;
+      }
+
+      header {
+        display: grid;
+        grid-template-columns: 1.35fr 0.65fr;
+        gap: 18px;
+        align-items: start;
+        margin-bottom: 22px;
+      }
+
+      @media (max-width: 900px) {
+        header {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .hero {
+        padding: 20px 20px 18px;
+        border: 1px solid var(--border);
+        background: linear-gradient(180deg, var(--panel), transparent);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+      }
+
+      .kicker {
+        display: inline-flex;
+        gap: 10px;
+        align-items: center;
+        font-family: var(--mono);
+        font-size: 12px;
+        opacity: 0.9;
+        padding: 8px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--panel);
+        margin-bottom: 10px;
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: linear-gradient(135deg, var(--accent), var(--accent2));
+        box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.15);
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 34px;
+        letter-spacing: -0.02em;
+        line-height: 1.05;
+      }
+      .subtitle {
+        margin: 10px 0 0;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.5;
+        max-width: 72ch;
+      }
+      .badge-row {
+        margin-top: 14px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .badge {
+        font-family: var(--mono);
+        font-size: 11px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--panel);
+        color: var(--muted);
+      }
+
+      .controls {
+        padding: 16px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--panel);
+        box-shadow: var(--shadow);
+        display: grid;
+        gap: 12px;
+      }
+      .control-row {
+        display: grid;
+        gap: 10px;
+      }
+      .label {
+        font-family: var(--mono);
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .input {
+        width: 100%;
+        border: 1px solid var(--border);
+        background: rgba(0, 0, 0, 0.08);
+        color: var(--text);
+        padding: 10px 12px;
+        border-radius: 12px;
+        outline: none;
+      }
+      @media (prefers-color-scheme: light) {
+        .input {
+          background: rgba(255, 255, 255, 0.75);
+        }
+      }
+      .input:focus {
+        border-color: rgba(139, 92, 246, 0.6);
+        box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.18);
+      }
+
+      .pills {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .pill {
+        cursor: pointer;
+        border: 1px solid var(--border);
+        background: var(--panel);
+        color: var(--text);
+        border-radius: 999px;
+        padding: 7px 10px;
+        font-size: 12px;
+        font-family: var(--mono);
+        user-select: none;
+        transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+      }
+      .pill:hover {
+        transform: translateY(-1px);
+      }
+      .pill[data-active="true"] {
+        border-color: rgba(139, 92, 246, 0.65);
+        background: rgba(139, 92, 246, 0.18);
+      }
+
+      main {
+        display: grid;
+        gap: 18px;
+        margin-top: 18px;
+      }
+
+      .section {
+        border: 1px solid var(--border);
+        background: linear-gradient(180deg, var(--panel), transparent 140%);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        padding: 18px;
+      }
+      .section-title {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        margin: 0 0 12px;
+      }
+      .section-title h2 {
+        margin: 0;
+        font-size: 18px;
+        letter-spacing: -0.01em;
+      }
+      .count {
+        font-family: var(--mono);
+        font-size: 12px;
+        color: var(--muted);
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--panel);
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+      @media (max-width: 1000px) {
+        .grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+      @media (max-width: 650px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .card {
+        border: 1px solid var(--border);
+        background: var(--panel);
+        border-radius: var(--radius-sm);
+        padding: 14px 14px 12px;
+        overflow: hidden;
+        position: relative;
+      }
+      .card-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        position: relative;
+      }
+      .role {
+        font-weight: 700;
+        letter-spacing: -0.01em;
+      }
+      .tag {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--muted);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 6px 9px;
+        background: rgba(0, 0, 0, 0.06);
+      }
+      @media (prefers-color-scheme: light) {
+        .tag {
+          background: rgba(255, 255, 255, 0.6);
+        }
+      }
+      .purpose {
+        margin: 10px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      .expertise {
+        margin: 8px 0 0;
+        font-size: 12px;
+        line-height: 1.55;
+        color: var(--text);
+        opacity: 0.88;
+        padding-top: 8px;
+        border-top: 1px dashed var(--border);
+      }
+      .expertise strong {
+        font-family: var(--mono);
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted);
+      }
+
+      details {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        background: var(--panel);
+        overflow: hidden;
+      }
+      details + details {
+        margin-top: 10px;
+      }
+      summary {
+        list-style: none;
+        cursor: pointer;
+        padding: 12px 12px;
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        user-select: none;
+      }
+      summary::-webkit-details-marker {
+        display: none;
+      }
+      .q {
+        font-weight: 650;
+        letter-spacing: -0.01em;
+      }
+      .chev {
+        font-family: var(--mono);
+        color: var(--muted);
+      }
+      details[open] .chev {
+        color: var(--text);
+      }
+      .a {
+        padding: 0 12px 12px;
+        color: var(--muted);
+        line-height: 1.6;
+        font-size: 14px;
+      }
+
+      footer {
+        margin-top: 18px;
+        color: var(--muted);
+        font-size: 12px;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 0 4px;
+      }
+      .btn {
+        cursor: pointer;
+        border: 1px solid var(--border);
+        background: var(--panel);
+        color: var(--text);
+        border-radius: 12px;
+        padding: 9px 11px;
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+      .btn:hover {
+        border-color: rgba(139, 92, 246, 0.55);
+      }
+      .warn {
+        color: rgba(251, 113, 133, 0.95);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <div class="hero">
+          <div class="kicker"><span class="dot"></span> Agent Collective · AI dev team</div>
+          <h1>Your AI development team</h1>
+          <p class="subtitle">
+            The AI Dev Team is a <strong>24-agent</strong>, multi-layer autonomous engineering system designed to function
+            like a full software company inside a single orchestrated kernel. It combines:
+            <br /><br />
+            <strong>10 Core Development Agents</strong> that handle research, planning, coding, testing, critique, memory,
+            browsing, writing, and execution
+            <br />
+            <strong>11 Titan Weave Infrastructure Agents</strong> that provide architecture, ingestion, database, rendering,
+            naming, privacy, consistency, and build pipelines
+            <br />
+            <strong>3 Creative/Production Agents</strong> for narration, presentation, and animation implementation
+            <br /><br />
+            Together, they form a self-coordinating, multi-agent development organization capable of taking tasks,
+            breaking them down, executing them, reviewing them, and producing production-ready code, assets, and
+            documentation. It’s essentially a full-stack engineering team, infrastructure team, and creative studio, all
+            running as a deterministic, orchestrated system.
+          </p>
+          <div class="badge-row">
+            <span class="badge">You ↔ team</span>
+            <span class="badge">Agent ↔ agent</span>
+            <span class="badge">Offline-capable</span>
+            <span class="badge">Standalone product UI</span>
+          </div>
+        </div>
+
+        <div class="controls" aria-label="Filters">
+          <div class="control-row">
+            <div class="label">Search</div>
+            <input
+              id="search"
+              class="input"
+              type="search"
+              placeholder="Search by role, skill, or keyword…"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </div>
+          <div class="control-row">
+            <div class="label">Quick filters</div>
+            <div class="pills" id="pills"></div>
+          </div>
+          <button id="reset" class="btn" type="button">Reset filters</button>
+        </div>
+      </header>
+
+      <main>
+        <section class="section" aria-label="AI development team roles">
+          <div class="section-title">
+            <h2>Team roster</h2>
+            <div class="count" id="count">—</div>
+          </div>
+          <div class="grid" id="grid" role="list"></div>
+        </section>
+
+        <section class="section" aria-label="SYNTHOS Proof Artifacts">
+          <div class="section-title">
+            <h2>SYNTHOS Proof Artifacts</h2>
+            <div class="count">Animated Flow</div>
+          </div>
+          <div style="margin-bottom: 12px; color: var(--muted); font-size: 15px;">
+            Explore a professional, animated cartoon sequence showing how SYNTHOS proof artifacts work together. Click Next to advance the story. Download the real JSON samples below.
+          </div>
+          <div id="artifact-cartoon" style="display:flex;justify-content:center;align-items:center;min-height:260px;margin-bottom:18px;background:rgba(255,255,255,0.03);border-radius:14px;box-shadow:0 2px 12px #0001;">
+            <!-- Cartoon SVG will be injected here -->
+          </div>
+          <div style="text-align:center;margin-bottom:18px;">
+            <button id="artifactNextBtn" class="btn" type="button" style="min-width:120px;">Next</button>
+            <span id="artifactStepLabel" style="margin-left:18px;color:var(--muted);font-size:15px;"></span>
+          </div>
+          <ul style="list-style: disc inside; padding-left: 12px;">
+            <li><a href="/samples/agent_identity.json" download style="color:var(--accent)">Agent Identity (JSON)</a></li>
+            <li><a href="/samples/action_receipt.json" download style="color:var(--accent)">Action Receipt (JSON)</a></li>
+            <li><a href="/samples/memory_anchor.json" download style="color:var(--accent)">Memory Anchor (JSON)</a></li>
+            <li><a href="/samples/replay_trace.json" download style="color:var(--accent)">Replay Trace (JSON)</a></li>
+            <li><a href="/samples/end_to_end_flow.json" download style="color:var(--accent)">End-to-End Flow (JSON)</a></li>
+          </ul>
+            <script>
+              // --- SYNTHOS Proof Artifacts Cartoon Animation ---
+              const artifactSteps = [
+                {
+                  label: "Agent receives a unique digital identity.",
+                  svg: `<svg width="340" height="200" viewBox="0 0 340 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="0" y="0" width="340" height="200" rx="18" fill="#181c24"/>
+                    <g>
+                      <circle cx="80" cy="100" r="38" fill="#8b5cf6" stroke="#fff" stroke-width="3"/>
+                      <text x="80" y="105" text-anchor="middle" font-size="22" fill="#fff" font-family="sans-serif" font-weight="bold">Agent</text>
+                      <rect x="160" y="70" width="120" height="60" rx="12" fill="#fff" stroke="#8b5cf6" stroke-width="2"/>
+                      <text x="220" y="100" text-anchor="middle" font-size="16" fill="#8b5cf6" font-family="sans-serif" font-weight="bold">Identity</text>
+                      <polyline points="118,100 160,100" stroke="#fff" stroke-width="3" marker-end="url(#arrow)"/>
+                      <defs>
+                        <marker id="arrow" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto" markerUnits="strokeWidth">
+                          <path d="M0,0 L10,5 L0,10 Z" fill="#fff" />
+                        </marker>
+                      </defs>
+                    </g>
+                  </svg>`
+                },
+                {
+                  label: "Agent performs an action and receives a signed receipt.",
+                  svg: `<svg width="340" height="200" viewBox="0 0 340 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="0" y="0" width="340" height="200" rx="18" fill="#181c24"/>
+                    <g>
+                      <circle cx="80" cy="100" r="38" fill="#8b5cf6" stroke="#fff" stroke-width="3"/>
+                      <text x="80" y="105" text-anchor="middle" font-size="22" fill="#fff" font-family="sans-serif" font-weight="bold">Agent</text>
+                      <rect x="160" y="70" width="120" height="60" rx="12" fill="#fff" stroke="#22c55e" stroke-width="2"/>
+                      <text x="220" y="100" text-anchor="middle" font-size="16" fill="#22c55e" font-family="sans-serif" font-weight="bold">Receipt</text>
+                      <polyline points="118,100 160,100" stroke="#fff" stroke-width="3" marker-end="url(#arrow)"/>
+                      <defs>
+                        <marker id="arrow" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto" markerUnits="strokeWidth">
+                          <path d="M0,0 L10,5 L0,10 Z" fill="#fff" />
+                        </marker>
+                      </defs>
+                    </g>
+                  </svg>`
+                },
+                {
+                  label: "Agent anchors memory to the blockchain.",
+                  svg: `<svg width="340" height="200" viewBox="0 0 340 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="0" y="0" width="340" height="200" rx="18" fill="#181c24"/>
+                    <g>
+                      <circle cx="80" cy="100" r="38" fill="#8b5cf6" stroke="#fff" stroke-width="3"/>
+                      <text x="80" y="105" text-anchor="middle" font-size="22" fill="#fff" font-family="sans-serif" font-weight="bold">Agent</text>
+                      <rect x="160" y="70" width="120" height="60" rx="12" fill="#fff" stroke="#f59e42" stroke-width="2"/>
+                      <text x="220" y="100" text-anchor="middle" font-size="16" fill="#f59e42" font-family="sans-serif" font-weight="bold">Memory</text>
+                      <polyline points="118,100 160,100" stroke="#fff" stroke-width="3" marker-end="url(#arrow)"/>
+                      <defs>
+                        <marker id="arrow" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto" markerUnits="strokeWidth">
+                          <path d="M0,0 L10,5 L0,10 Z" fill="#fff" />
+                        </marker>
+                      </defs>
+                    </g>
+                  </svg>`
+                },
+                {
+                  label: "Replay trace verifies the agent's actions.",
+                  svg: `<svg width="340" height="200" viewBox="0 0 340 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="0" y="0" width="340" height="200" rx="18" fill="#181c24"/>
+                    <g>
+                      <circle cx="80" cy="100" r="38" fill="#8b5cf6" stroke="#fff" stroke-width="3"/>
+                      <text x="80" y="105" text-anchor="middle" font-size="22" fill="#fff" font-family="sans-serif" font-weight="bold">Agent</text>
+                      <rect x="160" y="70" width="120" height="60" rx="12" fill="#fff" stroke="#f43f5e" stroke-width="2"/>
+                      <text x="220" y="100" text-anchor="middle" font-size="16" fill="#f43f5e" font-family="sans-serif" font-weight="bold">Replay</text>
+                      <polyline points="118,100 160,100" stroke="#fff" stroke-width="3" marker-end="url(#arrow)"/>
+                      <defs>
+                        <marker id="arrow" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto" markerUnits="strokeWidth">
+                          <path d="M0,0 L10,5 L0,10 Z" fill="#fff" />
+                        </marker>
+                      </defs>
+                    </g>
+                  </svg>`
+                },
+                {
+                  label: "End-to-end flow: agent, receipt, memory, replay—all connected.",
+                  svg: `<svg width="340" height="200" viewBox="0 0 340 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="0" y="0" width="340" height="200" rx="18" fill="#181c24"/>
+                    <g>
+                      <circle cx="60" cy="100" r="28" fill="#8b5cf6" stroke="#fff" stroke-width="3"/>
+                      <text x="60" y="105" text-anchor="middle" font-size="16" fill="#fff" font-family="sans-serif" font-weight="bold">Agent</text>
+                      <rect x="110" y="50" width="60" height="40" rx="10" fill="#fff" stroke="#8b5cf6" stroke-width="2"/>
+                      <text x="140" y="75" text-anchor="middle" font-size="13" fill="#8b5cf6" font-family="sans-serif" font-weight="bold">ID</text>
+                      <rect x="190" y="50" width="60" height="40" rx="10" fill="#fff" stroke="#22c55e" stroke-width="2"/>
+                      <text x="220" y="75" text-anchor="middle" font-size="13" fill="#22c55e" font-family="sans-serif" font-weight="bold">Receipt</text>
+                      <rect x="110" y="120" width="60" height="40" rx="10" fill="#fff" stroke="#f59e42" stroke-width="2"/>
+                      <text x="140" y="145" text-anchor="middle" font-size="13" fill="#f59e42" font-family="sans-serif" font-weight="bold">Memory</text>
+                      <rect x="190" y="120" width="60" height="40" rx="10" fill="#fff" stroke="#f43f5e" stroke-width="2"/>
+                      <text x="220" y="145" text-anchor="middle" font-size="13" fill="#f43f5e" font-family="sans-serif" font-weight="bold">Replay</text>
+                      <polyline points="88,100 110,70" stroke="#fff" stroke-width="2" marker-end="url(#arrow)"/>
+                      <polyline points="170,70 190,70" stroke="#fff" stroke-width="2" marker-end="url(#arrow)"/>
+                      <polyline points="88,100 110,140" stroke="#fff" stroke-width="2" marker-end="url(#arrow)"/>
+                      <polyline points="170,140 190,140" stroke="#fff" stroke-width="2" marker-end="url(#arrow)"/>
+                      <defs>
+                        <marker id="arrow" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto" markerUnits="strokeWidth">
+                          <path d="M0,0 L10,5 L0,10 Z" fill="#fff" />
+                        </marker>
+                      </defs>
+                    </g>
+                  </svg>`
+                }
+              ];
+              let artifactStep = 0;
+              function renderArtifactStep() {
+                const step = artifactSteps[artifactStep];
+                document.getElementById("artifact-cartoon").innerHTML = step.svg;
+                document.getElementById("artifactStepLabel").textContent = step.label;
+                document.getElementById("artifactNextBtn").textContent = artifactStep < artifactSteps.length - 1 ? "Next" : "Restart";
+              }
+              document.addEventListener("DOMContentLoaded", function() {
+                const btn = document.getElementById("artifactNextBtn");
+                if (!btn) return;
+                btn.addEventListener("click", function() {
+                  artifactStep = (artifactStep + 1) % artifactSteps.length;
+                  renderArtifactStep();
+                });
+                renderArtifactStep();
+              });
+            </script>
+        </section>
+
+        <section class="section" aria-label="Common goal kickoff">
+          <div class="section-title">
+            <h2>Common goal kickoff</h2>
+            <div class="count">Generate team prompts</div>
+          </div>
+
+          <div class="controls" aria-label="Kickoff inputs" style="margin-top: 6px">
+            <div class="control-row">
+              <div class="label">Goal</div>
+              <textarea
+                id="kickoffGoal"
+                class="input"
+                rows="3"
+                placeholder="Example: Build an onboarding flow that collects user intent and creates a project workspace."
+              ></textarea>
+            </div>
+            <div class="control-row">
+              <div class="label">Constraints (optional)</div>
+              <textarea
+                id="kickoffConstraints"
+                class="input"
+                rows="3"
+                placeholder="Examples: offline-first, no external APIs, must be secure, keep UI consistent with existing styles."
+              ></textarea>
+            </div>
+            <div class="control-row">
+              <div class="label">Mode</div>
+              <div class="badge-row" style="margin-top: 6px">
+                <label class="badge" style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer">
+                  <input id="kickoffOffline" type="checkbox" checked />
+                  Offline-first
+                </label>
+                <label class="badge" style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer">
+                  <input id="kickoffOnline" type="checkbox" />
+                  Allow online verification
+                </label>
+              </div>
+            </div>
+
+            <div class="control-row" style="grid-template-columns: 1fr; gap: 10px">
+              <button id="kickoffGenerate" class="btn" type="button">
+                Generate kickoff prompts
+              </button>
+              <button id="kickoffCopy" class="btn" type="button">
+                Copy kickoff prompts
+              </button>
+            </div>
+          </div>
+
+          <div style="margin-top: 12px">
+            <div class="label" style="margin-bottom: 8px">Kickoff output (copy/paste)</div>
+            <textarea id="kickoffOutput" class="input" rows="14" readonly></textarea>
+          </div>
+        </section>
+
+        <section class="section" aria-label="Question and answer">
+          <div class="section-title">
+            <h2>Question &amp; answer <span style="font-weight: 500; color: var(--muted); font-size: 14px">(Q&amp;A)</span></h2>
+            <div class="count">Common questions</div>
+          </div>
+
+          <details>
+            <summary>
+              <span class="q">What is this, in plain terms?</span>
+              <span class="chev">▾</span>
+            </summary>
+            <div class="a">
+              A structured <strong>AI development team</strong> you can stand up when you do not have engineers on payroll.
+              Roles mirror real dev org functions (research, planning, implementation, QA, docs, etc.) so you get
+              multi-step software work without pretending one generic chat is every discipline at once.
+            </div>
+          </details>
+
+          <details>
+            <summary>
+              <span class="q">How does the team communicate with me, the user?</span>
+              <span class="chev">▾</span>
+            </summary>
+            <div class="a">
+              Through a <strong>user channel</strong>: plain-language updates, questions when requirements are unclear,
+              options when there are tradeoffs, and approvals before risky changes. You stay the product owner; the team
+              surfaces what it needs (access, priorities, constraints) instead of guessing in silence.
+            </div>
+          </details>
+
+          <details>
+            <summary>
+              <span class="q">How do agents communicate with each other?</span>
+              <span class="chev">▾</span>
+            </summary>
+            <div class="a">
+              Through <strong>internal handoffs</strong>: structured messages or tickets (briefs, plans, diffs, test
+              reports), plus a shared <strong>Memory</strong> layer so context survives across sessions. Research passes
+              artifacts to Planner; Execution ships to Tester and Critic; Critic sends findings back to Execution or to you
+              when a decision is required.
+            </div>
+          </details>
+
+          <details>
+            <summary>
+              <span class="q">How do they work together on a common goal?</span>
+              <span class="chev">▾</span>
+            </summary>
+            <div class="a">
+              They run a team loop with shared artifacts. You give the goal and constraints. <strong>Research</strong>
+              turns them into a structured brief and flags unknowns. <strong>Planner</strong> converts the brief into
+              a plan with milestones, risks, and acceptance criteria. <strong>Execution</strong> implements the work
+              and produces concrete outputs (diffs, scripts, and handoff notes). <strong>Tester</strong> validates the
+              outputs against the acceptance criteria. <strong>Critic</strong> performs a review pass for correctness,
+              edge cases, and security. <strong>Memory</strong> stores what happened so the next iteration is faster and
+              consistent. Finally, <strong>Writer/Coder</strong> packages what you need to use and what to do next.
+            </div>
+          </details>
+
+          <details>
+            <summary>
+              <span class="q">Why is each role expected to be deeply knowledgeable?</span>
+              <span class="chev">▾</span>
+            </summary>
+            <div class="a">
+              So quality stays high without a human manager in the loop. Each agent is chartered as a
+              <strong>subject-matter lead</strong> for its title: correct terminology, best practices, edge cases, and
+              clear quality bars—whether the work is code, tests, or documentation.
+            </div>
+          </details>
+
+          <details>
+            <summary>
+              <span class="q">Can the team work offline?</span>
+              <span class="chev">▾</span>
+            </summary>
+            <div class="a">
+              Yes, when you implement it that way: local models, bundled references, cached docs, and on-disk memory.
+              Online mode adds live search and browser-style verification. This HTML page itself works fully offline once
+              saved on your machine.
+            </div>
+          </details>
+
+          <details>
+            <summary>
+              <span class="q">Why split Research, Planner, Execution, and Critic?</span>
+              <span class="chev">▾</span>
+            </summary>
+            <div class="a">
+              Same reason real teams separate those concerns: fewer missed requirements, clearer plans, safer delivery,
+              and a dedicated review pass before you ship—especially important when you are the only human in the room.
+            </div>
+          </details>
+
+          <details>
+            <summary>
+              <span class="q">Is this tied to another product or blockchain project?</span>
+              <span class="chev">▾</span>
+            </summary>
+            <div class="a">
+              No. This UI describes a <strong>standalone</strong> AI dev-team concept. You can copy this folder into its
+              own repository and evolve it without coupling to any unrelated codebase.
+            </div>
+          </details>
+        </section>
+
+        <footer>
+          <div>Agent Collective — portable UI for an AI dev team that collaborates with you and with itself.</div>
+          <div>
+            <button id="copyLink" class="btn" type="button">Copy deep-link</button>
+          </div>
+        </footer>
+      </main>
+    </div>
+
+    <script>
+      const AGENTS = [
+        {
+          name: "Research Agent",
+          layer: "Core Development",
+          purpose: "Gathers information, decomposes ambiguous goals into concrete requirements.",
+          expertise:
+            "Source evaluation, gap analysis, competitor and prior-art scans, structured briefs with explicit assumptions and open questions.",
+          generalKnowledge:
+            "Knows how the other roles contribute: Planner turns briefs into milestones, Execution produces implementable artifacts, Tester validates acceptance criteria, Critic checks failure modes and quality, and Memory stores shared context for later iterations.",
+          keywords: ["research", "requirements", "analysis", "discovery", "briefs", "offline"],
+        },
+        {
+          name: "Planner Agent",
+          layer: "Core Development",
+          purpose: "Turns requirements into ordered, checkable execution plans with risks and rollback points.",
+          expertise:
+            "Work breakdown, dependency mapping, estimation, milestones, and plan maintenance as facts change.",
+          generalKnowledge:
+            "Knows what Execution can realistically implement and how Tester will validate outcomes, so plans stay testable and reviewable; also understands how Critic evaluates security, completeness, and edge cases.",
+          keywords: ["plan", "strategy", "roadmap", "steps", "dependencies", "offline"],
+        },
+        {
+          name: "Execution Agent",
+          layer: "Core Development",
+          purpose: "Carries out the plan: implements changes, runs commands, produces artifacts.",
+          expertise:
+            "Disciplined delivery against specs, minimal scope creep, clear handoffs, and traceability from task to output.",
+          generalKnowledge:
+            "Knows how to translate plan steps into shippable diffs/scripts and how Tester expects acceptance evidence; also understands how Critic wants risk addressed and how Memory/Writer package outputs for the team.",
+          keywords: ["execute", "implement", "actions", "deliver", "build", "offline"],
+        },
+        {
+          name: "Critic Agent",
+          layer: "Core Development",
+          purpose: "Reviews work products for correctness, completeness, security, and clarity.",
+          expertise:
+            "Adversarial review, failure-mode analysis, actionable feedback, and severity-ranked issue lists.",
+          generalKnowledge:
+            "Knows how good tests prove behavior and how docs guide usage, so critique is targeted and actionable; understands what to request from Execution when issues are found.",
+          keywords: ["review", "quality", "audit", "critique", "risk", "offline"],
+        },
+        {
+          name: "Memory Agent",
+          layer: "Core Development",
+          purpose: "Persists and retrieves long-term project knowledge across sessions.",
+          expertise:
+            "Knowledge graphing, document indexing, retrieval hygiene, deduplication, and citation of stored facts.",
+          generalKnowledge:
+            "Knows the artifact formats and terminology used by the team (briefs, plans, diffs, tests, reviews, and decisions), so it can store and retrieve consistent context across iterations.",
+          keywords: ["memory", "knowledge", "context", "recall", "archive", "offline"],
+        },
+        {
+          name: "Vision Agent",
+          layer: "Core Development",
+          purpose: "Interprets images, diagrams, screenshots, and simple UI layouts.",
+          expertise:
+            "Visual question answering, layout understanding, accessibility cues, and turning pixels into structured descriptions.",
+          generalKnowledge:
+            "Understands how visual findings become requirements for Research, how they influence plan scope and risks, and how Tester will verify that delivered UI matches intended structure and behavior.",
+          keywords: ["vision", "ui", "images", "diagrams", "screenshots", "offline"],
+        },
+        {
+          name: "Browser Agent",
+          layer: "Core Development",
+          purpose: "When online: navigates sites, gathers public data, and verifies live behavior.",
+          expertise:
+            "Responsible scraping, session handling, evidence capture, and reproducible navigation scripts (where permitted).",
+          generalKnowledge:
+            "Knows what evidence Research needs, what reproducibility Tester needs, and what security/correctness Critic cares about; also understands when information should be cached for offline use.",
+          keywords: ["browser", "web", "online", "navigate", "live"],
+        },
+        {
+          name: "Writer Agent",
+          layer: "Core Development",
+          purpose: "Produces documentation, narratives, and user-facing copy to a defined tone and audience.",
+          expertise:
+            "Information architecture, style guides, changelogs, tutorials, and crisp explanations without invented facts.",
+          generalKnowledge:
+            "Knows the difference between requirements, plans, and proof so docs match reality; understands how to package next steps and decisions so Execution and Tester can continue smoothly.",
+          keywords: ["docs", "writing", "explanations", "content", "tone", "offline"],
+        },
+        {
+          name: "Coder Agent",
+          layer: "Core Development",
+          purpose: "Authors and refactors code, modules, and interfaces to team standards.",
+          expertise:
+            "Idiomatic patterns, API design, performance tradeoffs, readability, and safe refactors with tests in mind.",
+          generalKnowledge:
+            "Knows how plan milestones map to implementation tasks and how acceptance criteria map to test cases; understands how Critic feedback changes implementation approach and scope.",
+          keywords: ["code", "refactor", "modules", "implementation", "api", "offline"],
+        },
+        {
+          name: "Tester Agent",
+          layer: "Core Development",
+          purpose: "Designs and runs tests; proves behavior against acceptance criteria.",
+          expertise:
+            "Unit/integration/e2e strategy, fixtures, flaky-test diagnosis, coverage of edge cases, and regression gates.",
+          generalKnowledge:
+            "Knows what acceptance criteria mean in practice and how to produce evidence that Critic can interpret; also understands what information to feed back to Planning/Execution when failures occur.",
+          keywords: ["tests", "qa", "validation", "verification", "ci", "offline"],
+        },
+
+        {
+          name: "Architecture Agent",
+          layer: "Titan Weave Infrastructure",
+          purpose: "Defines system architecture, boundaries, and cross-cutting design decisions.",
+          expertise:
+            "Architecture diagrams, service boundaries, threat modeling at a high level, dependency direction rules, and non-functional requirements translated into design constraints.",
+          generalKnowledge:
+            "Understands how Planner milestones become architectural increments, how Coder implements interfaces, and how Tester/ Critic validate quality and risk; coordinates with privacy/consistency/build agents.",
+          keywords: ["architecture", "design", "boundaries", "interfaces", "infra", "offline"],
+        },
+        {
+          name: "Ingestion Agent",
+          layer: "Titan Weave Infrastructure",
+          purpose: "Builds ingestion pipelines for files, events, APIs, and batch imports.",
+          expertise:
+            "ETL/ELT patterns, idempotency, backfills, schema evolution, retry logic, dead-letter handling, and data validation.",
+          generalKnowledge:
+            "Knows how data models affect the database layer and how rendering/search depends on clean ingestion; coordinates with privacy and consistency to enforce safe handling.",
+          keywords: ["ingestion", "etl", "pipelines", "data", "infra", "online", "offline"],
+        },
+        {
+          name: "Database Agent",
+          layer: "Titan Weave Infrastructure",
+          purpose: "Owns data modeling, storage choices, indexing, and migration safety.",
+          expertise:
+            "Schema design, migrations, performance, indexing, caching, transactional integrity, backup/restore, and data lifecycle.",
+          generalKnowledge:
+            "Understands how ingestion writes and how apps read; coordinates with privacy (PII) and consistency (constraints) and with build pipelines for migration testing.",
+          keywords: ["database", "schema", "migrations", "indexes", "infra", "offline"],
+        },
+        {
+          name: "Rendering Agent",
+          layer: "Titan Weave Infrastructure",
+          purpose: "Owns rendering and presentation pipeline reliability (UI rendering, server rendering, asset assembly).",
+          expertise:
+            "Render performance, component boundaries, caching strategies, bundling, and deterministic rendering output for consistent UX.",
+          generalKnowledge:
+            "Knows how naming conventions and design tokens affect UI, and how build pipelines ship assets; coordinates with creative agents for animation integration.",
+          keywords: ["rendering", "ui", "performance", "assets", "infra"],
+        },
+        {
+          name: "Naming Agent",
+          layer: "Titan Weave Infrastructure",
+          purpose: "Enforces naming systems: identifiers, conventions, taxonomies, and consistency across artifacts.",
+          expertise:
+            "Naming conventions, domain modeling vocabulary, schema naming, API naming, and avoiding ambiguity across code/docs.",
+          generalKnowledge:
+            "Understands how consistent naming reduces bugs and improves testability/documentation; coordinates with Writer and Database for shared vocab.",
+          keywords: ["naming", "taxonomy", "conventions", "consistency", "infra", "offline"],
+        },
+        {
+          name: "Privacy Agent",
+          layer: "Titan Weave Infrastructure",
+          purpose: "Ensures privacy-by-design and safe handling of sensitive data.",
+          expertise:
+            "PII classification, data minimization, retention, redaction, secure storage, access control principles, and audit-friendly practices.",
+          generalKnowledge:
+            "Understands how ingestion/storage/rendering can leak data; works with Critic and Database to enforce constraints and with Build Pipeline Agent to add guardrails.",
+          keywords: ["privacy", "pii", "security", "retention", "infra"],
+        },
+        {
+          name: "Consistency Agent",
+          layer: "Titan Weave Infrastructure",
+          purpose: "Maintains consistency across code, data, UX, and multi-agent outputs.",
+          expertise:
+            "Invariants, contract tests, schemas as contracts, versioning strategy, and cross-module compatibility.",
+          generalKnowledge:
+            "Understands how Planner/Execution changes ripple across systems; coordinates with Tester and Build Pipeline Agent to enforce invariants automatically.",
+          keywords: ["consistency", "invariants", "contracts", "versioning", "infra"],
+        },
+        {
+          name: "Build Pipeline Agent",
+          layer: "Titan Weave Infrastructure",
+          purpose: "Owns build, CI/CD, packaging, and reproducible delivery pipelines.",
+          expertise:
+            "Deterministic builds, CI workflows, artifact publishing, environment parity, dependency pinning, and release automation.",
+          generalKnowledge:
+            "Understands what tests must run, what assets must be built, and how infra changes need pipeline updates; coordinates with Critic for security gates.",
+          keywords: ["build", "ci", "cd", "pipelines", "infra", "release"],
+        },
+        {
+          name: "Kernel Orchestration Agent",
+          layer: "Titan Weave Infrastructure",
+          purpose: "Defines the orchestrated kernel that schedules agents, routes messages, and enforces deterministic runs.",
+          expertise:
+            "Task routing, role assignment, deterministic execution plans, state machines for workflow, and audit trails for decisions.",
+          generalKnowledge:
+            "Understands every role’s artifact needs and ensures handoffs happen in the right order; coordinates with Memory for persistence and with Consistency for invariants.",
+          keywords: ["orchestration", "kernel", "routing", "deterministic", "infra", "offline"],
+        },
+        {
+          name: "Observability Agent",
+          layer: "Titan Weave Infrastructure",
+          purpose: "Provides logging, metrics, tracing, and debugging visibility across the system.",
+          expertise:
+            "Telemetry design, structured logs, dashboards, alerting, runbooks, and postmortem templates.",
+          generalKnowledge:
+            "Understands how to instrument code paths for Execution/Coder and how to validate signals via Tester; coordinates with Build Pipeline Agent for CI visibility.",
+          keywords: ["observability", "logging", "metrics", "tracing", "infra"],
+        },
+        {
+          name: "Release Agent",
+          layer: "Titan Weave Infrastructure",
+          purpose: "Owns release readiness, versioning, packaging, and rollout safety.",
+          expertise:
+            "Release checklists, semantic versioning, changelogs, rollout plans, feature flags, and rollback procedures.",
+          generalKnowledge:
+            "Understands what Critic and Tester require to sign off, and what Writer needs to communicate; coordinates with Build Pipeline Agent to ship artifacts.",
+          keywords: ["release", "versioning", "rollout", "changelog", "infra"],
+        },
+
+        {
+          name: "Narration Agent",
+          layer: "Creative/Production",
+          purpose: "Produces narration scripts and voiceover-ready text aligned to the product and audience.",
+          expertise:
+            "Narrative structure, pacing, clarity, and scripts that map to on-screen actions and UI states.",
+          generalKnowledge:
+            "Understands what the product does from the brief/plan, and coordinates with Presentation and Animation so narration matches visuals and timing.",
+          keywords: ["narration", "script", "voiceover", "creative"],
+        },
+        {
+          name: "Presentation Agent",
+          layer: "Creative/Production",
+          purpose: "Creates polished presentations: story, slides, and structured demos.",
+          expertise:
+            "Storyboarding, slide design direction, demo flow, and message clarity for different audiences.",
+          generalKnowledge:
+            "Understands core functionality and constraints so the story stays accurate; coordinates with Writer for wording and with Animation for motion integration.",
+          keywords: ["presentation", "slides", "demo", "story", "creative"],
+        },
+        {
+          name: "Animation Implementation Agent",
+          layer: "Creative/Production",
+          purpose: "Implements animations and motion behaviors in the product (or in assets) with performance in mind.",
+          expertise:
+            "Motion design implementation, timing curves, UI animation performance, and cross-platform constraints.",
+          generalKnowledge:
+            "Understands rendering constraints and build pipelines, and coordinates with Presentation/Narration so motion supports the story without harming UX.",
+          keywords: ["animation", "motion", "ui", "performance", "creative"],
+        },
+      ];
+
+      const $ = (id) => document.getElementById(id);
+
+      const state = {
+        query: "",
+        tag: null,
+      };
+
+      const kickoffGoalEl = $("kickoffGoal");
+      const kickoffConstraintsEl = $("kickoffConstraints");
+      const kickoffOfflineEl = $("kickoffOffline");
+      const kickoffOnlineEl = $("kickoffOnline");
+      const kickoffGenerateEl = $("kickoffGenerate");
+      const kickoffCopyEl = $("kickoffCopy");
+      const kickoffOutputEl = $("kickoffOutput");
+
+      const buildAgentKickoffPrompt = (agent, ctx) => {
+        const artifact = ctx.artifactByAgent[agent.name] || "TEAM_AGENT_OUTPUT";
+
+        const modeBits = [];
+        if (ctx.offlineFirst) modeBits.push("offline-first");
+        if (ctx.allowOnline) modeBits.push("online-allowed");
+        const modeLabel = modeBits.length ? modeBits.join(" + ") : "unspecified";
+
+        const artifactHints = ctx.artifactHints[artifact] || [];
+        const artifactFields = artifactHints.length
+          ? artifactHints.map((h) => `- ${h}`).join("\n")
+          : "- (include what the next role needs)";
+
+        const clarifyingPolicy = [
+          "- If requirements are missing, ask up to 5 clarifying questions to the user.",
+          "- If requirements are sufficient, state assumptions explicitly before you proceed.",
+        ].join("\n");
+
+        const handoffPolicy = [
+          "- Produce your artifact in the strict format below.",
+          "- Keep it reviewable: include what you did, what you assumed, and what you need next.",
+        ].join("\n");
+
+        return (
+          `You are ${agent.name}.\n` +
+          `You are part of an AI development team. Each role has a specialty AND general knowledge of the other roles.\n\n` +
+          `TEAM CONTEXT\n` +
+          `Goal: ${ctx.goal}\n` +
+          `Constraints: ${ctx.constraints}\n` +
+          `Mode: ${modeLabel}\n\n` +
+          `SPECIALTY CHARTER\n${agent.expertise}\n\n` +
+          `GENERAL KNOWLEDGE OF OTHER ROLES\n${agent.generalKnowledge}\n\n` +
+          `USER COMMUNICATION (YOU <-> THE USER)\n${clarifyingPolicy}\n\n` +
+          `TEAM HANDOFF (YOU <-> OTHER AGENTS)\n${handoffPolicy}\n\n` +
+          `STRICT OUTPUT FORMAT\n` +
+          `[${artifact}]\n` +
+          `${artifactFields}\n`
+        );
+      };
+
+      const artifactHints = {
+        TEAM_BRIEF: [
+          "Restate the goal in your own words",
+          "Assumptions and open questions",
+          "Functional requirements (numbered)",
+          "Non-functional requirements (security, performance, offline/online)",
+          "Success criteria",
+          "Dependencies and risks (high-level)",
+        ],
+        TEAM_ARCHITECTURE: [
+          "Architecture overview (components and boundaries)",
+          "Data flows and interfaces",
+          "Key decisions + alternatives considered",
+          "Non-functional requirements mapping (privacy, consistency, performance)",
+          "Risks and mitigations",
+        ],
+        TEAM_INGESTION_SPEC: [
+          "Inputs/sources and formats",
+          "Validation rules and error handling",
+          "Idempotency and retry strategy",
+          "Schema evolution plan",
+          "Offline-friendly caching plan (if applicable)",
+        ],
+        TEAM_DB_SCHEMA: [
+          "Entities/tables/collections and relationships",
+          "Indexes and query patterns",
+          "Migration plan and rollback",
+          "Retention/privacy constraints",
+        ],
+        TEAM_RENDERING_PLAN: [
+          "Rendering approach (client/server), caching, and performance targets",
+          "Asset pipeline needs",
+          "Integration notes for animation/motion",
+        ],
+        TEAM_NAMING_RULES: [
+          "Domain vocabulary and glossary",
+          "Naming conventions (APIs, DB, files, identifiers)",
+          "Examples of do/don’t",
+        ],
+        TEAM_PRIVACY_REVIEW: [
+          "Data classification (PII, sensitive)",
+          "Minimization and retention plan",
+          "Access control + audit considerations",
+          "Redaction/logging guidance",
+        ],
+        TEAM_INVARIANTS: [
+          "System invariants and contracts",
+          "Versioning/compatibility rules",
+          "How invariants are enforced (tests, checks)",
+        ],
+        TEAM_PIPELINE_CHANGES: [
+          "CI/CD changes required",
+          "Build steps and caching strategy",
+          "Quality gates (tests, lint, security checks)",
+          "Release artifact outputs",
+        ],
+        TEAM_ORCHESTRATION_SPEC: [
+          "Agent routing and ordering",
+          "Artifact handoff rules",
+          "Determinism and audit trail requirements",
+        ],
+        TEAM_OBSERVABILITY_PLAN: [
+          "Logs/metrics/traces to add",
+          "Dashboards/alerts (if applicable)",
+          "Runbook notes for common failures",
+        ],
+        TEAM_RELEASE_PLAN: [
+          "Versioning and changelog summary",
+          "Rollout plan + rollback steps",
+          "Release checklist and sign-offs",
+        ],
+        TEAM_CREATIVE_BRIEF: [
+          "Audience + purpose",
+          "Key message and tone",
+          "Storyboard outline",
+          "Assets needed and dependencies",
+        ],
+        TEAM_NARRATION_SCRIPT: [
+          "Narration script (time-coded if possible)",
+          "On-screen beats that narration matches",
+          "Claims checklist (must be true)",
+        ],
+        TEAM_PRESENTATION_DECK: [
+          "Slide outline (titles + bullets)",
+          "Demo flow steps",
+          "Notes for presenter",
+        ],
+        TEAM_ANIMATION_NOTES: [
+          "Animation goals and UI states",
+          "Implementation approach + performance considerations",
+          "Integration checklist (rendering/build)",
+        ],
+        TEAM_PLAN: [
+          "Milestones (ordered)",
+          "Task breakdown mapped to roles",
+          "Acceptance criteria per milestone",
+          "Rollback/mitigation notes for key risks",
+        ],
+        TEAM_IMPLEMENTATION_NOTES: [
+          "What you changed (summary)",
+          "How to run it (commands / steps)",
+          "Known limitations",
+          "What you need from Tester next",
+        ],
+        TEAM_TEST_PLAN: [
+          "Test strategy (unit/integration/e2e as relevant)",
+          "Concrete test cases mapped to acceptance criteria",
+          "How to reproduce failures",
+        ],
+        TEAM_CRITIC_REVIEW: [
+          "Findings grouped by severity (high/medium/low)",
+          "Missing edge cases",
+          "Security/correctness concerns",
+          "Actionable next steps",
+        ],
+        TEAM_MEMORY_ENTRY: [
+          "Key facts learned",
+          "Decisions made (with rationale)",
+          "Current status of work",
+          "Pointers to artifacts (brief/plan/review/results)",
+        ],
+        TEAM_USER_PACKAGE: [
+          "What the team delivered",
+          "How the user should verify it",
+          "Next steps and any decisions the user must make",
+        ],
+        TEAM_EVIDENCE: [
+          "Evidence collected (what, where, timestamp or source reference)",
+          "How it supports or changes the plan",
+          "Offline-friendly summaries (so work continues without internet)",
+        ],
+        TEAM_CODE_DELIVERABLES: [
+          "Files/components to edit or add",
+          "High-level diff summary",
+          "How tests should be updated/added",
+        ],
+      };
+
+      const artifactByAgent = {
+        "Research Agent": "TEAM_BRIEF",
+        "Planner Agent": "TEAM_PLAN",
+        "Execution Agent": "TEAM_IMPLEMENTATION_NOTES",
+        "Coder Agent": "TEAM_CODE_DELIVERABLES",
+        "Tester Agent": "TEAM_TEST_PLAN",
+        "Critic Agent": "TEAM_CRITIC_REVIEW",
+        "Memory Agent": "TEAM_MEMORY_ENTRY",
+        "Writer Agent": "TEAM_USER_PACKAGE",
+        "Vision Agent": "TEAM_EVIDENCE",
+        "Browser Agent": "TEAM_EVIDENCE",
+
+        "Architecture Agent": "TEAM_ARCHITECTURE",
+        "Ingestion Agent": "TEAM_INGESTION_SPEC",
+        "Database Agent": "TEAM_DB_SCHEMA",
+        "Rendering Agent": "TEAM_RENDERING_PLAN",
+        "Naming Agent": "TEAM_NAMING_RULES",
+        "Privacy Agent": "TEAM_PRIVACY_REVIEW",
+        "Consistency Agent": "TEAM_INVARIANTS",
+        "Build Pipeline Agent": "TEAM_PIPELINE_CHANGES",
+        "Kernel Orchestration Agent": "TEAM_ORCHESTRATION_SPEC",
+        "Observability Agent": "TEAM_OBSERVABILITY_PLAN",
+        "Release Agent": "TEAM_RELEASE_PLAN",
+
+        "Narration Agent": "TEAM_NARRATION_SCRIPT",
+        "Presentation Agent": "TEAM_PRESENTATION_DECK",
+        "Animation Implementation Agent": "TEAM_ANIMATION_NOTES",
+      };
+
+      const kickoffGenerate = () => {
+        const goal = (kickoffGoalEl?.value || "").trim();
+        const constraints = (kickoffConstraintsEl?.value || "").trim();
+        const offlineFirst = Boolean(kickoffOfflineEl?.checked);
+        const allowOnline = Boolean(kickoffOnlineEl?.checked);
+
+        if (!goal) {
+          kickoffOutputEl.value = "Please enter a goal first.";
+          return;
+        }
+
+        const ctx = {
+          goal,
+          constraints: constraints || "(none provided)",
+          offlineFirst,
+          allowOnline,
+          artifactHints,
+          artifactByAgent,
+        };
+
+        // In case you want to run only a subset: the prompts below still preserve the full team loop.
+        let out = "";
+        out += "COMMON TEAM START (copy/paste into your orchestrator or per-agent chats)\n";
+        out += "---------------------------------------------------------------\n";
+        out += `Goal: ${ctx.goal}\n`;
+        out += `Constraints: ${ctx.constraints}\n`;
+        out += `Mode: ${(ctx.offlineFirst ? "offline-first" : "")}${ctx.allowOnline ? (ctx.offlineFirst ? " + online-allowed" : "online-allowed") : ""}\n\n`;
+
+        for (const agent of AGENTS) {
+          out += `==================== ${agent.name} ====================\n`;
+          out += buildAgentKickoffPrompt(agent, ctx);
+          out += "\n";
+        }
+
+        kickoffOutputEl.value = out.trim() + "\n";
+      };
+
+      const kickoffCopy = async () => {
+        try {
+          await navigator.clipboard.writeText(kickoffOutputEl.value || "");
+          kickoffCopyEl.textContent = "Copied";
+          setTimeout(() => (kickoffCopyEl.textContent = "Copy kickoff prompts"), 900);
+        } catch {
+          kickoffCopyEl.textContent = "Copy failed";
+          kickoffCopyEl.classList.add("warn");
+          setTimeout(() => {
+            kickoffCopyEl.textContent = "Copy kickoff prompts";
+            kickoffCopyEl.classList.remove("warn");
+          }, 1200);
+        }
+      };
+
+      if (kickoffGenerateEl) kickoffGenerateEl.addEventListener("click", kickoffGenerate);
+      if (kickoffCopyEl) kickoffCopyEl.addEventListener("click", kickoffCopy);
+
+      const keywordsToPills = () => {
+        const set = new Set();
+        for (const a of AGENTS) for (const k of a.keywords) set.add(k);
+        return Array.from(set).sort((a, b) => a.localeCompare(b));
+      };
+
+      const renderPills = () => {
+        const pills = keywordsToPills();
+        const root = $("pills");
+        root.innerHTML = "";
+        const chosen = state.tag;
+
+        const top = [
+          "offline",
+          "online",
+          "research",
+          "plan",
+          "tests",
+          "docs",
+          "code",
+          "architecture",
+          "pipelines",
+          "privacy",
+          "database",
+          "rendering",
+          "orchestration",
+          "release",
+          "creative",
+        ];
+        const curated = [];
+        for (const t of top) if (pills.includes(t)) curated.push(t);
+        for (const p of pills) if (!curated.includes(p)) curated.push(p);
+
+        for (const text of curated.slice(0, 16)) {
+          const el = document.createElement("button");
+          el.type = "button";
+          el.className = "pill";
+          el.textContent = text;
+          el.dataset.active = String(chosen === text);
+          el.addEventListener("click", () => {
+            state.tag = state.tag === text ? null : text;
+            render();
+          });
+          root.appendChild(el);
+        }
+      };
+
+      const filterAgents = () => {
+        const q = state.query.trim().toLowerCase();
+        const tag = state.tag;
+
+        return AGENTS.filter((a) => {
+          if (tag && !a.keywords.includes(tag)) return false;
+          if (!q) return true;
+
+          const hay = [a.name, a.purpose, a.expertise, a.generalKnowledge, ...a.keywords]
+            .join(" ")
+            .toLowerCase();
+          return hay.includes(q);
+        });
+      };
+
+      const renderGrid = (items) => {
+        const grid = $("grid");
+        grid.innerHTML = "";
+
+        for (const a of items) {
+          const el = document.createElement("article");
+          el.className = "card";
+          el.setAttribute("role", "listitem");
+
+          const top = document.createElement("div");
+          top.className = "card-top";
+
+          const role = document.createElement("div");
+          role.className = "role";
+          role.textContent = a.name;
+
+          const tag = document.createElement("div");
+          tag.className = "tag";
+          tag.textContent = a.layer ? `${a.layer}` : "Dev team role";
+
+          top.appendChild(role);
+          top.appendChild(tag);
+
+          const p = document.createElement("p");
+          p.className = "purpose";
+          p.textContent = a.purpose;
+
+          const ex = document.createElement("div");
+          ex.className = "expertise";
+          ex.innerHTML =
+            "<strong>Specialty charter</strong><br />" +
+            a.expertise +
+            "<br /><br /><strong>General knowledge of other roles</strong><br />" +
+            a.generalKnowledge;
+
+          el.appendChild(top);
+          el.appendChild(p);
+          el.appendChild(ex);
+          grid.appendChild(el);
+        }
+      };
+
+      const updateCount = (n) => {
+        const extra = state.tag ? ` · tag: ${state.tag}` : "";
+        $("count").textContent = `${n} roles${extra}`;
+      };
+
+      const encodeStateToHash = () => {
+        const params = new URLSearchParams();
+        if (state.query) params.set("q", state.query);
+        if (state.tag) params.set("tag", state.tag);
+        const s = params.toString();
+        return s ? `#${s}` : "";
+      };
+
+      const applyHash = () => {
+        const raw = location.hash.startsWith("#") ? location.hash.slice(1) : "";
+        const params = new URLSearchParams(raw);
+        const q = params.get("q") || "";
+        const tag = params.get("tag");
+
+        state.query = q;
+        state.tag = tag && tag.trim() ? tag.trim() : null;
+
+        $("search").value = state.query;
+      };
+
+      const render = () => {
+        const items = filterAgents();
+        renderPills();
+        renderGrid(items);
+        updateCount(items.length);
+        const next = encodeStateToHash();
+        if (location.hash !== next) history.replaceState(null, "", next || " ");
+      };
+
+      $("search").addEventListener("input", (e) => {
+        state.query = e.target.value;
+        render();
+      });
+      $("reset").addEventListener("click", () => {
+        state.query = "";
+        state.tag = null;
+        $("search").value = "";
+        render();
+      });
+
+      $("copyLink").addEventListener("click", async () => {
+        try {
+          const url = new URL(location.href);
+          url.hash = encodeStateToHash();
+          await navigator.clipboard.writeText(url.toString());
+          $("copyLink").textContent = "Copied";
+          setTimeout(() => ($("copyLink").textContent = "Copy deep-link"), 900);
+        } catch {
+          $("copyLink").textContent = "Copy failed";
+          $("copyLink").classList.add("warn");
+          setTimeout(() => {
+            $("copyLink").textContent = "Copy deep-link";
+            $("copyLink").classList.remove("warn");
+          }, 1200);
+        }
+      });
+
+      window.addEventListener("hashchange", () => {
+        applyHash();
+        render();
+      });
+
+      applyHash();
+      render();
+    </script>
+  </body>
+</html>
