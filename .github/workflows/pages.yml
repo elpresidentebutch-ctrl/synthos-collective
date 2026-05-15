@@ -1,10 +1,10 @@
-name: Deploy Mobile Validator PWA to GitHub Pages
+name: Deploy Synthos Collective Website to GitHub Pages
 
 on:
   push:
     branches: [main]
     paths:
-      - 'workers/mobile-validator/**'
+      - 'agent-collective-ui/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -32,7 +32,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: workers/mobile-validator
+          path: agent-collective-ui
 
       - name: Deploy to GitHub Pages
         id: deployment
