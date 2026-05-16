@@ -18,13 +18,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: agent-collective-ui/package.json
+
+      - name: Install dependencies
+        run: npm install
+        working-directory: agent-collective-ui
+
+      - name: Build
+        run: npm run build
+        working-directory: agent-collective-ui
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
@@ -32,8 +44,15 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: agent-collective-ui
+          path: agent-collective-ui/dist
 
+  deploy:
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
