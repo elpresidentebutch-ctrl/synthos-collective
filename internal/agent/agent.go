@@ -422,21 +422,17 @@ func hashProof(p ProofOfComputation) string {
 	return "0x" + hex.EncodeToString(sum[:])
 }
 
-// randomNonce is a minimal placeholder for generating nonces.
-// For production use, this should be replaced with a cryptographically secure
-// random source (e.g. crypto/rand).
+// randomNonce generates a 16-byte cryptographically secure random nonce.
+// It panics if the OS entropy source is unavailable, because falling back to
+// weak (predictable) randomness would silently undermine replay protection.
 func randomNonce() string {
-	// Use cryptographically secure randomness to avoid nonce collisions,
-	// which would trigger replay protection incorrectly.
-	buf := make([]byte, 32)
-	_, err := rand.Read(buf)
-	if err != nil {
-		// Fallback to time-based entropy if crypto/rand fails (should be rare).
-		now := time.Now().UTC().UnixNano()
-		b, _ := json.Marshal(now)
-		sum := sha256.Sum256(b)
-		return hex.EncodeToString(sum[:16])
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		// crypto/rand failure indicates a broken OS entropy source.
+		// Panicking is safer than producing predictable nonces that could
+		// be exploited for replay attacks.
+		panic("crypto/rand unavailable: " + err.Error())
 	}
-	return hex.EncodeToString(buf[:16])
+	return hex.EncodeToString(buf)
 }
 
