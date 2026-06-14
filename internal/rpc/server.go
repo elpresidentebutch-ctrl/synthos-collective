@@ -43,8 +43,10 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/status", s.handleStatus)
+	mux.HandleFunc("/account", s.handleAccount)
 	mux.HandleFunc("/balance", s.handleBalance)
 	mux.HandleFunc("/mempool", s.handleMempool)
+	mux.HandleFunc("/blocks", s.handleBlocks)
 	mux.HandleFunc("/dex/pools", s.handleDEXPools)
 	mux.HandleFunc("/dex/quote", s.handleDEXQuote)
 	mux.HandleFunc("/dex/swap", s.handleDEXSwap)
@@ -107,10 +109,42 @@ func (s *Server) handleBalance(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleAccount(w http.ResponseWriter, r *http.Request) {
+	addr := r.URL.Query().Get("address")
+	if addr == "" {
+		http.Error(w, "missing address", http.StatusBadRequest)
+		return
+	}
+	account := s.Chain.State.Get(chain.Address(addr))
+	writeJSON(w, map[string]any{
+		"address": addr,
+		"balance": account.Balance,
+		"nonce":   account.Nonce,
+		"assets":  account.Assets,
+	})
+}
+
 func (s *Server) handleMempool(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{
 		"size": len(s.Chain.Mempool),
 		"tx":   s.Chain.Mempool,
+	})
+}
+
+func (s *Server) handleBlocks(w http.ResponseWriter, r *http.Request) {
+	from := 0
+	if raw := r.URL.Query().Get("from"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 0 {
+			http.Error(w, "invalid from", http.StatusBadRequest)
+			return
+		}
+		from = parsed
+	}
+	blocks := s.Chain.BlocksFrom(from)
+	writeJSON(w, map[string]any{
+		"blocks": blocks,
+		"count":  len(blocks),
 	})
 }
 

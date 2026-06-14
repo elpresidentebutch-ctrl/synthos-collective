@@ -30,8 +30,8 @@ Already present or partially present:
   DEX state, and persistence.
 - Consensus concepts: block proposals, votes, finality threshold, and slashing
   primitives.
-- RPC node: health/status, balances, mempool, block proposal, DEX pool/quote/swap
-  endpoints.
+- RPC node: health/status, account, balances, block listing, mempool, block
+  proposal, DEX pool/quote/swap endpoints.
 - Validator/immune node concepts: desktop/silent node entrypoints, mobile and
   desktop validator workers, relay transport, peer registry worker, and
   serverless validator experiments.
@@ -155,15 +155,18 @@ privacy tooling:
 ## Build Order
 
 1. Create a local L1 health check command that proves block finality and state
-   convergence.
-2. Make `cmd/rpcnode` expose the website-facing status, validator, DEX, and node
+   convergence. Done with `cmd/l1check`.
+2. Create a real-process local network check that launches multiple validators,
+   proves TCP/RPC consensus, and verifies restart recovery. Done with
+   `cmd/l1netcheck`.
+3. Make `cmd/rpcnode` expose the website-facing status, validator, DEX, and node
    activation endpoints.
-3. Wire `THE_COLLECTIVE_DEX_LIVE.html` and status pages to the local RPC API.
-4. Implement persistent node identity and outbound heartbeat.
-5. Add stake-weighted validator selection and attestation counting.
-6. Add governance proposals/votes and status pages.
-7. Add SDK/API docs generated from the actual RPC routes.
-8. Prepare a testnet launch runbook with exact commands and pass/fail checks.
+4. Wire `THE_COLLECTIVE_DEX_LIVE.html` and status pages to the local RPC API.
+5. Implement persistent node identity and outbound heartbeat.
+6. Add stake-weighted validator selection and attestation counting.
+7. Add governance proposals/votes and status pages.
+8. Add SDK/API docs generated from the actual RPC routes.
+9. Prepare a testnet launch runbook with exact commands and pass/fail checks.
 
 ## First Proof Milestone
 
@@ -186,13 +189,36 @@ It verifies the L1 kernel by:
 This is not yet a public production network, but it is the first executable
 proof that the local L1 ledger and finality path can work end-to-end.
 
+## Second Proof Milestone
+
+The real-process network proof command now exists:
+
+```powershell
+go run ./cmd/l1netcheck
+```
+
+It verifies the L1 node network by:
+
+- Building a `synthosd` executable.
+- Launching four real validator processes.
+- Connecting validators over TCP transport.
+- Submitting a signed transaction over HTTP RPC.
+- Proposing and finalizing a block through live consensus messages.
+- Confirming all processes converge on height, tip, state root, and balances.
+- Killing and restarting one validator.
+- Confirming the restarted validator reloads finalized state from disk.
+
+This is the first proof that SYNTHOS can operate as a local multi-process L1
+network, not only an in-memory ledger simulation.
+
 ## Definition Of Production Working L1
 
 SYNTHOS should not be called a production working L1 until this command passes
-reliably against real node processes and network transport:
+reliably and is extended to cover multi-block operation, adversarial behavior,
+state sync, and stake-weighted finality:
 
 ```powershell
-go run ./cmd/l1check
+go run ./cmd/l1netcheck
 ```
 
 Expected proof:

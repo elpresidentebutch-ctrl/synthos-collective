@@ -35,6 +35,9 @@ type Node struct {
 
 	// Optional debug logger.
 	Logf func(format string, args ...any)
+
+	// Optional hook called after this node finalizes a block.
+	OnFinalize func(*chain.Chain) error
 }
 
 var (
@@ -43,13 +46,13 @@ var (
 
 func NewNode(a *agent.Agent, c *chain.Chain, eng *consensus.Engine, t network.Transport) *Node {
 	n := &Node{
-		Agent:     a,
-		Chain:     c,
-		Consensus: eng,
-		Transport: t,
-		Peers:     make(map[string][]byte),
-		Validators:        make(map[string]bool),
-		PeerHardwareHash:  make(map[string]string),
+		Agent:            a,
+		Chain:            c,
+		Consensus:        eng,
+		Transport:        t,
+		Peers:            make(map[string][]byte),
+		Validators:       make(map[string]bool),
+		PeerHardwareHash: make(map[string]string),
 		// Default: 50 msgs burst, 10 msgs/sec per peer.
 		InboundLimiter: network.NewPeerLimiter(50, 10),
 	}
@@ -232,7 +235,13 @@ func (n *Node) TryFinalize(blockHash string) error {
 	if tip := n.Chain.Tip(); tip != nil && tip.Hash == blockHash {
 		return nil
 	}
-	return n.Chain.FinalizeBlock(b)
+	if err := n.Chain.FinalizeBlock(b); err != nil {
+		return err
+	}
+	if n.OnFinalize != nil {
+		return n.OnFinalize(n.Chain)
+	}
+	return nil
 }
 
 // ProposeBlock builds and broadcasts a block proposal.
@@ -252,7 +261,10 @@ func (n *Node) ProposeBlock() error {
 	if err != nil {
 		return err
 	}
-	return n.Agent.SendEnvelope(env)
+	if err := n.Agent.SendEnvelope(env); err != nil {
+		return err
+	}
+	return n.broadcastSelfVote(b)
 }
 
 func (n *Node) ProposeBlockHash() (string, error) {
@@ -272,6 +284,23 @@ func (n *Node) ProposeBlockHash() (string, error) {
 	if err := n.Agent.SendEnvelope(env); err != nil {
 		return "", err
 	}
+	if err := n.broadcastSelfVote(b); err != nil {
+		return "", err
+	}
 	return b.Hash, nil
 }
 
+func (n *Node) broadcastSelfVote(b *chain.Block) error {
+	v := consensus.BlockVote{
+		BlockHash: b.Hash,
+		Height:    b.Header.Height,
+		VoterID:   n.Agent.Identity.AgentID,
+		Vote:      1,
+	}
+	_, _, _, _ = n.Consensus.OnVote(v)
+	env, err := n.Agent.BuildEnvelope("block_vote", "", consensus.TopicVotes, v)
+	if err != nil {
+		return err
+	}
+	return n.Agent.SendEnvelope(env)
+}

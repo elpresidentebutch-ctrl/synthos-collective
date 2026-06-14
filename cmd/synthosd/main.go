@@ -1,9 +1,12 @@
 package main
 
 import (
+	"crypto/ed25519"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 
 	"synthos-collective/internal/agent"
 	"synthos-collective/internal/chain"
@@ -47,6 +50,8 @@ func main() {
 		ch = &chain.Chain{
 			ChainID: snap.ChainID,
 			State:   snap.State,
+			DEX:     chain.NewDEX(),
+			Oracle:  chain.NewOracle(),
 			Blocks:  snap.Blocks,
 			Mempool: make(map[string]chain.Tx),
 		}
@@ -61,7 +66,7 @@ func main() {
 	}
 
 	// Agent + keys.
-	keys, err := synthoscrypto.NewKeyPair()
+	keys, err := nodeKeys(cfg.PrivateKey)
 	if err != nil {
 		panic(err)
 	}
@@ -70,16 +75,29 @@ func main() {
 
 	// Use TCP transport so multiple synthosd instances can talk across processes.
 	t := network.NewTCPTransport(a.Identity.AgentID, cfg.ListenAddr, cfg.Peers)
-	if err := t.Start(); err != nil {
-		panic(err)
-	}
 	a.AttachTransport(t)
 
-	eng := consensus.NewEngine(1) // updated once validator set is dynamic
+	validators := cfg.Validators
+	if len(validators) == 0 && cfg.IsValidator {
+		validators = []string{a.Identity.AgentID}
+	}
+	totalValidators := len(validators)
+	if totalValidators == 0 {
+		totalValidators = 1
+	}
+	eng := consensus.NewEngine(totalValidators)
 	n := node.NewNode(a, ch, eng, t)
+	n.OnFinalize = func(c *chain.Chain) error {
+		return st.Save(c)
+	}
 
-	if cfg.IsValidator {
-		n.SetValidators([]string{a.Identity.AgentID})
+	if len(validators) > 0 {
+		n.SetValidators(validators)
+	}
+	for peerID, pubKey := range cfg.PeerKeys {
+		if err := n.AddPeer(peerID, pubKey); err != nil {
+			panic(err)
+		}
 	}
 	if err := n.Start(); err != nil {
 		panic(err)
@@ -93,3 +111,22 @@ func main() {
 	}
 }
 
+func nodeKeys(privateKeyHex string) (synthoscrypto.KeyPair, error) {
+	if privateKeyHex == "" {
+		return synthoscrypto.NewKeyPair()
+	}
+	raw := strings.TrimPrefix(privateKeyHex, "0x")
+	b, err := hex.DecodeString(raw)
+	if err != nil {
+		return synthoscrypto.KeyPair{}, err
+	}
+	if len(b) != ed25519.PrivateKeySize {
+		return synthoscrypto.KeyPair{}, fmt.Errorf("private_key must be %d bytes, got %d", ed25519.PrivateKeySize, len(b))
+	}
+	priv := ed25519.PrivateKey(b)
+	pub, ok := priv.Public().(ed25519.PublicKey)
+	if !ok {
+		return synthoscrypto.KeyPair{}, fmt.Errorf("failed to derive public key")
+	}
+	return synthoscrypto.KeyPair{Public: pub, Private: priv}, nil
+}

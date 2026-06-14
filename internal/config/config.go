@@ -12,28 +12,31 @@ import (
 
 // NodeConfig describes how to start a SYNTHOS node.
 type NodeConfig struct {
-	NodeID      string   `json:"node_id"`
-	DataDir     string   `json:"data_dir"`
-	IsValidator bool     `json:"is_validator"`
-	RPCListen   string   `json:"rpc_listen"`
-	GenesisPath string   `json:"genesis_path"`
-	Peers       []string `json:"peers"`        // "agentID@host:port"
-	ListenAddr  string   `json:"listen_addr"`  // e.g. ":9001"
+	NodeID      string            `json:"node_id"`
+	DataDir     string            `json:"data_dir"`
+	IsValidator bool              `json:"is_validator"`
+	RPCListen   string            `json:"rpc_listen"`
+	GenesisPath string            `json:"genesis_path"`
+	Peers       []string          `json:"peers"`       // "agentID@host:port"
+	ListenAddr  string            `json:"listen_addr"` // e.g. ":9001"
+	PrivateKey  string            `json:"private_key"` // hex encoded ed25519 private key for reproducible devnets
+	Validators  []string          `json:"validators"`  // validator agent IDs used for finality threshold
+	PeerKeys    map[string]string `json:"peer_keys"`   // agentID -> hex encoded ed25519 public key
 
 	// Runtime configuration (can be set from environment variables)
-	ChainID               uint64
-	ConsensusTimeout      time.Duration
-	BlockInterval         time.Duration
-	MinValidators         int
-	FinalityThreshold     int
-	AgentID               string
-	AgentPrivateKey       string
-	HSMEnabled            bool
-	HSMSlot               int
-	HSMPin                string
-	LogLevel              string
-	RateLimitRPS          int
-	MaxTransactionSize    int64
+	ChainID            uint64
+	ConsensusTimeout   time.Duration
+	BlockInterval      time.Duration
+	MinValidators      int
+	FinalityThreshold  int
+	AgentID            string
+	AgentPrivateKey    string
+	HSMEnabled         bool
+	HSMSlot            int
+	HSMPin             string
+	LogLevel           string
+	RateLimitRPS       int
+	MaxTransactionSize int64
 }
 
 // LoadNodeConfig reads a JSON node config from disk.
@@ -148,10 +151,10 @@ func LoadGenesis(path string) (chain.Genesis, error) {
 	defer f.Close()
 
 	var raw struct {
-		ChainID string            `json:"chain_id"`
-		Alloc   map[string]uint64 `json:"alloc"`
-		Symbol  string            `json:"symbol"`
-		Decimals int              `json:"decimals"`
+		ChainID  string            `json:"chain_id"`
+		Alloc    map[string]uint64 `json:"alloc"`
+		Symbol   string            `json:"symbol"`
+		Decimals int               `json:"decimals"`
 	}
 	if err := json.NewDecoder(f).Decode(&raw); err != nil {
 		return chain.Genesis{}, err
@@ -173,4 +176,3 @@ func LoadGenesis(path string) (chain.Genesis, error) {
 	}
 	return gen, nil
 }
-
