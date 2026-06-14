@@ -1,72 +1,111 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Pausable.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Snapshot.sol";
+
 /**
  * @title SynCoin
- * @dev AI-Native Modular Coin for Synthos Collective
+ * @dev Canonical ERC-20 for SYNTHOS tokenomics.
  *
- * Features:
- * - Agent-to-agent programmable transfers
- * - Staking, reputation, and slashing
- * - On-chain agent governance
- * - Dynamic supply and reward mechanisms
- * - Native agent identity and roles
- * - Transaction metadata and agent messaging
- * - Resource pricing and fee markets
- * - Inter-agent service payments
- * - Privacy and selective disclosure (future)
- * - Composable agent contracts (future)
- *
- * All features are modular and extensible.
+ * The entire 100B SYN supply is minted once at genesis to this contract.
+ * Distribution is then performed by the owner with allocation accounting.
+ * Production ownership should be transferred to governance, a timelock, or
+ * a multisig before any public launch.
  */
-contract SynCoin {
-    // --- Agent Identity & Roles ---
-    struct Agent {
-        uint256 balance;
-        uint256 reputation;
-        uint256 staked;
-        bytes32[] roles;
-        // Add more agent-centric fields as needed
-    }
-    mapping(address => Agent) public agents;
+contract SynCoin is ERC20, ERC20Burnable, ERC20Pausable, ERC20Snapshot, Ownable {
+    uint256 public constant INITIAL_SUPPLY = 100_000_000_000 * 10 ** 18;
 
-    // --- Events ---
-    event Transfer(address indexed from, address indexed to, uint256 amount, bytes metadata);
-    event Stake(address indexed agent, uint256 amount);
-    event Unstake(address indexed agent, uint256 amount);
-    event ReputationChanged(address indexed agent, int256 delta);
-    event GovernanceAction(address indexed agent, string action, bytes data);
-    // Add more events for advanced features
+    uint256 public constant LOCKED_DEX_LIQUIDITY_ALLOCATION = 29_000_000_000 * 10 ** 18;
+    uint256 public constant VALIDATOR_REWARDS_ALLOCATION = 30_000_000_000 * 10 ** 18;
+    uint256 public constant COMMUNITY_ALLOCATION = 14_500_000_000 * 10 ** 18;
+    uint256 public constant ECOSYSTEM_TREASURY_ALLOCATION = 6_000_000_000 * 10 ** 18;
+    uint256 public constant FOUNDER_VESTING_ALLOCATION = 20_000_000_000 * 10 ** 18;
+    uint256 public constant FOUNDER_OPERATIONS_GRANT = 500_000_000 * 10 ** 18;
 
-    // --- Core Functions ---
-    function transfer(address to, uint256 amount, bytes calldata metadata) external {
-        // TODO: Implement programmable transfer logic, metadata usage, and agent checks
-        // Example: require(agents[msg.sender].reputation > 0, "Low reputation");
-        // ...
-        emit Transfer(msg.sender, to, amount, metadata);
-    }
+    uint256 public constant FOUNDER_ANNUAL_RELEASE = 2_000_000_000 * 10 ** 18;
+    uint256 public constant FOUNDER_RELEASE_COUNT = 10;
+    uint256 public constant FOUNDER_FIRST_RELEASE_YEAR = 2027;
+    uint256 public constant FOUNDER_FIRST_RELEASE_MONTH = 5;
+    uint256 public constant FOUNDER_FIRST_RELEASE_DAY = 29;
 
-    function stake(uint256 amount) external {
-        // TODO: Implement staking logic
-        emit Stake(msg.sender, amount);
-    }
+    mapping(string => uint256) public allocatedByType;
 
-    function unstake(uint256 amount) external {
-        // TODO: Implement unstaking logic
-        emit Unstake(msg.sender, amount);
-    }
+    event TokensAllocated(
+        address indexed recipient,
+        uint256 amount,
+        string allocationType
+    );
 
-    function changeReputation(address agent, int256 delta) external {
-        // TODO: Implement reputation logic (governance, slashing, rewards)
-        emit ReputationChanged(agent, delta);
-    }
+    event GenesisAllocationDeclared(string allocationType, uint256 amount);
 
-    function governanceAction(string calldata action, bytes calldata data) external {
-        // TODO: Implement on-chain governance hooks
-        emit GovernanceAction(msg.sender, action, data);
+    constructor() ERC20("SYNTHOS", "SYN") {
+        uint256 allocationTotal = LOCKED_DEX_LIQUIDITY_ALLOCATION
+            + VALIDATOR_REWARDS_ALLOCATION
+            + COMMUNITY_ALLOCATION
+            + ECOSYSTEM_TREASURY_ALLOCATION
+            + FOUNDER_VESTING_ALLOCATION
+            + FOUNDER_OPERATIONS_GRANT;
+        require(allocationTotal == INITIAL_SUPPLY, "allocation total mismatch");
+
+        _mint(address(this), INITIAL_SUPPLY);
+
+        emit GenesisAllocationDeclared("LOCKED_DEX_LIQUIDITY", LOCKED_DEX_LIQUIDITY_ALLOCATION);
+        emit GenesisAllocationDeclared("VALIDATOR_REWARDS", VALIDATOR_REWARDS_ALLOCATION);
+        emit GenesisAllocationDeclared("COMMUNITY", COMMUNITY_ALLOCATION);
+        emit GenesisAllocationDeclared("ECOSYSTEM_TREASURY", ECOSYSTEM_TREASURY_ALLOCATION);
+        emit GenesisAllocationDeclared("FOUNDER_VESTING", FOUNDER_VESTING_ALLOCATION);
+        emit GenesisAllocationDeclared("FOUNDER_OPERATIONS_GRANT", FOUNDER_OPERATIONS_GRANT);
     }
 
-    // --- Extension Points ---
-    // Add functions for dynamic supply, resource pricing, privacy, composable contracts, etc.
-    // ...
+    function allocateTokens(
+        address recipient,
+        uint256 amount,
+        string calldata allocationType
+    ) external onlyOwner {
+        require(recipient != address(0), "invalid recipient");
+        require(amount > 0, "amount must be positive");
+        require(balanceOf(address(this)) >= amount, "insufficient undistributed supply");
+
+        allocatedByType[allocationType] += amount;
+        _transfer(address(this), recipient, amount);
+
+        emit TokensAllocated(recipient, amount, allocationType);
+    }
+
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+
+    function createSnapshot() external onlyOwner returns (uint256) {
+        return _snapshot();
+    }
+
+    function undistributedSupply() external view returns (uint256) {
+        return balanceOf(address(this));
+    }
+
+    function tokenomicsTotal() external pure returns (uint256) {
+        return LOCKED_DEX_LIQUIDITY_ALLOCATION
+            + VALIDATOR_REWARDS_ALLOCATION
+            + COMMUNITY_ALLOCATION
+            + ECOSYSTEM_TREASURY_ALLOCATION
+            + FOUNDER_VESTING_ALLOCATION
+            + FOUNDER_OPERATIONS_GRANT;
+    }
+
+    function _beforeTokenTransfer(
+        address from,
+        address to,
+        uint256 amount
+    ) internal override(ERC20, ERC20Pausable, ERC20Snapshot) {
+        super._beforeTokenTransfer(from, to, amount);
+    }
 }

@@ -5,7 +5,10 @@
   "scripts": {
     "compile": "hardhat compile",
     "test": "hardhat test",
-    "deploy:synthos:local": "hardhat run scripts/deploy-synthos.js --network hardhat"
+    "deploy:synthos:local": "hardhat run scripts/deploy-synthos.js --network hardhat",
+    "merkle:adopters": "node scripts/build-adopter-merkle.js",
+    "merkle:adopters:example": "node scripts/build-adopter-merkle.js merkle/adopters.example.json merkle/adopter-merkle.example.json",
+    "merkle:set": "hardhat run scripts/set-adopter-merkle-root.js"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",

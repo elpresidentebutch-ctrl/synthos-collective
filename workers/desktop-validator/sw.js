@@ -1,8 +1,10 @@
-// Synthos Mobile Validator — Service Worker
-// Provides offline caching so the validator PWA works without internet.
-// Chain state is in IndexedDB (managed by the main app), not here.
+// Synthos Desktop Validator Service Worker
+// Provides offline caching and best-effort background node heartbeats.
+// True always-on desktop mode should use the native/tray agent.
 
 const CACHE_NAME = "synthos-validator-v1";
+const CONFIG_CACHE = "synthos-validator-config-v1";
+const CONFIG_URL = "/__synthos_background_config__";
 const ASSETS = ["/", "/index.html", "/manifest.json"];
 
 self.addEventListener("install", (event) => {
@@ -37,3 +39,60 @@ self.addEventListener("fetch", (event) => {
     })
   );
 });
+
+self.addEventListener("message", (event) => {
+  const msg = event.data || {};
+  if (msg.type !== "SYNTHOS_BACKGROUND_CONFIG") return;
+
+  event.waitUntil(
+    caches.open(CONFIG_CACHE).then((cache) =>
+      cache.put(
+        CONFIG_URL,
+        new Response(JSON.stringify(msg.payload || {}), {
+          headers: { "Content-Type": "application/json" },
+        })
+      )
+    )
+  );
+});
+
+self.addEventListener("sync", (event) => {
+  if (event.tag === "synthos-node-heartbeat") {
+    event.waitUntil(runBackgroundHeartbeat());
+  }
+});
+
+self.addEventListener("periodicsync", (event) => {
+  if (event.tag === "synthos-node-heartbeat") {
+    event.waitUntil(runBackgroundHeartbeat());
+  }
+});
+
+async function loadBackgroundConfig() {
+  const cache = await caches.open(CONFIG_CACHE);
+  const resp = await cache.match(CONFIG_URL);
+  if (!resp) return null;
+  return resp.json();
+}
+
+async function runBackgroundHeartbeat() {
+  const cfg = await loadBackgroundConfig();
+  const registryUrls = cfg?.registryUrls || (cfg?.registryUrl ? [cfg.registryUrl] : []);
+  if (!cfg?.peerId || registryUrls.length === 0) return;
+
+  await Promise.allSettled(registryUrls.map((registryUrl) =>
+    fetch(`${registryUrl}/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: cfg.peerId,
+        url: cfg.nodeUrl || self.location.origin,
+        cloud: cfg.cloud || "desktop-background",
+        mode: "outbound_only",
+        inbound_ports: 0,
+        background: true,
+        heartbeat_at: new Date().toISOString(),
+      }),
+    })
+  ));
+}

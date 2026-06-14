@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 )
@@ -17,11 +19,14 @@ import (
 // peer HTTP endpoints — the same protocol the Cloudflare Workers validators
 // and mobile PWA validators already speak.
 //
-// No inbound listener is required. The Go RPC server exposes /gossip/block
-// and /gossip/tx-batch endpoints so peers can push messages to us.
+// No inbound listener is required. Silent nodes register with an empty URL
+// and receive messages by polling /mailbox.
 type RelayTransport struct {
 	// RegistryURL is the peer registry (e.g. https://synthos-peer-registry.example.workers.dev).
 	RegistryURL string
+	// RegistryURLs is the decentralized relay set. Relays are transport only:
+	// messages must still be verified by signature and chain state.
+	RegistryURLs []string
 	// SelfName is this node's validator name (e.g. "synthos-go-node-1").
 	SelfName string
 	// SelfURL is this node's publicly reachable URL (e.g. "https://my-node.fly.dev").
@@ -62,6 +67,7 @@ type registryResponse struct {
 // RelayConfig holds configuration for NewRelayTransport.
 type RelayConfig struct {
 	RegistryURL    string
+	RegistryURLs   []string
 	SelfName       string
 	SelfURL        string
 	RegistrySecret string
@@ -79,6 +85,7 @@ func NewRelayTransport(relays []string) *RelayTransport {
 	}
 	return &RelayTransport{
 		RegistryURL:       registryURL,
+		RegistryURLs:      normalizeRelayURLs(relays),
 		HeartbeatInterval: 30 * time.Second,
 		topicHandlers:     make(map[string]func(string, []byte)),
 		httpClient: &http.Client{
@@ -91,6 +98,7 @@ func NewRelayTransport(relays []string) *RelayTransport {
 func NewRelayTransportFromConfig(cfg RelayConfig) *RelayTransport {
 	r := &RelayTransport{
 		RegistryURL:       cfg.RegistryURL,
+		RegistryURLs:      normalizeRelayURLs(append([]string{cfg.RegistryURL}, cfg.RegistryURLs...)),
 		SelfName:          cfg.SelfName,
 		SelfURL:           cfg.SelfURL,
 		RegistrySecret:    cfg.RegistrySecret,
@@ -136,14 +144,15 @@ func (r *RelayTransport) ValidatorOrder() []string {
 // and launches a background heartbeat goroutine.
 func (r *RelayTransport) Start() error {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if r.started {
+		r.mu.Unlock()
 		return nil
 	}
 	r.started = true
 
 	ctx, cancel := context.WithCancel(context.Background())
 	r.cancel = cancel
+	r.mu.Unlock()
 
 	// Initial registration + peer fetch (best-effort).
 	r.registerSelf(ctx)
@@ -278,11 +287,18 @@ func (r *RelayTransport) pollMailboxLoop(ctx context.Context) {
 }
 
 func (r *RelayTransport) fetchMail(ctx context.Context) {
-	if r.RegistryURL == "" || r.SelfName == "" {
+	relayURLs := r.relayURLs()
+	if len(relayURLs) == 0 || r.SelfName == "" {
 		return
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.RegistryURL+"/mailbox?name="+r.SelfName, nil)
+	for _, relayURL := range relayURLs {
+		r.fetchMailFrom(ctx, relayURL)
+	}
+}
+
+func (r *RelayTransport) fetchMailFrom(ctx context.Context, relayURL string) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, relayURL+"/mailbox?name="+url.QueryEscape(r.SelfName), nil)
 	if err != nil {
 		return
 	}
@@ -292,6 +308,7 @@ func (r *RelayTransport) fetchMail(ctx context.Context) {
 
 	resp, err := r.httpClient.Do(req)
 	if err != nil {
+		r.log("[RELAY] mailbox poll failed from %s: %v", relayURL, err)
 		return
 	}
 	defer resp.Body.Close()
@@ -303,23 +320,34 @@ func (r *RelayTransport) fetchMail(ctx context.Context) {
 				r.DeliverInbound("relay", msg)
 			}
 		}
+	} else {
+		r.log("[RELAY] mailbox poll from %s returned %d", relayURL, resp.StatusCode)
 	}
 }
 
 func (r *RelayTransport) registerSelf(ctx context.Context) {
-	if r.RegistryURL == "" || r.SelfName == "" || r.SelfURL == "" {
+	relayURLs := r.relayURLs()
+	if len(relayURLs) == 0 || r.SelfName == "" {
 		return
 	}
 
-	body, _ := json.Marshal(map[string]string{
-		"name":  r.SelfName,
-		"url":   r.SelfURL,
-		"cloud": r.Cloud,
+	body, _ := json.Marshal(map[string]any{
+		"name":          r.SelfName,
+		"url":           r.SelfURL,
+		"cloud":         r.Cloud,
+		"mode":          "outbound_only",
+		"inbound_ports": 0,
 	})
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.RegistryURL+"/register", bytes.NewReader(body))
+	for _, relayURL := range relayURLs {
+		r.registerSelfWith(ctx, relayURL, body)
+	}
+}
+
+func (r *RelayTransport) registerSelfWith(ctx context.Context, relayURL string, body []byte) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, relayURL+"/register", bytes.NewReader(body))
 	if err != nil {
-		r.log("[RELAY] register request build failed: %v", err)
+		r.log("[RELAY] register request build failed for %s: %v", relayURL, err)
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -329,53 +357,89 @@ func (r *RelayTransport) registerSelf(ctx context.Context) {
 
 	resp, err := r.httpClient.Do(req)
 	if err != nil {
-		r.log("[RELAY] register failed: %v", err)
+		r.log("[RELAY] register failed on %s: %v", relayURL, err)
 		return
 	}
 	defer resp.Body.Close()
 	io.Copy(io.Discard, resp.Body)
 
 	if resp.StatusCode == http.StatusOK {
-		r.log("[RELAY] registered as %s at %s", r.SelfName, r.SelfURL)
+		r.log("[RELAY] registered as %s at %s via %s", r.SelfName, r.SelfURL, relayURL)
 	} else {
-		r.log("[RELAY] register returned %d", resp.StatusCode)
+		r.log("[RELAY] register on %s returned %d", relayURL, resp.StatusCode)
 	}
 }
 
 func (r *RelayTransport) refreshPeers(ctx context.Context) {
-	if r.RegistryURL == "" {
+	relayURLs := r.relayURLs()
+	if len(relayURLs) == 0 {
 		return
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.RegistryURL+"/peers/active", nil)
+	mergedPeers := map[string]relayPeer{}
+	mergedOrder := map[string]bool{}
+	var validatorOrder []string
+	total := 0
+
+	for _, relayURL := range relayURLs {
+		data, ok := r.fetchPeersFrom(ctx, relayURL)
+		if !ok {
+			continue
+		}
+		total += data.Total
+		for _, peer := range data.Peers {
+			if peer.Name == "" || peer.URL == "" {
+				continue
+			}
+			mergedPeers[peer.Name] = peer
+		}
+		for _, name := range data.ValidatorOrder {
+			if name == "" || mergedOrder[name] {
+				continue
+			}
+			mergedOrder[name] = true
+			validatorOrder = append(validatorOrder, name)
+		}
+	}
+
+	peers := make([]relayPeer, 0, len(mergedPeers))
+	for _, peer := range mergedPeers {
+		peers = append(peers, peer)
+	}
+
+	r.mu.Lock()
+	r.peers = peers
+	r.validatorOrder = validatorOrder
+	r.mu.Unlock()
+
+	r.log("[RELAY] refreshed %d reachable peers from %d relay records, order: %v", len(peers), total, validatorOrder)
+}
+
+func (r *RelayTransport) fetchPeersFrom(ctx context.Context, relayURL string) (registryResponse, bool) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, relayURL+"/peers/active", nil)
 	if err != nil {
-		return
+		return registryResponse{}, false
 	}
 
 	resp, err := r.httpClient.Do(req)
 	if err != nil {
-		r.log("[RELAY] peer refresh failed: %v", err)
-		return
+		r.log("[RELAY] peer refresh failed from %s: %v", relayURL, err)
+		return registryResponse{}, false
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		r.log("[RELAY] peer refresh returned %d", resp.StatusCode)
-		return
+		r.log("[RELAY] peer refresh from %s returned %d", relayURL, resp.StatusCode)
+		return registryResponse{}, false
 	}
 
 	var data registryResponse
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		r.log("[RELAY] peer refresh decode failed: %v", err)
-		return
+		r.log("[RELAY] peer refresh decode failed from %s: %v", relayURL, err)
+		return registryResponse{}, false
 	}
 
-	r.mu.Lock()
-	r.peers = data.Peers
-	r.validatorOrder = data.ValidatorOrder
-	r.mu.Unlock()
-
-	r.log("[RELAY] refreshed %d peers, order: %v", data.Total, data.ValidatorOrder)
+	return data, true
 }
 
 func (r *RelayTransport) postGossip(peerURL string, payload []byte) error {
@@ -413,3 +477,26 @@ func (r *RelayTransport) postGossip(peerURL string, payload []byte) error {
 	return nil
 }
 
+func (r *RelayTransport) relayURLs() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return normalizeRelayURLs(append([]string{r.RegistryURL}, r.RegistryURLs...))
+}
+
+func normalizeRelayURLs(values []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(values))
+	for _, raw := range values {
+		for _, item := range strings.FieldsFunc(raw, func(r rune) bool {
+			return r == ',' || r == ';' || r == '\n' || r == '\t' || r == ' '
+		}) {
+			item = strings.TrimRight(strings.TrimSpace(item), "/")
+			if item == "" || seen[item] {
+				continue
+			}
+			seen[item] = true
+			out = append(out, item)
+		}
+	}
+	return out
+}

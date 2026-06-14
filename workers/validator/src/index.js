@@ -112,6 +112,9 @@ export class ChainDO {
         if (!this.chain.heartbeat) {
           this.chain.heartbeat = { checks: 0, last_check: null, blocks_auto_proposed: 0 };
         }
+        if (!this.chain.immune) {
+          this.chain.immune = createImmuneState();
+        }
       } else {
         console.log("[INIT] No valid stored state, resetting to genesis");
         await this.resetToGenesis();
@@ -134,7 +137,8 @@ export class ChainDO {
       accounts[addr] = { balance: bal, nonce: 0 };
     }
 
-    const stateRoot = computeStateRoot(accounts);
+    const immune = createImmuneState();
+    const stateRoot = computeStateRoot(accounts, immune);
     const genesisBlock = {
       header: {
         height: 0,
@@ -157,6 +161,7 @@ export class ChainDO {
       mempool: {},
       heartbeat: { checks: 0, last_check: null, blocks_auto_proposed: 0 },
       gossip: { synced_blocks: 0, tx_gossiped: 0, sync_errors: 0, last_sync: null },
+      immune,
     };
     await this.persist();
   }
@@ -362,20 +367,16 @@ export class ChainDO {
 
     // Replay transactions against our account state to verify
     const tmpAccounts = JSON.parse(JSON.stringify(this.chain.accounts));
+    const tmpImmune = cloneImmuneState(this.chain.immune);
     for (const tx of block.tx) {
       const sender = tmpAccounts[tx.from];
       if (!sender) return false;
       if (tx.nonce !== undefined && tx.nonce !== sender.nonce) return false;
-      const total = (tx.amount || 0) + (tx.fee || 0);
-      if (sender.balance < total) return false;
-      sender.balance -= total;
-      sender.nonce += 1;
-      if (!tmpAccounts[tx.to]) tmpAccounts[tx.to] = { balance: 0, nonce: 0 };
-      tmpAccounts[tx.to].balance += tx.amount;
+      if (!applyTransactionToAccounts(tmpAccounts, tx, tmpImmune)) return false;
     }
 
     // Verify state root matches what the proposer computed
-    const expectedRoot = computeStateRoot(tmpAccounts);
+    const expectedRoot = computeStateRoot(tmpAccounts, tmpImmune);
     if (expectedRoot !== block.header.state_root) return false;
 
     // Timeless runtime (B3): reject non-genesis blocks with timestamps
@@ -387,6 +388,7 @@ export class ChainDO {
 
     // Accept: apply state, clear included TXs from mempool, append block
     this.chain.accounts = tmpAccounts;
+    this.chain.immune = tmpImmune;
     for (const tx of block.tx) {
       delete this.chain.mempool[tx.id];
     }
@@ -404,6 +406,7 @@ export class ChainDO {
 
   async autoPropose() {
     const tmpAccounts = JSON.parse(JSON.stringify(this.chain.accounts));
+    const tmpImmune = cloneImmuneState(this.chain.immune);
     const includedTxs = [];
 
     const candidates = Object.values(this.chain.mempool);
@@ -419,18 +422,14 @@ export class ChainDO {
       if (!sender) continue;
       if (tx.nonce !== undefined && tx.nonce !== sender.nonce) continue;
       const total = (tx.amount || 0) + (tx.fee || 0);
-      if (sender.balance < total) continue;
-      sender.balance -= total;
-      sender.nonce += 1;
-      if (!tmpAccounts[tx.to]) tmpAccounts[tx.to] = { balance: 0, nonce: 0 };
-      tmpAccounts[tx.to].balance += tx.amount;
+      if (!applyTransactionToAccounts(tmpAccounts, tx, tmpImmune)) continue;
       includedTxs.push(tx);
     }
 
     if (includedTxs.length === 0) return null;
 
     const parent = this.tip();
-    const stateRoot = computeStateRoot(tmpAccounts);
+    const stateRoot = computeStateRoot(tmpAccounts, tmpImmune);
     // Timeless runtime (B3): non-genesis blocks carry no wall-clock timestamp.
     const block = {
       header: {
@@ -448,6 +447,7 @@ export class ChainDO {
     block.hash = await computeBlockHash(block);
 
     this.chain.accounts = tmpAccounts;
+    this.chain.immune = tmpImmune;
     for (const tx of includedTxs) delete this.chain.mempool[tx.id];
     this.chain.blocks.push(block);
     this.chain.heartbeat.blocks_auto_proposed++;
@@ -517,6 +517,8 @@ export class ChainDO {
           return this.handleGetBlocks(url);
         case "/heartbeat":
           return this.handleHeartbeatStatus();
+        case "/immune/status":
+          return this.handleImmuneStatus();
         case "/peers":
           return this.handlePeers();
         case "/submitTx":
@@ -548,6 +550,7 @@ export class ChainDO {
             block_relay: this.relayUrl || null,
             endpoints: [
               "/health", "/status", "/account", "/balance", "/mempool",
+              "/immune/status",
               "/blocks", "/heartbeat", "/peers", "/submitTx", "/proposeBlock",
               "/gossip/tx-batch", "/gossip/block", "/reset",
             ],
@@ -579,7 +582,12 @@ export class ChainDO {
       is_my_turn: this.isMyTurn(),
       gossip_enabled: false,
       sync_model: "push-pull",
+      immune: immuneStats(this.chain.immune),
     });
+  }
+
+  handleImmuneStatus() {
+    return json(immuneStats(this.chain.immune));
   }
 
   handleAccount(url) {
@@ -658,8 +666,8 @@ export class ChainDO {
   async handleSubmitTx(request) {
     const tx = await request.json();
 
-    if (!tx.from || !tx.to || !tx.amount || tx.amount <= 0) {
-      return error("invalid transaction: from, to, and amount > 0 required", 400);
+    if (!tx.from || !tx.to || tx.amount === undefined || tx.amount < 0) {
+      return error("invalid transaction: from, to, and amount >= 0 required", 400);
     }
 
     const sender = this.chain.accounts[tx.from];
@@ -670,6 +678,11 @@ export class ChainDO {
     const total = (tx.amount || 0) + (tx.fee || 0);
     if (sender.balance < total) {
       return error(`insufficient funds: have ${sender.balance}, need ${total}`, 400);
+    }
+
+    const immuneValidation = validateImmuneTx(tx, this.chain.immune);
+    if (!immuneValidation.ok) {
+      return error(immuneValidation.error, 400);
     }
 
     if (tx.nonce !== undefined && tx.nonce !== sender.nonce) {
@@ -705,6 +718,7 @@ export class ChainDO {
     }
 
     const tmpAccounts = JSON.parse(JSON.stringify(this.chain.accounts));
+    const tmpImmune = cloneImmuneState(this.chain.immune);
     const includedTxs = [];
 
     const candidates = mempoolKeys.map((k) => this.chain.mempool[k]);
@@ -719,12 +733,7 @@ export class ChainDO {
       const sender = tmpAccounts[tx.from];
       if (!sender) continue;
       if (tx.nonce !== undefined && tx.nonce !== sender.nonce) continue;
-      const total = (tx.amount || 0) + (tx.fee || 0);
-      if (sender.balance < total) continue;
-      sender.balance -= total;
-      sender.nonce += 1;
-      if (!tmpAccounts[tx.to]) tmpAccounts[tx.to] = { balance: 0, nonce: 0 };
-      tmpAccounts[tx.to].balance += tx.amount;
+      if (!applyTransactionToAccounts(tmpAccounts, tx, tmpImmune)) continue;
       includedTxs.push(tx);
     }
 
@@ -733,7 +742,7 @@ export class ChainDO {
     }
 
     const parent = this.tip();
-    const stateRoot = computeStateRoot(tmpAccounts);
+    const stateRoot = computeStateRoot(tmpAccounts, tmpImmune);
 
     // Timeless runtime (B3): non-genesis blocks carry no wall-clock timestamp.
     const block = {
@@ -752,6 +761,7 @@ export class ChainDO {
     block.hash = await computeBlockHash(block);
 
     this.chain.accounts = tmpAccounts;
+    this.chain.immune = tmpImmune;
     for (const tx of includedTxs) {
       delete this.chain.mempool[tx.id];
     }
@@ -783,9 +793,11 @@ export class ChainDO {
     let added = 0;
     for (const tx of transactions) {
       if (!tx.id || this.chain.mempool[tx.id]) continue;
-      if (!tx.from || !tx.to || !tx.amount || tx.amount <= 0) continue;
+      if (!tx.from || !tx.to || tx.amount === undefined || tx.amount < 0) continue;
       const sender = this.chain.accounts[tx.from];
       if (!sender) continue;
+      const immuneValidation = validateImmuneTx(tx, this.chain.immune);
+      if (!immuneValidation.ok) continue;
       // Accept TXs with nonce >= current (they might become valid after earlier TXs)
       if (tx.nonce !== undefined && tx.nonce < sender.nonce) continue;
       this.chain.mempool[tx.id] = tx;
@@ -828,6 +840,123 @@ export class ChainDO {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+function createImmuneState() {
+  return {
+    nodes: {},
+    proofs: {},
+    total_proofs: 0,
+    last_proof_hash: null,
+    cryptographic_silence: true,
+    inbound_ports_required: 0,
+  };
+}
+
+function cloneImmuneState(immune) {
+  return JSON.parse(JSON.stringify(immune || createImmuneState()));
+}
+
+function immuneStats(immune) {
+  const state = immune || createImmuneState();
+  return {
+    active_immune_nodes: Object.keys(state.nodes || {}).length,
+    sovereign_proofs: state.total_proofs || Object.keys(state.proofs || {}).length,
+    last_proof_hash: state.last_proof_hash || null,
+    cryptographic_silence: true,
+    inbound_ports_required: 0,
+    mode: "opt-in-local-proof-commitments",
+  };
+}
+
+function metadataValue(tx, key) {
+  const items = Array.isArray(tx.metadata) ? tx.metadata : [];
+  const found = items.find((item) => item && item.key === key);
+  return found ? String(found.value || "") : "";
+}
+
+function validateImmuneTx(tx, immune) {
+  const type = metadataValue(tx, "type");
+  if (!type) return { ok: true };
+  if (type === "immune_node_activate") {
+    if (!metadataValue(tx, "hardware_hash")) {
+      return { ok: false, error: "missing hardware_hash for immune node activation" };
+    }
+    return { ok: true };
+  }
+  if (type === "sovereign_noise_proof") {
+    if (!metadataValue(tx, "proof_hash")) {
+      return { ok: false, error: "missing proof_hash for sovereign noise proof" };
+    }
+    const scope = metadataValue(tx, "scope") || "local_opt_in";
+    if (!["local_opt_in", "local_browser", "testnet"].includes(scope)) {
+      return { ok: false, error: "sovereign noise proofs must use opt-in local/testnet scope" };
+    }
+    const nodes = (immune || createImmuneState()).nodes || {};
+    if (!nodes[tx.from]) {
+      return { ok: false, error: "immune node must be activated before submitting proofs" };
+    }
+  }
+  return { ok: true };
+}
+
+function applyTransactionToAccounts(accounts, tx, immune) {
+  const sender = accounts[tx.from];
+  if (!sender) return false;
+  if (tx.nonce !== undefined && tx.nonce !== sender.nonce) return false;
+  const total = (tx.amount || 0) + (tx.fee || 0);
+  if (sender.balance < total) return false;
+  const validation = validateImmuneTx(tx, immune);
+  if (!validation.ok) return false;
+
+  sender.balance -= total;
+  sender.nonce += 1;
+
+  if (tx.amount > 0) {
+    if (!accounts[tx.to]) accounts[tx.to] = { balance: 0, nonce: 0 };
+    accounts[tx.to].balance += tx.amount;
+  }
+
+  applyImmuneMetadata(tx, immune);
+  return true;
+}
+
+function applyImmuneMetadata(tx, immune) {
+  const type = metadataValue(tx, "type");
+  if (!type) return;
+  if (!immune.nodes) immune.nodes = {};
+  if (!immune.proofs) immune.proofs = {};
+
+  if (type === "immune_node_activate") {
+    const existing = immune.nodes[tx.from] || {};
+    immune.nodes[tx.from] = {
+      address: tx.from,
+      hardware_hash: metadataValue(tx, "hardware_hash"),
+      activated_at: tx.timestamp || Date.now(),
+      last_proof_at: existing.last_proof_at || null,
+      sovereign_proofs: existing.sovereign_proofs || 0,
+      opt_in_local_only: metadataValue(tx, "scope") !== "external",
+      cryptographic_mode: "absolute_silence",
+    };
+  }
+
+  if (type === "sovereign_noise_proof") {
+    const node = immune.nodes[tx.from];
+    if (!node) return;
+    const proofHash = metadataValue(tx, "proof_hash");
+    node.sovereign_proofs = (node.sovereign_proofs || 0) + 1;
+    node.last_proof_at = tx.timestamp || Date.now();
+    immune.proofs[tx.id] = {
+      id: tx.id,
+      address: tx.from,
+      proof_hash: proofHash,
+      noise_class: metadataValue(tx, "noise_class"),
+      declared_scope: metadataValue(tx, "scope") || "local_opt_in",
+      timestamp: tx.timestamp || Date.now(),
+    };
+    immune.total_proofs = Object.keys(immune.proofs).length;
+    immune.last_proof_hash = proofHash;
+  }
+}
+
 function json(data, status = 200) {
   return new Response(JSON.stringify(data, null, 2), {
     status,
@@ -842,14 +971,14 @@ function error(msg, status = 400) {
   });
 }
 
-function computeStateRoot(accounts) {
+function computeStateRoot(accounts, immune = createImmuneState()) {
   const sorted = Object.keys(accounts).sort();
   const items = sorted.map((addr) => ({
     addr,
     balance: accounts[addr].balance,
     nonce: accounts[addr].nonce,
   }));
-  const data = JSON.stringify(items);
+  const data = JSON.stringify({ accounts: items, immune: immuneStats(immune) });
   let hash = 0;
   for (let i = 0; i < data.length; i++) {
     const chr = data.charCodeAt(i);
@@ -873,6 +1002,7 @@ async function computeTxId(tx) {
     amount: tx.amount,
     fee: tx.fee || 0,
     nonce: tx.nonce || 0,
+    metadata: Array.isArray(tx.metadata) ? tx.metadata : [],
   });
   const buf = new TextEncoder().encode(payload);
   const hashBuf = await crypto.subtle.digest("SHA-256", buf);

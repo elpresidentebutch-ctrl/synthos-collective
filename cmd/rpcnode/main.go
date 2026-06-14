@@ -29,6 +29,8 @@ func main() {
 		c = &chain.Chain{
 			ChainID: snap.ChainID,
 			State:   snap.State,
+			DEX:     chain.NewDEX(),
+			Oracle:  chain.NewOracle(),
 			Blocks:  snap.Blocks,
 			Mempool: make(map[string]chain.Tx),
 		}
@@ -44,18 +46,21 @@ func main() {
 			fmt.Printf("Funded %s with %d SYN\n", addr, bal)
 		}
 	}
+	seedDEX(c)
 
 	// Wire up relay transport if registry URL is configured.
 	// This lets the Go node participate in the same network as
 	// Cloudflare Workers validators and mobile PWA validators.
 	var relay *network.RelayTransport
 	registryURL := os.Getenv("REGISTRY_URL")
+	registryURLs := os.Getenv("REGISTRY_URLS")
 	selfName := os.Getenv("WORKER_NAME")
 	selfURL := os.Getenv("SELF_URL")
 
-	if registryURL != "" && selfName != "" {
+	if (registryURL != "" || registryURLs != "") && selfName != "" {
 		relay = network.NewRelayTransportFromConfig(network.RelayConfig{
 			RegistryURL:    registryURL,
+			RegistryURLs:   []string{registryURLs},
 			SelfName:       selfName,
 			SelfURL:        selfURL,
 			RegistrySecret: os.Getenv("REGISTRY_SECRET"),
@@ -65,7 +70,7 @@ func main() {
 		if err := relay.Start(); err != nil {
 			log.Printf("WARNING: relay transport failed to start: %v", err)
 		} else {
-			log.Printf("Relay transport started: registry=%s self=%s", registryURL, selfName)
+			log.Printf("Relay transport started: registry=%s registries=%s self=%s", registryURL, registryURLs, selfName)
 		}
 	}
 
@@ -80,12 +85,24 @@ func main() {
 	fmt.Printf("RPC listening on %s\n", addr)
 	fmt.Printf("GET  /health /status /account /balance /mempool /blocks /peers\n")
 	fmt.Printf("POST /submitTx /proposeBlock /gossip/block /gossip/tx-batch\n")
-	if registryURL != "" {
-		fmt.Printf("Registry: %s | Self: %s (%s)\n", registryURL, selfName, selfURL)
+	if registryURL != "" || registryURLs != "" {
+		fmt.Printf("Registry: %s | Registries: %s | Self: %s (%s)\n", registryURL, registryURLs, selfName, selfURL)
 	}
 	if err := http.ListenAndServe(addr, srv.Handler()); err != nil {
 		panic(err)
 	}
+}
+
+func seedDEX(c *chain.Chain) {
+	if c.DEX == nil {
+		c.DEX = chain.NewDEX()
+	}
+	if len(c.DEX.ListPools()) > 0 {
+		return
+	}
+	c.DEX.SeedPool("B12", 10_000_000, 50_000)
+	c.DEX.SeedPool("NGOT", 5_000_000, 100_000)
+	c.DEX.SeedPool("MOMENTUM", 2_000_000, 10_000)
 }
 
 func loadGenesis(path string) chain.Genesis {

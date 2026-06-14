@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>The Collective DEX | Live Contract Mode</title>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #05070b;
+      color: #f7fbff;
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        linear-gradient(135deg, rgba(36, 214, 167, 0.16), transparent 34rem),
+        linear-gradient(315deg, rgba(255, 211, 67, 0.10), transparent 28rem),
+        #05070b;
+    }
+    main { width: min(1120px, calc(100% - 32px)); margin: 0 auto; padding: 42px 0; }
+    header { display: flex; justify-content: space-between; align-items: end; gap: 18px; border-bottom: 1px solid rgba(255,255,255,.14); padding-bottom: 22px; }
+    h1 { margin: 0; font-size: clamp(2.2rem, 6vw, 5.2rem); line-height: .92; letter-spacing: 0; }
+    .eyebrow, label { color: #91a0b8; font-size: .74rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+    .pill { border: 1px solid rgba(36,214,167,.45); background: rgba(36,214,167,.10); color: #9fffe0; border-radius: 999px; padding: 8px 12px; white-space: nowrap; }
+    .layout { display: grid; grid-template-columns: 1fr 420px; gap: 16px; margin-top: 24px; align-items: start; }
+    .panel, .pool { border: 1px solid rgba(255,255,255,.13); background: rgba(255,255,255,.06); border-radius: 8px; padding: 18px; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    input, select {
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid rgba(255,255,255,.14);
+      border-radius: 8px;
+      background: rgba(0,0,0,.28);
+      color: white;
+      padding: 12px;
+      margin-top: 8px;
+      font: inherit;
+    }
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-weight: 850;
+      color: #05100c;
+      background: #24d6a7;
+      cursor: pointer;
+    }
+    button.secondary { color: #f7fbff; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.16); }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+    .pool { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 10px; cursor: pointer; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; color: #d9e7ff; overflow-wrap: anywhere; }
+    pre { max-height: 220px; overflow: auto; white-space: pre-wrap; }
+    @media (max-width: 860px) { header { align-items: start; flex-direction: column; } .layout, .row { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <div class="eyebrow">SYNTHOS Collective</div>
+      <h1>The Collective DEX</h1>
+    </div>
+    <div id="status" class="pill">Wallet disconnected</div>
+  </header>
+
+  <section class="panel" style="margin-top:18px">
+    <div class="row">
+      <div>
+        <label>DEX Contract</label>
+        <input id="dexAddress" placeholder="0x..." />
+      </div>
+      <div>
+        <label>SYN Token</label>
+        <input id="synAddress" placeholder="0x..." />
+      </div>
+    </div>
+    <div class="actions">
+      <button onclick="connectWallet()">Connect Wallet</button>
+      <button class="secondary" onclick="loadDex()">Load DEX</button>
+    </div>
+  </section>
+
+  <div class="layout">
+    <section class="panel">
+      <div class="eyebrow" style="margin-bottom:12px">Pools</div>
+      <div id="pools"></div>
+    </section>
+
+    <section class="panel">
+      <div class="eyebrow" style="margin-bottom:12px">Swap</div>
+      <label>Asset</label>
+      <select id="assetSelect" onchange="quote()"></select>
+      <label style="display:block;margin-top:12px">Direction</label>
+      <select id="direction" onchange="quote()">
+        <option value="synForAsset">SYN to Asset</option>
+        <option value="assetForSyn">Asset to SYN</option>
+      </select>
+      <label style="display:block;margin-top:12px">Amount In</label>
+      <input id="amountIn" type="number" min="0" step="0.000001" placeholder="0.0" oninput="quote()" />
+      <label style="display:block;margin-top:12px">Minimum Out</label>
+      <input id="minOut" type="number" min="0" step="0.000001" placeholder="0.0" />
+      <div class="actions">
+        <button onclick="approveInput()">Approve</button>
+        <button onclick="swap()">Swap</button>
+      </div>
+      <pre id="output" class="mono">Load a deployed SYNTHOSDex contract.</pre>
+    </section>
+  </div>
+</main>
+
+<script>
+const DEX_ABI = [
+  "function synToken() view returns (address)",
+  "function poolCount() view returns (uint256)",
+  "function poolAssets(uint256) view returns (address)",
+  "function pools(address) view returns (address asset,uint256 synReserve,uint256 assetReserve,uint256 totalShares,bool active)",
+  "function quoteSynForAsset(address asset,uint256 synAmountIn) view returns (uint256)",
+  "function quoteAssetForSyn(address asset,uint256 assetAmountIn) view returns (uint256)",
+  "function swapExactSynForAsset(address asset,uint256 synAmountIn,uint256 minAssetOut) returns (uint256)",
+  "function swapExactAssetForSyn(address asset,uint256 assetAmountIn,uint256 minSynOut) returns (uint256)"
+];
+const ERC20_ABI = [
+  "function symbol() view returns (string)",
+  "function decimals() view returns (uint8)",
+  "function allowance(address owner,address spender) view returns (uint256)",
+  "function approve(address spender,uint256 amount) returns (bool)"
+];
+
+let provider, signer, account, dex, synToken, assets = [];
+
+function short(addr) { return `${addr.slice(0, 6)}...${addr.slice(-4)}`; }
+function setStatus(text) { document.getElementById("status").textContent = text; }
+function log(value) { document.getElementById("output").textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2); }
+
+async function connectWallet() {
+  if (!window.ethereum) throw new Error("MetaMask or compatible wallet required");
+  provider = new ethers.BrowserProvider(window.ethereum);
+  signer = await provider.getSigner();
+  account = await signer.getAddress();
+  setStatus(`Connected ${short(account)}`);
+  if (document.getElementById("dexAddress").value.trim()) {
+    await loadDex();
+  }
+}
+
+async function loadDex() {
+  if (!signer) await connectWallet();
+  const dexAddress = document.getElementById("dexAddress").value.trim();
+  if (!ethers.isAddress(dexAddress)) throw new Error("Invalid DEX address");
+  dex = new ethers.Contract(dexAddress, DEX_ABI, signer);
+  const synAddress = await dex.synToken();
+  document.getElementById("synAddress").value = synAddress;
+  synToken = new ethers.Contract(synAddress, ERC20_ABI, signer);
+
+  assets = [];
+  const count = Number(await dex.poolCount());
+  for (let i = 0; i < count; i++) {
+    const address = await dex.poolAssets(i);
+    const token = new ethers.Contract(address, ERC20_ABI, signer);
+    const [symbol, decimals, pool] = await Promise.all([
+      token.symbol().catch(() => short(address)),
+      token.decimals().catch(() => 18),
+      dex.pools(address),
+    ]);
+    assets.push({ address, token, symbol, decimals: Number(decimals), pool });
+  }
+  renderPools();
+  setStatus(`DEX loaded: ${count} pools`);
+}
+
+function renderPools() {
+  const poolHtml = assets.map((asset, index) => `
+    <div class="pool" onclick="selectAsset(${index})">
+      <div>
+        <strong>SYN / ${asset.symbol}</strong>
+        <div class="mono">${asset.address}</div>
+      </div>
+      <div class="mono">${ethers.formatUnits(asset.pool.synReserve, 18)} SYN<br>${ethers.formatUnits(asset.pool.assetReserve, asset.decimals)} ${asset.symbol}</div>
+    </div>
+  `).join("");
+  document.getElementById("pools").innerHTML = poolHtml || "<div class='mono'>No pools found.</div>";
+  document.getElementById("assetSelect").innerHTML = assets.map((asset, index) =>
+    `<option value="${index}">${asset.symbol}</option>`
+  ).join("");
+}
+
+function selectAsset(index) {
+  document.getElementById("assetSelect").value = String(index);
+  quote();
+}
+
+async function quote() {
+  if (!dex || assets.length === 0) return;
+  const asset = assets[Number(document.getElementById("assetSelect").value || 0)];
+  const raw = document.getElementById("amountIn").value;
+  if (!raw || Number(raw) <= 0) return;
+  const direction = document.getElementById("direction").value;
+  const decimals = direction === "synForAsset" ? 18 : asset.decimals;
+  const amountIn = ethers.parseUnits(raw, decimals);
+  const out = direction === "synForAsset"
+    ? await dex.quoteSynForAsset(asset.address, amountIn)
+    : await dex.quoteAssetForSyn(asset.address, amountIn);
+  const outDecimals = direction === "synForAsset" ? asset.decimals : 18;
+  const formatted = ethers.formatUnits(out, outDecimals);
+  document.getElementById("minOut").value = formatted;
+  log(`Quote: ${raw} ${direction === "synForAsset" ? "SYN" : asset.symbol} -> ${formatted} ${direction === "synForAsset" ? asset.symbol : "SYN"}`);
+}
+
+async function approveInput() {
+  const asset = assets[Number(document.getElementById("assetSelect").value || 0)];
+  const direction = document.getElementById("direction").value;
+  const token = direction === "synForAsset" ? synToken : asset.token;
+  const decimals = direction === "synForAsset" ? 18 : asset.decimals;
+  const amount = ethers.parseUnits(document.getElementById("amountIn").value || "0", decimals);
+  const tx = await token.approve(await dex.getAddress(), amount);
+  log(`Approval submitted: ${tx.hash}`);
+  await tx.wait();
+  log(`Approval confirmed: ${tx.hash}`);
+}
+
+async function swap() {
+  const asset = assets[Number(document.getElementById("assetSelect").value || 0)];
+  const direction = document.getElementById("direction").value;
+  const inDecimals = direction === "synForAsset" ? 18 : asset.decimals;
+  const outDecimals = direction === "synForAsset" ? asset.decimals : 18;
+  const amountIn = ethers.parseUnits(document.getElementById("amountIn").value || "0", inDecimals);
+  const minOut = ethers.parseUnits(document.getElementById("minOut").value || "0", outDecimals);
+  const tx = direction === "synForAsset"
+    ? await dex.swapExactSynForAsset(asset.address, amountIn, minOut)
+    : await dex.swapExactAssetForSyn(asset.address, amountIn, minOut);
+  log(`Swap submitted: ${tx.hash}`);
+  await tx.wait();
+  log(`Swap confirmed: ${tx.hash}`);
+  await loadDex();
+}
+
+async function loadLatestDeployment() {
+  try {
+    let res = await fetch("/dex-config.json", { cache: "no-store" });
+    if (!res.ok) {
+      res = await fetch("/contracts/deployments/latest.json", { cache: "no-store" });
+    }
+    if (!res.ok) return;
+    const config = await res.json();
+    if (config.contracts?.dex) {
+      document.getElementById("dexAddress").value = config.contracts.dex;
+    }
+    if (config.contracts?.synCoin) {
+      document.getElementById("synAddress").value = config.contracts.synCoin;
+    }
+    log(`Loaded DEX config for ${config.network || "unknown network"}. Connect wallet to load pools.`);
+  } catch (err) {
+    log(`Could not load DEX config: ${err.message}`);
+  }
+}
+
+loadLatestDeployment();
+</script>
+</body>
+</html>

@@ -9,6 +9,8 @@
  *   POST /register        — Register/heartbeat a validator
  *   GET  /peers           — List all known peers
  *   GET  /peers/active    — List peers seen in the last 5 minutes
+ *   GET  /mailbox?name=x  — Poll outbound-only messages for a silent node
+ *   POST /mailbox         — Queue a message for a silent node
  *   GET  /health          — Health check
  *   DELETE /peers/:name   — Deregister a peer (requires secret)
  *
@@ -52,6 +54,14 @@ export default {
         return await handleRegister(request, env);
       }
 
+      if (path === "/mailbox" && request.method === "GET") {
+        return await handleMailboxPoll(request, env);
+      }
+
+      if (path === "/mailbox" && request.method === "POST") {
+        return await handleMailboxPost(request, env);
+      }
+
       if (path === "/peers" && request.method === "GET") {
         return await handleListPeers(env, false);
       }
@@ -70,7 +80,7 @@ export default {
 
       return json({
         service: "synthos-peer-registry",
-        endpoints: ["/health", "/register", "/register-identity", "/peers", "/peers/active", "/signal?id=YOUR_PEER_ID"],
+        endpoints: ["/health", "/register", "/register-identity", "/peers", "/peers/active", "/mailbox?name=YOUR_NODE", "/signal?id=YOUR_PEER_ID"],
       });
     } catch (e) {
       return json({ error: e.message }, 500);
@@ -83,24 +93,30 @@ export default {
 async function handleRegister(request, env) {
   const body = await request.json();
 
-  if (!body.name || !body.url) {
-    return json({ error: "name and url required" }, 400);
+  if (!body.name) {
+    return json({ error: "name required" }, 400);
   }
 
-  try {
-    new URL(body.url);
-  } catch {
-    return json({ error: "invalid url" }, 400);
+  const rawUrl = String(body.url || "").slice(0, 256);
+  if (rawUrl !== "") {
+    try {
+      new URL(rawUrl);
+    } catch {
+      return json({ error: "invalid url" }, 400);
+    }
   }
 
   const name = String(body.name).slice(0, 64).replace(/[^a-zA-Z0-9_-]/g, "");
-  const peerUrl = String(body.url).slice(0, 256);
+  const peerUrl = rawUrl;
   const cloud = String(body.cloud || "unknown").slice(0, 32);
 
   const entry = {
     name,
     url: peerUrl,
     cloud,
+    mode: String(body.mode || (peerUrl === "" ? "outbound_only" : "reachable")).slice(0, 64),
+    inbound_ports: Number(body.inbound_ports || 0),
+    hardware_commitment: String(body.hardware_commitment || "").slice(0, 128),
     registered_at: Date.now(),
     last_seen: Date.now(),
   };
@@ -158,6 +174,62 @@ async function handleRegister(request, env) {
   }
 
   return json({ ok: true, peer: name, message: "registered", reward });
+}
+
+async function handleMailboxPoll(request, env) {
+  const url = new URL(request.url);
+  const name = sanitizeName(url.searchParams.get("name"));
+  if (!name) return json({ error: "name required" }, 400);
+
+  const key = `mailbox:${name}`;
+  const raw = await env.PEERS.get(key);
+  if (!raw) return json([]);
+
+  let messages = [];
+  try {
+    messages = JSON.parse(raw);
+  } catch {
+    messages = [];
+  }
+
+  await env.PEERS.delete(key);
+  return json(messages);
+}
+
+async function handleMailboxPost(request, env) {
+  const secret = request.headers.get("X-Registry-Secret");
+  const envSecret = env.REGISTRY_SECRET;
+  if (envSecret && secret !== envSecret) {
+    return json({ error: "unauthorized" }, 401);
+  }
+
+  const body = await request.json();
+  const to = sanitizeName(body.to || body.name);
+  if (!to) return json({ error: "to required" }, 400);
+
+  const message = {
+    id: String(body.id || crypto.randomUUID()).slice(0, 128),
+    type: String(body.type || "message").slice(0, 64),
+    from: String(body.from || "relay").slice(0, 64),
+    payload: body.payload ?? body.message ?? null,
+    created_at: Date.now(),
+  };
+
+  const key = `mailbox:${to}`;
+  const raw = await env.PEERS.get(key);
+  let messages = [];
+  if (raw) {
+    try {
+      messages = JSON.parse(raw);
+    } catch {
+      messages = [];
+    }
+  }
+  messages.push(message);
+  messages = messages.slice(-100);
+
+  await env.PEERS.put(key, JSON.stringify(messages), { expirationTtl: 3600 });
+  return json({ ok: true, queued: true, to, id: message.id, depth: messages.length });
 }
 
 async function handleRegisterIdentity(request, env) {
@@ -352,4 +424,8 @@ function json(data, status = 200) {
       "Access-Control-Allow-Origin": "*",
     },
   });
+}
+
+function sanitizeName(value) {
+  return String(value || "").slice(0, 64).replace(/[^a-zA-Z0-9_-]/g, "");
 }

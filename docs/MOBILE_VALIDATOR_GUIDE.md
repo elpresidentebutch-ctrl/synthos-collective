@@ -168,7 +168,27 @@ The PWA caches itself via Service Worker. You can:
 
 ---
 
-## 8. Troubleshooting
+## 8. Background operation
+
+The mobile and desktop validator PWAs now register a best-effort background agent with the Service Worker:
+
+| Platform | Background behavior |
+|----------|---------------------|
+| **Desktop browser / installed PWA** | Can keep foreground sync running while open; background heartbeat uses Background Sync or Periodic Background Sync when available. For true always-on operation, use the native/tray desktop agent. |
+| **Android Chrome installed PWA** | Supports best-effort background heartbeat on many devices, subject to battery saver, permissions, and browser policy. Users should install the PWA and allow background activity for best results. |
+| **iPhone / iPad Safari PWA** | iOS may suspend web apps shortly after they leave the screen. The PWA will sync immediately when reopened, but true 24/7 background validation requires a native iOS wrapper with background task support. |
+
+The Service Worker stores only the local node ID, node URL, registry URL, and node type. It sends heartbeat registration to the peer registry when the browser wakes it. Private keys and wallet secrets should stay in the main app or native secure storage, not in the Service Worker.
+
+For the adoption claim, the correct production target is:
+
+- Desktop: native background/tray app plus browser dashboard.
+- Android: installed PWA first, then native wrapper if stricter uptime is required.
+- iOS: native wrapper for reliable background behavior; PWA remains the easiest onboarding path.
+
+---
+
+## 9. Troubleshooting
 
 | Problem | Fix |
 |---------|-----|
@@ -177,3 +197,4 @@ The PWA caches itself via Service Worker. You can:
 | WebRTC fails to connect | Carrier NAT may be blocking. Try on Wi-Fi, or add a TURN server. |
 | "Install App" not showing | You must be on HTTPS (or localhost). HTTP won't trigger PWA install. |
 | State mismatch after sync | Tap the reset button (if available) or clear site data to re-sync from genesis. |
+| Background heartbeat is not reliable on iPhone | This is an iOS platform limit for PWAs. Use the native iOS agent for always-on rewards. |

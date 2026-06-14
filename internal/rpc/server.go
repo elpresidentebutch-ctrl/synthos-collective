@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 
 	"synthos-collective/internal/chain"
 	"synthos-collective/internal/node"
@@ -44,13 +45,31 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/status", s.handleStatus)
 	mux.HandleFunc("/balance", s.handleBalance)
 	mux.HandleFunc("/mempool", s.handleMempool)
+	mux.HandleFunc("/dex/pools", s.handleDEXPools)
+	mux.HandleFunc("/dex/quote", s.handleDEXQuote)
+	mux.HandleFunc("/dex/swap", s.handleDEXSwap)
+	mux.HandleFunc("/immune/status", s.handleImmuneStatus)
 	mux.HandleFunc("/submitTx", s.handleSubmitTx)
 	mux.HandleFunc("/proposeBlock", s.handleProposeBlock)
 
 	// Wrap with rate limiting and input size limit middleware
 	handler := s.RateLimiter.Middleware(mux)
 	handler = s.bodyLimitMiddleware(handler)
+	handler = s.corsMiddleware(handler)
 	return handler
+}
+
+func (s *Server) corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // bodyLimitMiddleware enforces maximum request body size
@@ -71,6 +90,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"height":     s.Chain.Height(),
 		"tip":        s.Chain.Tip().Hash,
 		"state_root": s.Chain.State.Root(),
+		"immune":     s.Chain.State.ImmuneStatus(),
 	})
 }
 
@@ -92,6 +112,83 @@ func (s *Server) handleMempool(w http.ResponseWriter, r *http.Request) {
 		"size": len(s.Chain.Mempool),
 		"tx":   s.Chain.Mempool,
 	})
+}
+
+func (s *Server) handleDEXPools(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, map[string]any{
+		"ok":    true,
+		"pools": s.Chain.DEX.ListPools(),
+	})
+}
+
+func (s *Server) handleDEXQuote(w http.ResponseWriter, r *http.Request) {
+	asset := r.URL.Query().Get("asset")
+	amount, err := parseUintQuery(r, "amount")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	fromSyn := r.URL.Query().Get("from") != "asset"
+	pool := s.Chain.DEX.ListPools()[asset]
+	if pool == nil {
+		http.Error(w, "pool not found", http.StatusNotFound)
+		return
+	}
+
+	var out uint64
+	if fromSyn {
+		out, err = s.Chain.DEX.GetAmountOut(amount, pool.SynReserve, pool.AssetReserve)
+	} else {
+		out, err = s.Chain.DEX.GetAmountOut(amount, pool.AssetReserve, pool.SynReserve)
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, map[string]any{
+		"ok":         true,
+		"asset":      asset,
+		"amount_in":  amount,
+		"amount_out": out,
+		"from_syn":   fromSyn,
+		"fee_bps":    30,
+	})
+}
+
+func (s *Server) handleDEXSwap(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Asset   string `json:"asset"`
+		Amount  uint64 `json:"amount"`
+		FromSyn bool   `json:"from_syn"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	out, err := s.Chain.DEX.Swap(req.Asset, req.Amount, req.FromSyn)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if s.Store != nil {
+		_ = s.Store.Save(s.Chain)
+	}
+	writeJSON(w, map[string]any{
+		"ok":         true,
+		"asset":      req.Asset,
+		"amount_in":  req.Amount,
+		"amount_out": out,
+		"from_syn":   req.FromSyn,
+		"pools":      s.Chain.DEX.ListPools(),
+	})
+}
+
+func (s *Server) handleImmuneStatus(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, s.Chain.State.ImmuneStatus())
 }
 
 func (s *Server) handleSubmitTx(w http.ResponseWriter, r *http.Request) {
@@ -145,6 +242,18 @@ func writeJSON(w http.ResponseWriter, v any) {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(v)
+}
+
+func parseUintQuery(r *http.Request, name string) (uint64, error) {
+	raw := r.URL.Query().Get(name)
+	if raw == "" {
+		return 0, errors.New("missing " + name)
+	}
+	value, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil || value == 0 {
+		return 0, errors.New("invalid " + name)
+	}
+	return value, nil
 }
 
 var _ = errors.New // keep import stable for future error mapping

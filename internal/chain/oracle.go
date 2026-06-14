@@ -1,9 +1,7 @@
 package chain
 
 import (
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"sync"
 	"time"
 )
@@ -31,7 +29,7 @@ func NewOracle() *Oracle {
 func (o *Oracle) FetchPrice(symbol string) error {
 	// In production, you would use: https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd
 	// For 'The Collective' (SYN), we derive it from the DEX or set a manual floor.
-	
+
 	o.mu.Lock()
 	defer o.mu.Unlock()
 

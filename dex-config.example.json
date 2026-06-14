@@ -1,0 +1,12 @@
+{
+  "network": "testnet",
+  "chainId": "0x7a69",
+  "chainName": "SYNTHOS Local Rehearsal",
+  "rpcUrls": [],
+  "blockExplorerUrls": [],
+  "contracts": {
+    "synCoin": "",
+    "dex": ""
+  },
+  "notes": "Copy to dex-config.json after deployment. Production nodes remain outbound-only; the DEX website uses wallet/RPC outbound calls."
+}

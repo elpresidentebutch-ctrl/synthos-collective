@@ -17,8 +17,8 @@ import (
 // Constants & Types
 // -----------------------------
 const (
-	MIN_FEE             = 10
-	MAX_SUPPLY          = 100_000_000_000 // 100 Billion cap
+	MIN_FEE              = 10
+	MAX_SUPPLY           = 100_000_000_000 // 100 Billion cap
 	ESCROW_COMMISSION    = 1
 	INNER_CIRCLE_PRICE   = 200_000_000
 	MAX_THREATS_PER_ADDR = 100
@@ -34,18 +34,18 @@ type KeyValuePair struct {
 // Transaction Layer (Timeless)
 // -----------------------------
 type Tx struct {
-	ID        string            `json:"id"`
-	ChainID   uint64            `json:"chain_id"`
-	From      Address           `json:"from"`
-	To        Address           `json:"to"`
-	Amount    uint64            `json:"amount"`
-	Fee       uint64            `json:"fee"`
-	Nonce     uint64            `json:"nonce"`
-	PublicKey string            `json:"public_key"`
-	Signature string            `json:"signature"`
-	AssetID   string            `json:"asset_id,omitempty"`
-	Metadata  []KeyValuePair    `json:"metadata,omitempty"`
-	Timestamp int64             `json:"timestamp,omitempty"` // for auditing only
+	ID        string         `json:"id"`
+	ChainID   uint64         `json:"chain_id"`
+	From      Address        `json:"from"`
+	To        Address        `json:"to"`
+	Amount    uint64         `json:"amount"`
+	Fee       uint64         `json:"fee"`
+	Nonce     uint64         `json:"nonce"`
+	PublicKey string         `json:"public_key"`
+	Signature string         `json:"signature"`
+	AssetID   string         `json:"asset_id,omitempty"`
+	Metadata  []KeyValuePair `json:"metadata,omitempty"`
+	Timestamp int64          `json:"timestamp,omitempty"` // for auditing only
 }
 
 var (
@@ -62,6 +62,16 @@ func (t *Tx) Sign(priv ed25519.PrivateKey) error {
 	}
 
 	t.Signature = "0x" + hex.EncodeToString(ed25519.Sign(priv, payload))
+	hash := sha256.Sum256(payload)
+	t.ID = "0x" + hex.EncodeToString(hash[:])
+	return nil
+}
+
+func (t *Tx) ComputeID() error {
+	payload, err := t.signingBytes()
+	if err != nil {
+		return err
+	}
 	hash := sha256.Sum256(payload)
 	t.ID = "0x" + hex.EncodeToString(hash[:])
 	return nil
@@ -139,6 +149,33 @@ type Account struct {
 	Nonce   uint64            `json:"nonce"`
 }
 
+type ImmuneNodeRecord struct {
+	Address           Address `json:"address"`
+	HardwareHash      string  `json:"hardware_hash"`
+	ActivatedAt       int64   `json:"activated_at"`
+	LastProofAt       int64   `json:"last_proof_at,omitempty"`
+	SovereignProofs   uint64  `json:"sovereign_proofs"`
+	OptInLocalOnly    bool    `json:"opt_in_local_only"`
+	CryptographicMode string  `json:"cryptographic_mode"`
+}
+
+type SovereignProofRecord struct {
+	ID            string  `json:"id"`
+	Address       Address `json:"address"`
+	ProofHash     string  `json:"proof_hash"`
+	NoiseClass    string  `json:"noise_class"`
+	DeclaredScope string  `json:"declared_scope"`
+	Timestamp     int64   `json:"timestamp"`
+}
+
+type ImmuneStats struct {
+	ActiveImmuneNodes    int    `json:"active_immune_nodes"`
+	SovereignProofs      uint64 `json:"sovereign_proofs"`
+	LastProofHash        string `json:"last_proof_hash,omitempty"`
+	CryptographicSilence bool   `json:"cryptographic_silence"`
+	InboundPortsRequired int    `json:"inbound_ports_required"`
+}
+
 type AccountLeaf struct {
 	Address Address           `json:"address"`
 	Balance uint64            `json:"balance"`
@@ -159,15 +196,20 @@ func (a *Account) LeafHash(addr Address) []byte {
 }
 
 type State struct {
-	Accounts    map[Address]Account
-	mu          sync.RWMutex
-	TotalSupply uint64
+	Accounts             map[Address]Account
+	ImmuneNodes          map[Address]ImmuneNodeRecord
+	SovereignProofs      map[string]SovereignProofRecord
+	LastSovereignProofID string
+	mu                   sync.RWMutex
+	TotalSupply          uint64
 }
 
 func NewState() *State {
 	return &State{
-		Accounts:    make(map[Address]Account),
-		TotalSupply: MAX_SUPPLY,
+		Accounts:        make(map[Address]Account),
+		ImmuneNodes:     make(map[Address]ImmuneNodeRecord),
+		SovereignProofs: make(map[string]SovereignProofRecord),
+		TotalSupply:     MAX_SUPPLY,
 	}
 }
 
@@ -244,7 +286,11 @@ func (s *State) ApplyTx(tx Tx) error {
 	}
 
 	from.Nonce += 1
-	
+
+	if err := s.applyImmuneMetadata(tx); err != nil {
+		return err
+	}
+
 	isInnerCircle := false
 	for _, kv := range tx.Metadata {
 		if kv.Key == "type" && kv.Value == "inner_circle_purchase" {
@@ -264,7 +310,7 @@ func (s *State) ApplyTx(tx Tx) error {
 			to.Assets[tx.AssetID] += tx.Amount
 		}
 		s.Set(tx.To, to)
-		
+
 		if commission > 0 {
 			f := s.Get(founderAddr)
 			f.Balance += commission
@@ -274,6 +320,83 @@ func (s *State) ApplyTx(tx Tx) error {
 
 	s.Set(tx.From, from)
 	return nil
+}
+
+func (s *State) applyImmuneMetadata(tx Tx) error {
+	txType := metadataValue(tx.Metadata, "type")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch txType {
+	case "immune_node_activate":
+		hardwareHash := metadataValue(tx.Metadata, "hardware_hash")
+		if hardwareHash == "" {
+			return errors.New("missing hardware_hash for immune node activation")
+		}
+		record := s.ImmuneNodes[tx.From]
+		if record.Address == "" {
+			record.Address = tx.From
+			record.ActivatedAt = tx.Timestamp
+			record.CryptographicMode = "absolute_silence"
+		}
+		record.HardwareHash = hardwareHash
+		record.OptInLocalOnly = metadataValue(tx.Metadata, "scope") != "external"
+		s.ImmuneNodes[tx.From] = record
+	case "sovereign_noise_proof":
+		proofHash := metadataValue(tx.Metadata, "proof_hash")
+		if proofHash == "" {
+			return errors.New("missing proof_hash for sovereign noise proof")
+		}
+		scope := metadataValue(tx.Metadata, "scope")
+		if scope == "" {
+			scope = "local_opt_in"
+		}
+		if scope != "local_opt_in" && scope != "local_browser" && scope != "testnet" {
+			return errors.New("sovereign noise proofs must be opt-in local/testnet scope")
+		}
+		record := s.ImmuneNodes[tx.From]
+		if record.Address == "" {
+			return errors.New("immune node must be activated before submitting proofs")
+		}
+		record.SovereignProofs++
+		record.LastProofAt = tx.Timestamp
+		s.ImmuneNodes[tx.From] = record
+		proof := SovereignProofRecord{
+			ID:            tx.ID,
+			Address:       tx.From,
+			ProofHash:     proofHash,
+			NoiseClass:    metadataValue(tx.Metadata, "noise_class"),
+			DeclaredScope: scope,
+			Timestamp:     tx.Timestamp,
+		}
+		s.SovereignProofs[tx.ID] = proof
+		s.LastSovereignProofID = tx.ID
+	}
+	return nil
+}
+
+func metadataValue(items []KeyValuePair, key string) string {
+	for _, kv := range items {
+		if kv.Key == key {
+			return kv.Value
+		}
+	}
+	return ""
+}
+
+func (s *State) ImmuneStatus() ImmuneStats {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var last string
+	if s.LastSovereignProofID != "" {
+		last = s.SovereignProofs[s.LastSovereignProofID].ProofHash
+	}
+	return ImmuneStats{
+		ActiveImmuneNodes:    len(s.ImmuneNodes),
+		SovereignProofs:      uint64(len(s.SovereignProofs)),
+		LastProofHash:        last,
+		CryptographicSilence: true,
+		InboundPortsRequired: 0,
+	}
 }
 
 // Slash executes the DMAS immune penalty (Auto-Slashing)
@@ -313,6 +436,18 @@ func (s *State) Root() string {
 		acc := s.Accounts[Address(a)]
 		leaves = append(leaves, acc.LeafHash(Address(a)))
 	}
+	immunePayload := struct {
+		ImmuneNodes          map[Address]ImmuneNodeRecord    `json:"immune_nodes"`
+		SovereignProofs      map[string]SovereignProofRecord `json:"sovereign_proofs"`
+		LastSovereignProofID string                          `json:"last_sovereign_proof_id"`
+	}{
+		ImmuneNodes:          s.ImmuneNodes,
+		SovereignProofs:      s.SovereignProofs,
+		LastSovereignProofID: s.LastSovereignProofID,
+	}
+	immuneData, _ := json.Marshal(immunePayload)
+	immuneHash := sha256.Sum256(immuneData)
+	leaves = append(leaves, immuneHash[:])
 
 	return "0x" + hex.EncodeToString(buildMerkleRoot(leaves))
 }
@@ -350,6 +485,13 @@ func (s *State) Clone() *State {
 		v.Assets = assets
 		out.Accounts[k] = v
 	}
+	for k, v := range s.ImmuneNodes {
+		out.ImmuneNodes[k] = v
+	}
+	for k, v := range s.SovereignProofs {
+		out.SovereignProofs[k] = v
+	}
+	out.LastSovereignProofID = s.LastSovereignProofID
 	return out
 }
 
@@ -380,13 +522,13 @@ type ThreatProfile struct {
 }
 
 type ImmuneSystem struct {
-	ActiveThreats      map[Address][]ThreatProfile
-	AnchorAddress      Address
-	AllowFounderSlash  bool
-	SlashThreshold     uint64
-	mu                 sync.Mutex
-	GetStake           func(addr Address) uint64
-	ExecuteSlash       func(target Address)
+	ActiveThreats     map[Address][]ThreatProfile
+	AnchorAddress     Address
+	AllowFounderSlash bool
+	SlashThreshold    uint64
+	mu                sync.Mutex
+	GetStake          func(addr Address) uint64
+	ExecuteSlash      func(target Address)
 }
 
 func NewImmuneSystem(anchor Address, getStake func(Address) uint64, executeSlash func(Address)) *ImmuneSystem {

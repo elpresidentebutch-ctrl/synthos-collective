@@ -1,0 +1,29 @@
+{
+  "format": "synthos-adopter-merkle-v1",
+  "generatedAt": "2026-05-29T09:36:47.774Z",
+  "inputFile": "merkle/adopters.example.json",
+  "merkleRoot": "0x00d7dd3131bfb0bc20edc60c8037d13a1b0423884fd1edc65622f1c06b71d331",
+  "count": 2,
+  "leafEncoding": "keccak256(bytes.concat(keccak256(abi.encode(operator, hardwareCommitment, keccak256(bytes(nodeType))))))",
+  "pairHashing": "OpenZeppelin MerkleProof sorted-pair keccak256(bytes32,bytes32)",
+  "adopters": [
+    {
+      "operator": "0x0000000000000000000000000000000000000001",
+      "hardwareCommitment": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "nodeType": "DESKTOP",
+      "leaf": "0xa48824bd775e4365237f3bf4b9cdceb2dd36bb79e8c66f49369c6ace8dfdec32",
+      "proof": [
+        "0x420d3dbc38fa1e3ac48c2862baed0231a6aa165aab9b4409da32bd1dd18df1fe"
+      ]
+    },
+    {
+      "operator": "0x0000000000000000000000000000000000000002",
+      "hardwareCommitment": "0x2222222222222222222222222222222222222222222222222222222222222222",
+      "nodeType": "ANDROID",
+      "leaf": "0x420d3dbc38fa1e3ac48c2862baed0231a6aa165aab9b4409da32bd1dd18df1fe",
+      "proof": [
+        "0xa48824bd775e4365237f3bf4b9cdceb2dd36bb79e8c66f49369c6ace8dfdec32"
+      ]
+    }
+  ]
+}

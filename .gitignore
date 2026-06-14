@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+!contracts/.env.testnet.example
 
 # Redundant audit export (use docs/audit + scripts/package_audit.ps1 to regenerate)
 SYNTHOS_AUDIT_PACKET.zip
@@ -9,14 +10,24 @@ SYNTHOS_AUDIT_PACKET/
 
 # Go
 *.exe
+*.exe~
 *.test
+.gocache/
 
 # Node / Hardhat (contracts/)
 contracts/node_modules/
+contracts/.appdata/
 contracts/cache/
 contracts/artifacts/
 contracts/coverage/
 contracts/coverage.json
+contracts/hardhat-node.log
+contracts/merkle/adopters.json
+contracts/merkle/adopter-merkle.json
+
+# Local runtime output
+*.log
+dex-config.json
 
 # Python
 __pycache__/

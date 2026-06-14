@@ -571,6 +571,11 @@ const KNOWN_PEERS = [
   "https://synthos-validator-15.jamesishamwilliams.workers.dev",
 ];
 
+const PEER_REGISTRY_URLS = [
+  "https://synthos-peer-registry.jamesishamwilliams.workers.dev",
+];
+const PEER_REGISTRY_URL = PEER_REGISTRY_URLS[0];
+const MAILBOX_URLS = PEER_REGISTRY_URLS;
 const SYNC_INTERVAL_MS = 8000;
 const DB_NAME = "synthos-mobile-validator";
 const DB_VERSION = 1;
@@ -783,22 +788,95 @@ async function syncFromNetwork() {
 // ─── Peer Registration ──────────────────────────────────────────────────────
 
 async function registerNode() {
-  try {
-    const name = myPeerId || `mobile-${Math.random().toString(36).slice(2, 8)}`;
-    const resp = await fetch('https://synthos-peer-registry.jamesishamwilliams.workers.dev/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: name,
-        url: window.location.href,
-        cloud: 'mobile-browser'
-      })
-    });
-    if (resp.ok) {
-      log(`Node registered globally as ${name}`);
+  const name = myPeerId || `mobile-${Math.random().toString(36).slice(2, 8)}`;
+  for (const registryUrl of PEER_REGISTRY_URLS) {
+    try {
+      const resp = await fetch(`${registryUrl}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name,
+          url: window.location.href,
+          cloud: 'mobile-browser',
+          mode: 'outbound_only',
+          inbound_ports: 0
+        })
+      });
+      if (resp.ok) {
+        log(`Node registered through ${new URL(registryUrl).hostname}`);
+      }
+    } catch (e) {
+      console.error("Global registration failed:", registryUrl, e);
     }
-  } catch (e) {
-    console.error("Global registration failed:", e);
+  }
+}
+
+async function setupBackgroundAgent(swReg) {
+  if (!swReg?.active || !myPeerId) return;
+
+  if (navigator.storage?.persist) {
+    try {
+      await navigator.storage.persist();
+    } catch {}
+  }
+
+  swReg.active.postMessage({
+    type: "SYNTHOS_BACKGROUND_CONFIG",
+    payload: {
+      peerId: myPeerId,
+      nodeUrl: window.location.href,
+      registryUrl: PEER_REGISTRY_URL,
+      registryUrls: PEER_REGISTRY_URLS,
+      cloud: "mobile-background",
+    },
+  });
+
+  if ("periodicSync" in swReg) {
+    try {
+      await swReg.periodicSync.register("synthos-node-heartbeat", {
+        minInterval: 15 * 60 * 1000,
+      });
+      log("Background heartbeat registered");
+    } catch (e) {
+      log("Background heartbeat permission unavailable: " + e.message);
+    }
+  } else if ("sync" in swReg) {
+    try {
+      await swReg.sync.register("synthos-node-heartbeat");
+      log("One-shot background heartbeat registered");
+    } catch (e) {
+      log("Background sync unavailable: " + e.message);
+    }
+  } else {
+    log("Browser background sync unavailable; foreground heartbeat active");
+  }
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && chain) {
+    syncFromNetwork();
+    registerNode();
+  }
+});
+
+async function pollMailbox() {
+  if (!myPeerId) return;
+  for (const mailboxUrl of MAILBOX_URLS) {
+    try {
+      const resp = await fetch(`${mailboxUrl}/mailbox?name=${encodeURIComponent(myPeerId)}`);
+      if (!resp.ok) continue;
+      const messages = await resp.json();
+      if (Array.isArray(messages) && messages.length > 0) {
+        log(`Mailbox received ${messages.length} outbound-polled message(s) from ${new URL(mailboxUrl).hostname}`);
+        for (const msg of messages) {
+          if (msg?.payload?.type === "sync") {
+            await syncFromNetwork();
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Mailbox poll failed:", mailboxUrl, e);
+    }
   }
 }
 
@@ -1395,6 +1473,8 @@ async function boot() {
   // Global registration
   await registerNode();
   setInterval(registerNode, 60000); // Heartbeat every minute
+  await pollMailbox();
+  setInterval(pollMailbox, 15000);
 
   // Auto-connect to signaling if URL is saved
   const savedSignalUrl = localStorage.getItem("synthos-signal-url");
@@ -1406,8 +1486,10 @@ async function boot() {
   // Register service worker
   if ("serviceWorker" in navigator) {
     try {
-      await navigator.serviceWorker.register("sw.js");
+      const swReg = await navigator.serviceWorker.register("sw.js");
       log("Service Worker registered");
+      await navigator.serviceWorker.ready;
+      await setupBackgroundAgent(swReg);
     } catch (e) {
       log("Service Worker registration skipped: " + e.message);
     }

@@ -1,16 +1,11 @@
-// hardhat.config.js
-
-require("@nomiclabs/hardhat-ethers");
-require("@nomiclabs/hardhat-waffle");
-require("hardhat-gas-reporter");
-require("solidity-coverage");
-require("@openzeppelin/hardhat-upgrades");
+require("@nomicfoundation/hardhat-toolbox");
 require("dotenv").config();
 
 module.exports = {
   solidity: {
     version: "0.8.20",
     settings: {
+      viaIR: true,
       optimizer: {
         enabled: true,
         runs: 200,
@@ -19,7 +14,6 @@ module.exports = {
   },
 
   networks: {
-    // SYNTHOS Network
     synthos: {
       url: process.env.SYNTHOS_RPC_URL || "http://localhost:8545",
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
@@ -27,7 +21,6 @@ module.exports = {
       gasPrice: "auto",
     },
 
-    // Gemini Megachain 2.0
     gemini: {
       url: process.env.GEMINI_RPC_URL || "http://localhost:8546",
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
@@ -35,27 +28,23 @@ module.exports = {
       gasPrice: "auto",
     },
 
-    // Ethereum (for testing)
     ethereum: {
       url: process.env.ETHEREUM_RPC_URL || "http://localhost:8547",
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
       chainId: 1,
     },
 
-    // Polygon (for testing)
     polygon: {
       url: process.env.POLYGON_RPC_URL || "http://localhost:8548",
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
       chainId: 137,
     },
 
-    // Local hardhat
     hardhat: {
       chainId: 31337,
       allowUnlimitedContractSize: true,
     },
 
-    // Localhost for local development
     localhost: {
       url: "http://127.0.0.1:8545",
     },
@@ -68,7 +57,7 @@ module.exports = {
   },
 
   paths: {
-    sources: "./contracts",
+    sources: "./src",
     tests: "./test",
     cache: "./cache",
     artifacts: "./artifacts",

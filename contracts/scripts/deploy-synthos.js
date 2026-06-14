@@ -1,133 +1,322 @@
-// scripts/deploy-synthos.js
-
-/**
- * SYNTHOS Network Deployment Script
- * 
- * Deploys all SYNTHOS contracts in correct order:
- * 1. SynCoin
- * 2. SYNTHOSGovernance  
- * 3. SYNTHOSStaking
- * 4. RewardDistributor
- * 
- * Usage: npx hardhat run scripts/deploy-synthos.js --network synthos
- */
-
+const fs = require("fs");
+const path = require("path");
 const hre = require("hardhat");
-const { ethers } = hre;
 
-async function main() {
-  console.log("🚀 Deploying SYNTHOS contracts...\n");
+const { ethers, network } = hre;
 
-  const [deployer] = await ethers.getSigners();
-  console.log(`📍 Deployer: ${deployer.address}\n`);
+const FOUNDER_RELEASE_TIMESTAMPS = [
+  1811548800, 1843171200, 1874707200, 1906243200, 1937779200,
+  1969401600, 2000937600, 2032473600, 2064009600, 2095632000,
+];
 
-  // ============================================
-  // 1. Deploy SynCoin
-  // ============================================
-  console.log("1️⃣ Deploying SynCoin...");
-  const SynCoin = await ethers.getContractFactory("SynCoin");
-  const synCoin = await SynCoin.deploy();
-  await synCoin.deployed();
-  console.log(`✅ SynCoin deployed to: ${synCoin.address}\n`);
+const LOCAL_DEX_POOLS = [
+  { symbol: "B12", name: "B12 Test Asset", syn: "10000000", asset: "50000" },
+  { symbol: "NGOT", name: "NGOT Test Asset", syn: "5000000", asset: "100000" },
+  { symbol: "MOMENTUM", name: "Momentum Test Asset", syn: "2000000", asset: "10000" },
+];
 
-  // ============================================
-  // 2. Deploy SYNTHOSGovernance
-  // ============================================
-  console.log("2️⃣ Deploying SYNTHOSGovernance...");
-  
-  // Deploy timelock (2-day delay)
-  const TimelockFactory = await ethers.getContractFactory("Timelock"); // You'll need Timelock contract
-  // For now, we'll use a simple governance timelock address
-  const timelockAddress = deployer.address; // Placeholder
-  
-  const SYNTHOSGovernance = await ethers.getContractFactory("SYNTHOSGovernance");
-  const governance = await SYNTHOSGovernance.deploy(
-    synCoin.address,
-    timelockAddress
+async function deployedAddress(contract) {
+  if (typeof contract.getAddress === "function") {
+    return contract.getAddress();
+  }
+  return contract.address;
+}
+
+async function waitForDeploy(contract) {
+  if (typeof contract.waitForDeployment === "function") {
+    await contract.waitForDeployment();
+    return;
+  }
+  await contract.deployed();
+}
+
+async function deployContract(name, args = []) {
+  const factory = await ethers.getContractFactory(name);
+  const contract = await factory.deploy(...args);
+  await waitForDeploy(contract);
+  const address = await deployedAddress(contract);
+  console.log(`${name}: ${address}`);
+  return { contract, address };
+}
+
+function dexPoolConfig() {
+  if (process.env.DEX_POOLS_JSON) {
+    return JSON.parse(process.env.DEX_POOLS_JSON);
+  }
+  if (network.name === "hardhat" || network.name === "localhost") {
+    return LOCAL_DEX_POOLS;
+  }
+  return [];
+}
+
+function envBool(name, fallback) {
+  if (process.env[name] === undefined) return fallback;
+  return process.env[name] === "true";
+}
+
+function requireBytes32(value, label) {
+  if (!/^0x[a-fA-F0-9]{64}$/.test(value || "")) {
+    throw new Error(`${label} must be a bytes32 hex string`);
+  }
+}
+
+function adopterMerkleConfig() {
+  const envRoot = process.env.ADOPTER_MERKLE_ROOT;
+  if (envRoot) {
+    requireBytes32(envRoot, "ADOPTER_MERKLE_ROOT");
+    return {
+      root: envRoot,
+      gateRequired: envBool("ADOPTER_MERKLE_GATE_REQUIRED", envRoot !== ethers.ZeroHash),
+      source: "ADOPTER_MERKLE_ROOT",
+      count: null,
+    };
+  }
+
+  const merkleFile = path.resolve(
+    __dirname,
+    "..",
+    process.env.ADOPTER_MERKLE_FILE || "merkle/adopter-merkle.json"
   );
-  await governance.deployed();
-  console.log(`✅ SYNTHOSGovernance deployed to: ${governance.address}\n`);
+  if (fs.existsSync(merkleFile)) {
+    const parsed = JSON.parse(fs.readFileSync(merkleFile, "utf8"));
+    const root = parsed.merkleRoot || parsed.root;
+    requireBytes32(root, merkleFile);
+    return {
+      root,
+      gateRequired: envBool("ADOPTER_MERKLE_GATE_REQUIRED", root !== ethers.ZeroHash),
+      source: merkleFile,
+      count: parsed.count ?? null,
+    };
+  }
 
-  // ============================================
-  // 3. Deploy SYNTHOSStaking
-  // ============================================
-  console.log("3️⃣ Deploying SYNTHOSStaking...");
-  const SYNTHOSStaking = await ethers.getContractFactory("SYNTHOSStaking");
-  const staking = await SYNTHOSStaking.deploy(
-    synCoin.address,
-    governance.address
-  );
-  await staking.deployed();
-  console.log(`✅ SYNTHOSStaking deployed to: ${staking.address}\n`);
-
-  // ============================================
-  // 4. Deploy RewardDistributor
-  // ============================================
-  console.log("4️⃣ Deploying RewardDistributor...");
-  const RewardDistributor = await ethers.getContractFactory("RewardDistributor");
-  const rewards = await RewardDistributor.deploy(governance.address);
-  await rewards.deployed();
-  console.log(`✅ RewardDistributor deployed to: ${rewards.address}\n`);
-
-  // ============================================
-  // 5. Configuration
-  // ============================================
-  console.log("⚙️  Configuring contracts...\n");
-
-  // Transfer SynCoin ownership to governance (if needed)
-  // console.log("   - Transferring SynCoin ownership to governance...");
-  // let tx = await synCoin.transferOwnership(governance.address);
-  // await tx.wait();
-  // console.log("   ✓ Ownership transferred\n");
-
-  // Approve SynCoin in RewardDistributor (if needed)
-  // console.log("   - Approving SynCoin in RewardDistributor...");
-  // tx = await rewards.approveToken(synCoin.address);
-  // await tx.wait();
-  // console.log("   ✓ Token approved\n");
-
-  // ============================================
-  // 6. Summary
-  // ============================================
-  console.log("=" .repeat(60));
-  console.log("🎉 SYNTHOS DEPLOYMENT COMPLETE\n");
-  console.log("Contract Addresses:");
-  console.log("-".repeat(60));
-  console.log(`SynCoin:            ${synCoin.address}`);
-  console.log(`SYNTHOSGovernance:  ${governance.address}`);
-  console.log(`SYNTHOSStaking:     ${staking.address}`);
-  console.log(`RewardDistributor:  ${rewards.address}`);
-  console.log("-".repeat(60));
-  console.log(`\n📝 Save these addresses for future reference!\n`);
-
-  // ============================================
-  // 7. Verification Info
-  // ============================================
-  console.log("🔗 To verify contracts on block explorer:\n");
-  console.log("npx hardhat verify --network synthos <CONTRACT_ADDRESS> <CONSTRUCTOR_ARGS>");
-  console.log("");
-
-  // ============================================
-  // 8. Next Steps
-  // ============================================
-  console.log("📋 Next Steps:");
-  console.log("   1. Update .env file with deployed addresses");
-  console.log("   2. Run allocation script to distribute tokens");
-  console.log("   3. Register initial validators");
-  console.log("   4. Create first governance proposal");
-  console.log("");
+  const gateRequired = envBool("ADOPTER_MERKLE_GATE_REQUIRED", false);
+  if (gateRequired) {
+    throw new Error("ADOPTER_MERKLE_GATE_REQUIRED=true but no ADOPTER_MERKLE_ROOT or merkle/adopter-merkle.json was found");
+  }
 
   return {
-    synToken: synToken.address,
-    governance: governance.address,
-    staking: staking.address,
-    rewards: rewards.address,
+    root: ethers.ZeroHash,
+    gateRequired: false,
+    source: "none",
+    count: 0,
   };
 }
 
-main()
-  .then(() => process.exit(0))
-  .catch((error) => {
-    console.error(error);
-    process.exit(1);
-  });
+async function main() {
+  console.log("Deploying SYNTHOS contracts");
+  console.log(`Network: ${network.name}`);
+
+  const [deployer] = await ethers.getSigners();
+  console.log(`Deployer: ${deployer.address}`);
+
+  const founderWallet = process.env.FOUNDER_WALLET || deployer.address;
+  const founderOpsWallet = process.env.FOUNDER_OPS_WALLET || founderWallet;
+  const dexLiquidityWallet = process.env.DEX_LIQUIDITY_WALLET || deployer.address;
+  const communityWallet = process.env.COMMUNITY_WALLET || deployer.address;
+  const treasuryWallet = process.env.TREASURY_WALLET || deployer.address;
+
+  const activationReward = ethers.parseUnits(process.env.ADOPTER_ACTIVATION_REWARD || "1000", 18);
+  const heartbeatReward = ethers.parseUnits(process.env.ADOPTER_HEARTBEAT_REWARD || "25", 18);
+  const heartbeatInterval = BigInt(process.env.ADOPTER_HEARTBEAT_INTERVAL || "86400");
+  const maxHeartbeatClaims = BigInt(process.env.ADOPTER_MAX_HEARTBEAT_CLAIMS || "365");
+  const merkle = adopterMerkleConfig();
+
+  const syn = await deployContract("SynCoin");
+  const token = syn.contract;
+
+  const timelockMinDelay = BigInt(
+    process.env.TIMELOCK_MIN_DELAY || (network.name === "hardhat" ? "60" : "172800")
+  );
+  const timelock = await deployContract("SYNTHOSTimelock", [
+    timelockMinDelay,
+    [deployer.address],
+    [deployer.address],
+    deployer.address,
+  ]);
+
+  const governance = await deployContract("SYNTHOSGovernance", [
+    syn.address,
+    timelock.address,
+  ]);
+
+  const staking = await deployContract("SYNTHOSStaking", [
+    syn.address,
+    governance.address,
+  ]);
+
+  const rewardDistributor = await deployContract("RewardDistributor", [
+    governance.address,
+  ]);
+
+  const adopterRewards = await deployContract("SYNTHOSAdopterRewards", [
+    syn.address,
+    activationReward,
+    heartbeatReward,
+    heartbeatInterval,
+    maxHeartbeatClaims,
+  ]);
+
+  const dex = await deployContract("SYNTHOSDex", [syn.address]);
+
+  if (merkle.root !== ethers.ZeroHash || merkle.gateRequired) {
+    const tx = await adopterRewards.contract.setAdopterMerkleRoot(
+      merkle.root,
+      merkle.gateRequired
+    );
+    await tx.wait();
+    console.log(`ADOPTER_MERKLE_ROOT: ${merkle.root} gateRequired=${merkle.gateRequired} source=${merkle.source}`);
+  }
+
+  const founderVesting = await deployContract("SYNTHOSFounderAnnualVesting", [
+    syn.address,
+    founderWallet,
+    await token.FOUNDER_ANNUAL_RELEASE(),
+    FOUNDER_RELEASE_TIMESTAMPS,
+  ]);
+
+  console.log("Allocating genesis supply");
+  const allocations = [
+    [founderVesting.address, await token.FOUNDER_VESTING_ALLOCATION(), "FOUNDER_VESTING"],
+    [founderOpsWallet, await token.FOUNDER_OPERATIONS_GRANT(), "FOUNDER_OPERATIONS_GRANT"],
+    [adopterRewards.address, await token.VALIDATOR_REWARDS_ALLOCATION(), "VALIDATOR_REWARDS"],
+    [communityWallet, await token.COMMUNITY_ALLOCATION(), "COMMUNITY"],
+    [treasuryWallet, await token.ECOSYSTEM_TREASURY_ALLOCATION(), "ECOSYSTEM_TREASURY"],
+  ];
+
+  for (const [recipient, amount, label] of allocations) {
+    const tx = await token.allocateTokens(recipient, amount, label);
+    await tx.wait();
+    console.log(`${label}: ${ethers.formatUnits(amount, 18)} SYN -> ${recipient}`);
+  }
+
+  console.log("Configuring DEX pools");
+  const dexPools = [];
+  const poolConfig = dexPoolConfig();
+  let seededSynLiquidity = 0n;
+
+  for (const pool of poolConfig) {
+    let assetAddress = pool.address;
+    if (!assetAddress) {
+      if (!(network.name === "hardhat" || network.name === "localhost")) {
+        throw new Error(`DEX pool ${pool.symbol} is missing production asset address`);
+      }
+      const initialSupply = ethers.parseUnits(pool.asset, pool.decimals || 18);
+      const mock = await deployContract("MockERC20", [
+        pool.name || `${pool.symbol} Test Asset`,
+        pool.symbol,
+        deployer.address,
+        initialSupply,
+      ]);
+      assetAddress = mock.address;
+    }
+
+    const synAmount = ethers.parseUnits(pool.syn, 18);
+    const assetAmount = ethers.parseUnits(pool.asset, pool.decimals || 18);
+    seededSynLiquidity += synAmount;
+
+    let tx = await token.allocateTokens(deployer.address, synAmount, "LOCKED_DEX_LIQUIDITY");
+    await tx.wait();
+    tx = await dex.contract.createPool(assetAddress);
+    await tx.wait();
+    tx = await token.approve(dex.address, synAmount);
+    await tx.wait();
+    const asset = new ethers.Contract(
+      assetAddress,
+      ["function approve(address spender, uint256 amount) external returns (bool)"],
+      deployer
+    );
+    tx = await asset.approve(dex.address, assetAmount);
+    await tx.wait();
+    tx = await dex.contract.addLiquidity(assetAddress, synAmount, assetAmount);
+    await tx.wait();
+
+    dexPools.push({
+      symbol: pool.symbol,
+      asset: assetAddress,
+      synLiquidity: pool.syn,
+      assetLiquidity: pool.asset,
+    });
+    console.log(`DEX pool SYN/${pool.symbol}: ${pool.syn} SYN + ${pool.asset} ${pool.symbol}`);
+  }
+
+  const remainingDexLiquidity = (await token.LOCKED_DEX_LIQUIDITY_ALLOCATION()) - seededSynLiquidity;
+  if (remainingDexLiquidity > 0n) {
+    const tx = await token.allocateTokens(dexLiquidityWallet, remainingDexLiquidity, "LOCKED_DEX_LIQUIDITY_RESERVE");
+    await tx.wait();
+    console.log(`LOCKED_DEX_LIQUIDITY_RESERVE: ${ethers.formatUnits(remainingDexLiquidity, 18)} SYN -> ${dexLiquidityWallet}`);
+  }
+
+  const deployment = {
+    network: network.name,
+    deployedAt: new Date().toISOString(),
+    deployer: deployer.address,
+    tokenomics: {
+      totalSupply: "100000000000",
+      founderVesting: "20000000000",
+      founderOperationsGrant: "500000000",
+      adopterRewardsBucket: "30000000000",
+      dexLiquidity: "29000000000",
+      community: "14500000000",
+      treasury: "6000000000",
+    },
+    wallets: {
+      founderWallet,
+      founderOpsWallet,
+      dexLiquidityWallet,
+      communityWallet,
+      treasuryWallet,
+    },
+    contracts: {
+      synCoin: syn.address,
+      timelock: timelock.address,
+      governance: governance.address,
+      staking: staking.address,
+      rewardDistributor: rewardDistributor.address,
+      adopterRewards: adopterRewards.address,
+      dex: dex.address,
+      founderVesting: founderVesting.address,
+    },
+    dexPools,
+    adopterRewards: {
+      activationReward: ethers.formatUnits(activationReward, 18),
+      heartbeatReward: ethers.formatUnits(heartbeatReward, 18),
+      heartbeatIntervalSeconds: heartbeatInterval.toString(),
+      maxHeartbeatClaims: maxHeartbeatClaims.toString(),
+      merkleRoot: merkle.root,
+      merkleGateRequired: merkle.gateRequired,
+      merkleSource: merkle.source,
+      merkleLeafCount: merkle.count,
+    },
+    founderReleaseTimestamps: FOUNDER_RELEASE_TIMESTAMPS,
+  };
+
+  const outDir = path.join(__dirname, "..", "deployments");
+  fs.mkdirSync(outDir, { recursive: true });
+  const file = path.join(outDir, `${network.name}-${Date.now()}.json`);
+  fs.writeFileSync(file, JSON.stringify(deployment, null, 2));
+  fs.writeFileSync(path.join(outDir, "latest.json"), JSON.stringify(deployment, null, 2));
+  fs.writeFileSync(
+    path.join(__dirname, "..", "..", "dex-config.json"),
+    JSON.stringify({
+      network: deployment.network,
+      chainId: network.config.chainId ? `0x${Number(network.config.chainId).toString(16)}` : "",
+      chainName: deployment.network,
+      rpcUrls: network.config.url ? [network.config.url] : [],
+      blockExplorerUrls: [],
+      contracts: {
+        synCoin: deployment.contracts.synCoin,
+        dex: deployment.contracts.dex,
+      },
+      dexPools: deployment.dexPools,
+    }, null, 2)
+  );
+
+  console.log(`Deployment saved: ${file}`);
+  console.log("DEX config saved: ../dex-config.json");
+  console.log("SYNTHOS deployment complete");
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
