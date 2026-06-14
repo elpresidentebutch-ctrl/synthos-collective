@@ -1,0 +1,8 @@
+name = "synthos-site-backend"
+main = "src/index.js"
+account_id = "f2e9e2935f6f8231889b7535a9cd4b18"
+compatibility_date = "2026-06-14"
+
+[vars]
+CHAIN_ID = "synthos-l1-devnet"
+RELAY_URLS = "https://synthos-peer-registry.jamesishamwilliams.workers.dev"

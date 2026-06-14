@@ -25,6 +25,21 @@ Core endpoints:
 
 ## Deploy
 
+### Recommended: Cloudflare dashboard
+
+If the local CLI is blocked by npm, certificates, or API token scope, deploy the
+backend directly from Cloudflare:
+
+1. Open Cloudflare Workers & Pages.
+2. Create a Worker named `synthos-site-backend`.
+3. Open Edit Code.
+4. Paste the full contents of `workers/site-backend/src/index.js`.
+5. Save and deploy.
+
+See `workers/site-backend/DASHBOARD_DEPLOY.md` for the exact verification URLs.
+
+### CLI path
+
 ```powershell
 cd workers/site-backend
 Copy-Item wrangler.toml.example wrangler.toml
@@ -71,4 +86,3 @@ data-synthos="windows-installer"
 The backend intentionally reports truthfully. If validators are reachable but
 heartbeats are stale, the website will say the network is converged but needs
 heartbeat repair.
-
