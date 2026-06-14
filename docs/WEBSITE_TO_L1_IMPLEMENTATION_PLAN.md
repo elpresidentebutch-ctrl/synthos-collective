@@ -161,12 +161,14 @@ privacy tooling:
    `cmd/l1netcheck`.
 3. Make `cmd/rpcnode` expose the website-facing status, validator, DEX, and node
    activation endpoints.
-4. Wire `THE_COLLECTIVE_DEX_LIVE.html` and status pages to the local RPC API.
-5. Implement persistent node identity and outbound heartbeat.
-6. Add stake-weighted validator selection and attestation counting.
-7. Add governance proposals/votes and status pages.
-8. Add SDK/API docs generated from the actual RPC routes.
-9. Prepare a testnet launch runbook with exact commands and pass/fail checks.
+4. Add a Cloudflare validator checker for the live Worker nodes. Done with
+   `cmd/l1cloudcheck`.
+5. Wire `THE_COLLECTIVE_DEX_LIVE.html` and status pages to the local RPC API.
+6. Implement persistent node identity and outbound heartbeat.
+7. Add stake-weighted validator selection and attestation counting.
+8. Add governance proposals/votes and status pages.
+9. Add SDK/API docs generated from the actual RPC routes.
+10. Prepare a testnet launch runbook with exact commands and pass/fail checks.
 
 ## First Proof Milestone
 
@@ -210,6 +212,29 @@ It verifies the L1 node network by:
 
 This is the first proof that SYNTHOS can operate as a local multi-process L1
 network, not only an in-memory ledger simulation.
+
+## Third Proof Milestone
+
+The Cloudflare Worker validator checker now exists:
+
+```powershell
+go run ./cmd/l1cloudcheck
+```
+
+It verifies the configured Cloudflare validators by:
+
+- Reading `config/nodes.json`.
+- Calling each Worker's `/health`, `/status`, `/heartbeat`, `/peers`, and
+  `/blocks` endpoints.
+- Reporting reachability.
+- Checking whether reachable validators agree on height, tip, and state root.
+- Checking whether heartbeat timestamps are fresh.
+- Reporting whether the reachable set satisfies the 2/3 majority threshold.
+
+The first live run showed that five of six configured Cloudflare Workers were
+reachable and converged at height 55, but their heartbeat timestamps were stale.
+That means the deployed Worker state exists and agrees, but active heartbeat or
+cron execution must be repaired before it should be described as a live testnet.
 
 ## Definition Of Production Working L1
 
