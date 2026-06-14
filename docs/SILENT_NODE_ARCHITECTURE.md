@@ -17,6 +17,32 @@ The correct node model is:
 
 ## Desktop
 
+For normal operators, use the installer:
+
+```powershell
+.\scripts\install_background_node.ps1
+```
+
+This builds and installs the node under the user's local app-data folder, starts
+it hidden, creates Start Menu shortcuts, creates a Desktop "Start Synthos Node"
+shortcut, and adds a launch-at-login shortcut. After this, the operator does not
+need a terminal; the node runs in the background and keeps sending outbound
+heartbeats.
+
+Status:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\SynthosCollective\BackgroundNode\Synthos Node Status.ps1"
+```
+
+Uninstall:
+
+```powershell
+.\scripts\uninstall_background_node.ps1
+```
+
+Developer direct-run path:
+
 Run:
 
 ```powershell

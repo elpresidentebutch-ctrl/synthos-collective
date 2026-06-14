@@ -1,6 +1,42 @@
 # SYNTHOS Desktop Background Node
 
-The desktop background node is the first one-button adopter path.
+The desktop node has two operator modes:
+
+- Silent background node: one-click install, no local ports, hidden process,
+  outbound heartbeats only.
+- Desktop agent dashboard: local browser dashboard with start/stop controls and
+  local RPC.
+
+For public adoption, the silent background node is the default path.
+
+## One-Click Operator Install
+
+From the repo root:
+
+```powershell
+.\scripts\install_background_node.ps1
+```
+
+The installer:
+
+- Builds `synthos-silent-node.exe`.
+- Installs it to `%LOCALAPPDATA%\SynthosCollective\BackgroundNode`.
+- Starts it hidden immediately.
+- Creates a Desktop shortcut named `Start Synthos Node`.
+- Creates Start Menu shortcuts for start, stop, and status.
+- Adds a Startup shortcut so the node launches at login.
+- Writes status to `%APPDATA%\SynthosCollective\silent-node-status.json`.
+
+Operators can remove it with:
+
+```powershell
+.\scripts\uninstall_background_node.ps1
+```
+
+The node does not open inbound ports. It sends outbound HTTPS heartbeats to the
+configured SYNTHOS relay registry.
+
+## Dashboard Agent
 
 It runs a local SYNTHOS agent dashboard on `http://127.0.0.1:8788`. From that dashboard, a user can start or stop the local RPC node. When started, the node:
 
