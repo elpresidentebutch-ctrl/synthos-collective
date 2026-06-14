@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SYNTHOS Collective</title>
+  <meta name="description" content="SYNTHOS Collective live network console and background-node onboarding." />
+  <link rel="stylesheet" href="./assets/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#network" aria-label="SYNTHOS Collective">
+      <span class="brand-mark"></span>
+      <span>SYNTHOS Collective</span>
+    </a>
+    <nav aria-label="Primary">
+      <a href="#network">Network</a>
+      <a href="#nodes">Nodes</a>
+      <a href="#dex">DEX</a>
+      <a href="#protocol">Protocol</a>
+    </nav>
+  </header>
+
+  <main>
+    <section id="network" class="console">
+      <div class="console-copy">
+        <p class="eyebrow">Distributed Immune System</p>
+        <h1>Live SYNTHOS node console</h1>
+        <p class="lede">Original L1 infrastructure for immune-node operators, outbound-only participation, validator status, and SYN network operations.</p>
+        <div class="actions">
+          <a class="button primary" href="./downloads/install-synthos-node.ps1" download>Download Windows Node</a>
+          <a class="button secondary" href="#nodes">View Validators</a>
+        </div>
+      </div>
+
+      <div class="network-board" aria-label="Live network status">
+        <div class="board-head">
+          <div>
+            <p class="label">Cloudflare Validator Set</p>
+            <h2 id="networkVerdict">Checking network</h2>
+          </div>
+          <button id="refreshButton" class="icon-button" type="button" title="Refresh network status" aria-label="Refresh network status">
+            ↻
+          </button>
+        </div>
+        <div class="metrics">
+          <div><span id="reachableCount">-</span><small>Reachable</small></div>
+          <div><span id="chainHeight">-</span><small>Height</small></div>
+          <div><span id="freshCount">-</span><small>Fresh</small></div>
+          <div><span id="majorityState">-</span><small>Majority</small></div>
+        </div>
+        <div class="topology" id="topology" aria-label="Validator topology"></div>
+        <dl class="chain-facts">
+          <div><dt>Tip</dt><dd id="tipHash">-</dd></div>
+          <div><dt>State Root</dt><dd id="stateRoot">-</dd></div>
+          <div><dt>Next Proposer</dt><dd id="nextProposer">-</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section id="nodes" class="band">
+      <div class="section-head">
+        <p class="eyebrow">Push-Button Operation</p>
+        <h2>Run a node in the background</h2>
+      </div>
+      <div class="split">
+        <div class="operator-panel">
+          <h3>Windows background node</h3>
+          <p>The installer starts an outbound-only SYNTHOS node, adds launch-at-login, and writes local status under the user profile.</p>
+          <pre><code>powershell -ExecutionPolicy Bypass -File .\install-synthos-node.ps1</code></pre>
+          <div class="actions">
+            <a class="button primary" href="./downloads/install-synthos-node.ps1" download>Get Installer</a>
+            <a class="button secondary" href="#protocol">Read Protocol</a>
+          </div>
+        </div>
+        <div class="validator-list" id="validatorList" aria-label="Validator list"></div>
+      </div>
+    </section>
+
+    <section id="dex" class="band">
+      <div class="section-head">
+        <p class="eyebrow">SYN Financial Layer</p>
+        <h2>DEX and live chain surfaces</h2>
+      </div>
+      <div class="grid-three">
+        <a class="tile" href="./dex.html">
+          <strong>Collective DEX</strong>
+          <span>Contract-mode AMM interface for SYN pools.</span>
+        </a>
+        <a class="tile" href="./chain.html">
+          <strong>Chain Status</strong>
+          <span>Local status panel for devnet and validator endpoints.</span>
+        </a>
+        <a class="tile" href="./api.html">
+          <strong>Block Explorer API</strong>
+          <span>Worker source for aggregated validator status.</span>
+        </a>
+      </div>
+    </section>
+
+    <section id="protocol" class="band protocol-band">
+      <div class="section-head">
+        <p class="eyebrow">Protocol</p>
+        <h2>What this website now connects to</h2>
+      </div>
+      <div class="protocol-grid">
+        <article><h3>Original L1</h3><p>Go ledger, signed SYN transfers, deterministic state roots, and 2/3 validator finality proofs.</p></article>
+        <article><h3>Cloudflare Validators</h3><p>Worker nodes expose health, status, blocks, heartbeat, peers, mempool, and proposal endpoints.</p></article>
+        <article><h3>Background Nodes</h3><p>Operators can run silent outbound-only nodes without opening ports or managing infrastructure.</p></article>
+        <article><h3>Next Repair</h3><p>Validator heartbeat freshness and cron proposal loops need to be restored before public testnet language.</p></article>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>SYNTHOS Collective</span>
+    <span id="updatedAt">Waiting for live status</span>
+  </footer>
+
+  <script src="./assets/app.js"></script>
+</body>
+</html>
