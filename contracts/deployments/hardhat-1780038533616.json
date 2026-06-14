@@ -1,0 +1,69 @@
+{
+  "network": "hardhat",
+  "deployedAt": "2026-05-29T07:08:53.615Z",
+  "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  "tokenomics": {
+    "totalSupply": "100000000000",
+    "founderVesting": "20000000000",
+    "founderOperationsGrant": "500000000",
+    "adopterRewardsBucket": "30000000000",
+    "dexLiquidity": "29000000000",
+    "community": "14500000000",
+    "treasury": "6000000000"
+  },
+  "wallets": {
+    "founderWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "founderOpsWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "dexLiquidityWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "communityWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "treasuryWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+  },
+  "contracts": {
+    "synCoin": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+    "timelock": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+    "governance": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+    "staking": "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9",
+    "rewardDistributor": "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9",
+    "adopterRewards": "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707",
+    "dex": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+    "founderVesting": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853"
+  },
+  "dexPools": [
+    {
+      "symbol": "B12",
+      "asset": "0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82",
+      "synLiquidity": "10000000",
+      "assetLiquidity": "50000"
+    },
+    {
+      "symbol": "NGOT",
+      "asset": "0x3Aa5ebB10DC797CAC828524e59A333d0A371443c",
+      "synLiquidity": "5000000",
+      "assetLiquidity": "100000"
+    },
+    {
+      "symbol": "MOMENTUM",
+      "asset": "0x4A679253410272dd5232B3Ff7cF5dbB88f295319",
+      "synLiquidity": "2000000",
+      "assetLiquidity": "10000"
+    }
+  ],
+  "adopterRewards": {
+    "activationReward": "1000.0",
+    "heartbeatReward": "25.0",
+    "heartbeatIntervalSeconds": "86400",
+    "maxHeartbeatClaims": "365"
+  },
+  "founderReleaseTimestamps": [
+    1811548800,
+    1843171200,
+    1874707200,
+    1906243200,
+    1937779200,
+    1969401600,
+    2000937600,
+    2032473600,
+    2064009600,
+    2095632000
+  ]
+}
