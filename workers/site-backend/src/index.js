@@ -1,10 +1,9 @@
 const DEFAULT_VALIDATORS = [
-  { name: "synthos-validator-10", url: "https://synthos-validator-10.jamesishamwilliams.workers.dev", role: "validator" },
-  { name: "synthos-validator-11", url: "https://synthos-validator-11.jamesishamwilliams.workers.dev", role: "validator" },
-  { name: "synthos-validator-12", url: "https://synthos-validator-12.jamesishamwilliams.workers.dev", role: "validator" },
-  { name: "synthos-validator-13", url: "https://synthos-validator-13.jamesishamwilliams.workers.dev", role: "validator" },
-  { name: "synthos-validator-14", url: "https://synthos-validator-14.jamesishamwilliams.workers.dev", role: "validator" },
-  { name: "synthos-validator-15", url: "https://synthos-validator-15.jamesishamwilliams.workers.dev", role: "validator" },
+  { name: "synthos-validator-11", url: "https://synthos-validator-11.jamesishamwilliams.workers.dev", role: "validator", binding: "VALIDATOR_11" },
+  { name: "synthos-validator-12", url: "https://synthos-validator-12.jamesishamwilliams.workers.dev", role: "validator", binding: "VALIDATOR_12" },
+  { name: "synthos-validator-13", url: "https://synthos-validator-13.jamesishamwilliams.workers.dev", role: "validator", binding: "VALIDATOR_13" },
+  { name: "synthos-validator-14", url: "https://synthos-validator-14.jamesishamwilliams.workers.dev", role: "validator", binding: "VALIDATOR_14" },
+  { name: "synthos-validator-15", url: "https://synthos-validator-15.jamesishamwilliams.workers.dev", role: "validator", binding: "VALIDATOR_15" },
 ];
 
 const DEFAULT_REGISTRY = "https://synthos-peer-registry.jamesishamwilliams.workers.dev";
@@ -53,17 +52,18 @@ function validatorsFromEnv(env) {
   return DEFAULT_VALIDATORS;
 }
 
-async function fetchJSON(url, timeoutMs = FETCH_TIMEOUT_MS) {
+async function fetchJSON(url, timeoutMs = FETCH_TIMEOUT_MS, serviceBinding = null) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort("timeout"), timeoutMs);
   try {
-    const response = await fetch(url, {
+    const request = new Request(url, {
       signal: controller.signal,
       headers: {
         Accept: "application/json",
         "User-Agent": "synthos-site-backend/1.0",
       },
     });
+    const response = serviceBinding ? await serviceBinding.fetch(request) : await fetch(request);
     const body = await response.text();
     if (!response.ok) {
       throw new Error(`status=${response.status} body=${body.slice(0, 180)}`);
@@ -74,7 +74,7 @@ async function fetchJSON(url, timeoutMs = FETCH_TIMEOUT_MS) {
   }
 }
 
-async function checkValidator(validator) {
+async function checkValidator(validator, env) {
   const started = Date.now();
   const proof = {
     name: validator.name,
@@ -88,12 +88,13 @@ async function checkValidator(validator) {
 
   try {
     const base = validator.url.replace(/\/+$/, "");
+    const serviceBinding = validator.binding ? env[validator.binding] : null;
     const [health, status, heartbeat, peers, blocks] = await Promise.all([
-      fetchJSON(`${base}/health`),
-      fetchJSON(`${base}/status`),
-      fetchJSON(`${base}/heartbeat`).catch(() => null),
-      fetchJSON(`${base}/peers`).catch(() => null),
-      fetchJSON(`${base}/blocks?from=0`).catch(() => null),
+      fetchJSON(`${base}/health`, FETCH_TIMEOUT_MS, serviceBinding),
+      fetchJSON(`${base}/status`, FETCH_TIMEOUT_MS, serviceBinding),
+      fetchJSON(`${base}/heartbeat`, FETCH_TIMEOUT_MS, serviceBinding).catch(() => null),
+      fetchJSON(`${base}/peers`, FETCH_TIMEOUT_MS, serviceBinding).catch(() => null),
+      fetchJSON(`${base}/blocks?from=0`, FETCH_TIMEOUT_MS, serviceBinding).catch(() => null),
     ]);
 
     proof.reachable = true;
@@ -120,7 +121,7 @@ async function checkValidator(validator) {
 
 async function networkStatus(env) {
   const validators = validatorsFromEnv(env);
-  const proofs = await Promise.all(validators.map(checkValidator));
+  const proofs = await Promise.all(validators.map((validator) => checkValidator(validator, env)));
   const reachable = proofs.filter((proof) => proof.reachable && proof.status);
   const first = reachable[0]?.status || null;
   const highest = reachable.reduce((height, proof) => Math.max(height, proof.status?.height || 0), 0);

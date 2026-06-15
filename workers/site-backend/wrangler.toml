@@ -6,3 +6,23 @@ compatibility_date = "2026-06-14"
 [vars]
 CHAIN_ID = "synthos-l1-devnet"
 RELAY_URLS = "https://synthos-peer-registry.jamesishamwilliams.workers.dev"
+
+[[services]]
+binding = "VALIDATOR_11"
+service = "synthos-validator-11"
+
+[[services]]
+binding = "VALIDATOR_12"
+service = "synthos-validator-12"
+
+[[services]]
+binding = "VALIDATOR_13"
+service = "synthos-validator-13"
+
+[[services]]
+binding = "VALIDATOR_14"
+service = "synthos-validator-14"
+
+[[services]]
+binding = "VALIDATOR_15"
+service = "synthos-validator-15"
