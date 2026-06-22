@@ -32,8 +32,7 @@ class DenoKvStore implements Store {
   async advanceHead(expectedHeight: number, head: Head): Promise<boolean> {
     const key = this.key("head");
     const current = await this.kv.get<Head>(key, { consistency: "strong" });
-    const currentHeight = current.value?.height ?? 0;
-    if (currentHeight !== expectedHeight) return false;
+    if ((current.value?.height ?? 0) !== expectedHeight) return false;
     return (await this.kv.atomic().check(current).set(key, head).commit()).ok;
   }
 }
@@ -61,10 +60,9 @@ Deno.cron("synthos-validator-safety-tick", "* * * * *", async () => {
   }
 });
 
-Deno.serve((request, info) => {
+Deno.serve((request) => {
   const context: RuntimeContext = {
     waitUntil(promise) {
-      info.respondWith?.(Promise.resolve());
       promise.catch((error) => console.error(JSON.stringify({ event: "background_error", validatorId, error: String(error) })));
     },
   };
