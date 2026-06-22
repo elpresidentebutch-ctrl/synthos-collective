@@ -1,0 +1,16 @@
+{
+  "name": "@synthos/serverless-cloudflare-validator",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "dependencies": {
+    "tweetnacl": "1.0.3"
+  },
+  "devDependencies": {
+    "wrangler": "^4.77.0"
+  }
+}
