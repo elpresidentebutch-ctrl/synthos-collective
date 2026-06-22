@@ -56,6 +56,15 @@ var (
 
 // Sign returns a signed Tx with timeless signing (ignores timestamp)
 func (t *Tx) Sign(priv ed25519.PrivateKey) error {
+	if err := t.validateBasic(); err != nil {
+		return err
+	}
+
+	signerPub := priv.Public().(ed25519.PublicKey)
+	if AddressFromPublicKey(signerPub) != t.From {
+		return ErrTxFromMismatch
+	}
+
 	payload, err := t.signingBytes()
 	if err != nil {
 		return err
@@ -79,6 +88,10 @@ func (t *Tx) ComputeID() error {
 
 // Verify checks the signature against the canonical payload
 func (t *Tx) Verify() error {
+	if err := t.validateBasic(); err != nil {
+		return err
+	}
+
 	payload, err := t.signingBytes()
 	if err != nil {
 		return err
@@ -94,6 +107,10 @@ func (t *Tx) Verify() error {
 		return fmt.Errorf("invalid public key")
 	}
 
+	if AddressFromPublicKey(pubBytes) != t.From {
+		return ErrTxFromMismatch
+	}
+
 	if !ed25519.Verify(pubBytes, payload, sigBytes) {
 		return ErrBadTxSig
 	}
@@ -103,6 +120,25 @@ func (t *Tx) Verify() error {
 		return fmt.Errorf("transaction ID mismatch")
 	}
 
+	return nil
+}
+
+func (t *Tx) validateBasic() error {
+	if t.ChainID == 0 {
+		return fmt.Errorf("missing chain ID")
+	}
+	if t.From == "" || t.To == "" {
+		return fmt.Errorf("missing from/to address")
+	}
+	if t.Amount == 0 {
+		return fmt.Errorf("amount must be greater than zero")
+	}
+	if t.Fee == 0 {
+		return fmt.Errorf("fee must be greater than zero")
+	}
+	if strings.TrimPrefix(t.PublicKey, "0x") == "" {
+		return fmt.Errorf("missing public key")
+	}
 	return nil
 }
 

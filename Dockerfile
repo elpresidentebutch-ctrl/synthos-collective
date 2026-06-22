@@ -1,6 +1,6 @@
 # Reproducible build for local demo / reviewer runs.
 # Default: HTTP RPC node (persists under SYNTHOS_DATA_DIR, default /data).
-FROM golang:1.22-alpine AS build
+FROM golang:1.25-alpine AS build
 WORKDIR /src
 COPY go.mod ./
 COPY cmd/ ./cmd/
