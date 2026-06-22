@@ -1,0 +1,16 @@
+name: Probe Existing Cloudflare Validators
+
+on:
+  push:
+    branches: [codex/repair-existing-cloudflare-validators]
+    paths:
+      - ".github/workflows/probe-cloudflare-validators.yml"
+      - "scripts/probe-cloudflare-validators.mjs"
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe all live endpoints
+        run: node scripts/probe-cloudflare-validators.mjs
