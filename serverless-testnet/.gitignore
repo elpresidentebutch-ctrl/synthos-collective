@@ -1,0 +1,4 @@
+generated/
+endpoints.json
+.env
+*.secret.json
