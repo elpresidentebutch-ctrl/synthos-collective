@@ -4,28 +4,16 @@
   "main": "index.ts",
   "compatibility_date": "2026-06-22",
   "compatibility_flags": ["nodejs_compat"],
+  "alias": {
+    "npm:tweetnacl@1.0.3": "tweetnacl"
+  },
   "vars": {
     "VALIDATOR_ID": "cloudflare-1"
   },
   "durable_objects": {
-    "bindings": [
-      {
-        "name": "VALIDATOR",
-        "class_name": "SynthosValidator"
-      }
-    ]
+    "bindings": [{ "name": "VALIDATOR", "class_name": "SynthosValidator" }]
   },
-  "migrations": [
-    {
-      "tag": "v1",
-      "new_sqlite_classes": ["SynthosValidator"]
-    }
-  ],
-  "triggers": {
-    "crons": ["* * * * *"]
-  },
-  "observability": {
-    "enabled": true,
-    "head_sampling_rate": 1
-  }
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SynthosValidator"] }],
+  "triggers": { "crons": ["* * * * *"] },
+  "observability": { "enabled": true, "head_sampling_rate": 1 }
 }
