@@ -1,0 +1,31 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "synthos-validator-cloudflare-1",
+  "main": "index.ts",
+  "compatibility_date": "2026-06-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "VALIDATOR_ID": "cloudflare-1"
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "VALIDATOR",
+        "class_name": "SynthosValidator"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["SynthosValidator"]
+    }
+  ],
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  }
+}
