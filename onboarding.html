@@ -8,13 +8,13 @@
   <!-- Open Graph / Facebook -->
   <meta property="og:type" content="website">
   <meta property="og:title" content="Join the Synthos Collective - Decentralized AI">
-  <meta property="og:description" content="Run a serverless validator node on your phone or PC. First 200 nodes earn 5 SYN. No ports, no setup, just decentralization.">
+  <meta property="og:description" content="Run a SYNTHOS immune node on your phone or PC. Early verified operators may receive 500 SYN; heartbeat rewards are paid monthly in arrears.">
   <meta property="og:image" content="synthos_icon_1777121197289.png">
 
   <!-- Twitter -->
   <meta property="twitter:card" content="summary_large_image">
   <meta property="twitter:title" content="Join the Synthos Collective - Decentralized AI">
-  <meta property="twitter:description" content="Run a serverless validator node on your phone or PC. First 200 nodes earn 5 SYN. No ports, no setup, just decentralization.">
+  <meta property="twitter:description" content="Run a SYNTHOS immune node on your phone or PC. Early verified operators may receive 500 SYN; heartbeat rewards are paid monthly in arrears.">
   <meta property="twitter:image" content="synthos_icon_1777121197289.png">
 
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
@@ -371,11 +371,8 @@
         <span id="live-count">15</span> Validators Online
       </div>
       <h1>The Synthos Collective</h1>
-      <div class="badge flash-badge" id="rewardBadge">⚡ FLASH EVENT: 50 SYN for new nodes</div>
-      <div id="flashTimer" style="font-size: 0.85rem; color: var(--accent-2); margin-top: 8px; font-weight: 700;">
-        Ending in: <span id="timer">05:00</span>
-      </div>
-      <p class="subtitle">Join the decentralized AI network. Run a validator node directly from your browser, sync blocks, and earn rewards instantly.</p>
+      <div class="badge" id="rewardBadge">Early verified operators may receive 500 SYN; heartbeat rewards are paid monthly in arrears.</div>
+      <p class="subtitle">Join the decentralized AI network. Run an immune node, sync blocks, submit heartbeat proofs, and help strengthen SYNTHOS.</p>
     </div>
 
     <div class="grid">
@@ -422,12 +419,12 @@
 
     <!-- Token Acquisition Section -->
     <div class="buy-section">
-      <h3>Acquire SYN Tokens</h3>
-      <p>Need more SYN for staking? Request tokens from the Synthos Treasury. (SYN currently has no monetary value and is used for network utility only.)</p>
+      <h3>Request Test SYN</h3>
+      <p>Need test SYN for staking or local network utility? Request tokens from the Synthos Treasury. SYN currently has no monetary value and is not offered for sale on this page.</p>
       
       <div class="input-group">
         <input class="input" id="buyAmount" type="number" min="1" placeholder="Amount of SYN to request" />
-        <button class="btn-buy" id="buyBtn">Request SYN</button>
+        <button class="btn-buy" id="buyBtn">Prepare Request</button>
       </div>
       <div class="status-msg" id="buyStatus"></div>
     </div>
@@ -449,46 +446,19 @@
       img.style.margin = '0 auto';
     }
 
-    // --- MetaMask Buy SYN Logic ---
-    const SALE_ADDRESS = "0x0000000000000000000000000000000000000000"; // Placeholder
-
-    document.getElementById('buyBtn').onclick = async function() {
+    // --- Test SYN request notice ---
+    document.getElementById('buyBtn').onclick = function() {
       const status = document.getElementById('buyStatus');
-      status.textContent = '';
-      if (!window.ethereum) {
-        status.textContent = 'MetaMask not detected. Please install the extension.';
-        status.className = 'status-msg error';
-        return;
-      }
       const amount = document.getElementById('buyAmount').value;
+      status.textContent = '';
       if (!amount || isNaN(amount) || Number(amount) <= 0) {
         status.textContent = 'Please enter a valid SYN amount.';
         status.className = 'status-msg error';
         return;
       }
-      try {
-        await window.ethereum.request({ method: 'eth_requestAccounts' });
-        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-        const account = accounts[0];
-        
-        const pricePerSYN = 0.01; 
-        const value = (Number(amount) * pricePerSYN).toString();
-        const valueWei = (BigInt(Math.floor(Number(value) * 1e18))).toString();
-        
-        const tx = await window.ethereum.request({
-          method: 'eth_sendTransaction',
-          params: [{
-            from: account,
-            to: SALE_ADDRESS,
-            value: '0x' + BigInt(valueWei).toString(16),
-          }]
-        });
-        status.textContent = 'Transaction sent! TX Hash: ' + tx;
-        status.className = 'status-msg success';
-      } catch (err) {
-        status.textContent = 'Error: ' + (err.message || err);
-        status.className = 'status-msg error';
-      }
+      status.textContent = 'Request prepared. Treasury distribution is manual until public launch and compliance review are complete.';
+      status.className = 'status-msg success';
+    };
     // --- Desktop Validator Logic ---
     document.getElementById('desktopBtn').onclick = function() {
       // 1. Open the animated chainstate in a new tab
@@ -512,28 +482,6 @@ Prop3=19,2
       URL.revokeObjectURL(url);
     };
 
-    // --- Flash Reward Timer Logic ---
-    const flashEndTime = new Date().getTime() + (5 * 60 * 1000);
-    const timerEl = document.getElementById('timer');
-    const badgeEl = document.getElementById('rewardBadge');
-    const timerContainer = document.getElementById('flashTimer');
-
-    const timerInterval = setInterval(() => {
-      const now = new Date().getTime();
-      const distance = flashEndTime - now;
-
-      if (distance < 0) {
-        clearInterval(timerInterval);
-        timerContainer.style.display = 'none';
-        badgeEl.innerHTML = '🎁 First 200 validators earn 5 SYN tokens';
-        badgeEl.classList.remove('flash-badge');
-        return;
-      }
-
-      const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
-      const seconds = Math.floor((distance % (1000 * 60)) / 1000);
-      timerEl.innerHTML = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-    }, 1000);
   </script>
 </body>
 </html>

@@ -6,7 +6,7 @@ Native token for SYNTHOS Agent civilization with governance integration
 from dataclasses import dataclass, field
 from typing import Dict, Optional, List, Tuple
 from enum import Enum
-from datetime import datetime, timedelta
+from datetime import datetime
 import hashlib
 import json
 from uuid import uuid4
@@ -110,14 +110,11 @@ class SynthosTokenContract:
         self.paused = False
         self.transfer_whitelist: Dict[str, bool] = {}
 
-        # First 200 Validators Reward (5 SYN)
-        self.rewarded_validators: Dict[str, bool] = {}
+        # Early verified operator reward (500 SYN)
+        self.rewarded_operators: Dict[str, bool] = {}
         self.reward_count = 0
         self.MAX_REWARDED = 200
-        self.BASE_REWARD = 5 * (10 ** self.decimals)
-        self.FLASH_REWARD = 50 * (10 ** self.decimals)
-        # 5-minute flash reward window from current time
-        self.FLASH_END_TIME = datetime.now() + timedelta(minutes=5)
+        self.BASE_REWARD = 500 * (10 ** self.decimals)
 
 
     def balance_of(self, address: str) -> int:
@@ -460,22 +457,23 @@ class SynthosTokenContract:
 
     def grant_validator_reward(self, validator_addr: str) -> Tuple[bool, str]:
         """
-        Grant SYN reward to the first 200 validators.
-        Temporarily boosted to 50 SYN during the 5-minute flash event.
+        Grant the early verified operator reward.
+
+        The reward is paid once per eligible operator. Heartbeat rewards are
+        handled separately and paid monthly in arrears.
         """
         if self.reward_count >= self.MAX_REWARDED:
-            return False, "Maximum rewarded validators reached"
+            return False, "Maximum rewarded operators reached"
         
-        if self.rewarded_validators.get(validator_addr):
-            return False, "Validator already rewarded"
+        if self.rewarded_operators.get(validator_addr):
+            return False, "Operator already rewarded"
 
-        # Check if we are in the 5-minute flash window
-        reward_amount = self.FLASH_REWARD if datetime.now() < self.FLASH_END_TIME else self.BASE_REWARD
+        reward_amount = self.BASE_REWARD
         
         # Execute reward transfer from owner (treasury)
-        success, res = self.transfer(self.owner, validator_addr, reward_amount, reason="EARLY_VALIDATOR_REWARD")
+        success, res = self.transfer(self.owner, validator_addr, reward_amount, reason="EARLY_OPERATOR_REWARD")
         if success:
-            self.rewarded_validators[validator_addr] = True
+            self.rewarded_operators[validator_addr] = True
             self.reward_count += 1
             amt_display = reward_amount // (10**self.decimals)
             return True, f"Rewarded {validator_addr} with {amt_display} SYN"

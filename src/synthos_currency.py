@@ -34,12 +34,15 @@ class CoinSpecification:
 
 class TokenDistribution(Enum):
     """Token distribution categories"""
-    INITIAL_TEAM = 10_000_000_000      # 10 billion (10%)
-    COMMUNITY_REWARDS = 30_000_000_000  # 30 billion (30%)
-    STAKING_REWARDS = 25_000_000_000    # 25 billion (25%)
-    ECOSYSTEM_GRANTS = 15_000_000_000   # 15 billion (15%)
-    FOUNDATION = 10_000_000_000         # 10 billion (10%)
-    FUTURE_RESERVE = 10_000_000_000     # 10 billion (10%)
+    IMMUNE_NODE_REWARDS = 22_000_000_000        # 22 billion (22%)
+    LOCKED_LIQUIDITY = 20_000_000_000           # 20 billion (20%)
+    FOUNDER_VESTING = 17_000_000_000            # 17 billion (17%)
+    VALIDATOR_SECURITY_REWARDS = 12_000_000_000 # 12 billion (12%)
+    COMMUNITY_ADOPTER_REWARDS = 12_500_000_000  # 12.5 billion (12.5%)
+    ECOSYSTEM_TREASURY = 10_000_000_000         # 10 billion (10%)
+    CMO_LAUNCH_GRANT = 3_000_000_000            # 3 billion (3%)
+    STRATEGIC_RESERVE = 3_000_000_000           # 3 billion (3%)
+    FOUNDER_LAUNCH_ALLOCATION = 500_000_000     # 500 million (0.5%)
     
     @classmethod
     def total(cls) -> int:

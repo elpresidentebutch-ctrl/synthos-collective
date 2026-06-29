@@ -147,7 +147,7 @@
 
     <div class="overlay">
         <h1>Synthos Collective</h1>
-        <div class="badge">🎁 First 200 nodes receive 5 SYN</div>
+        <div class="badge">Early verified operators may receive 500 SYN; heartbeat rewards are paid monthly in arrears.</div>
         <div class="stats">
             <div class="stat-item">
                 <div class="stat-value" id="validator-count">0</div>
@@ -323,9 +323,9 @@
                 particles.push(new Particle(newNode.x, newNode.y, target.x, target.y));
             }
 
-            // Simulate the reward logic
+            // Simulate the early verified operator reward notice.
             if (validatorCount <= 200) {
-                setTimeout(() => addLog(`<span style="color: #4ade80">Reward: 50 SYN granted to ${id}</span>`), 1000);
+                setTimeout(() => addLog(`<span style="color: #4ade80">Early operator reward eligibility: 500 SYN for ${id}</span>`), 1000);
             }
         }
 

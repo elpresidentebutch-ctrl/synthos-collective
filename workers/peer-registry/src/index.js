@@ -19,8 +19,8 @@
  */
 
 const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
-const EARLY_VALIDATOR_REWARD = 5; // SYN tokens for first 200 validators
-const MAX_REWARDED_VALIDATORS = 200;
+const EARLY_OPERATOR_REWARD = 500; // SYN for approved early verified operators
+const MAX_REWARDED_OPERATORS = 200;
 
 export default {
   async fetch(request, env) {
@@ -125,34 +125,34 @@ async function handleRegister(request, env) {
     expirationTtl: 3600,
   });
 
-  // ─── First-200 Validator Reward ─────────────────────────────
+  // Early verified operator reward. Heartbeat rewards are paid monthly in arrears.
   let reward = null;
   const rewardKey = `reward:${name}`;
   const alreadyRewarded = await env.PEERS.get(rewardKey);
 
   if (!alreadyRewarded) {
-    // Count total unique rewarded validators
+    // Count total unique rewarded operators.
     const counterRaw = await env.PEERS.get("meta:rewarded_count");
     const rewardedCount = counterRaw ? parseInt(counterRaw, 10) : 0;
 
-    if (rewardedCount < MAX_REWARDED_VALIDATORS) {
+    if (rewardedCount < MAX_REWARDED_OPERATORS) {
       const newCount = rewardedCount + 1;
       // Mark as rewarded (permanent — no TTL)
       await env.PEERS.put(rewardKey, JSON.stringify({
         rewarded_at: Date.now(),
-        amount: EARLY_VALIDATOR_REWARD,
+        amount: EARLY_OPERATOR_REWARD,
         position: newCount,
       }));
       await env.PEERS.put("meta:rewarded_count", String(newCount));
 
       // Submit reward TX to a live validator
-      reward = { amount: EARLY_VALIDATOR_REWARD, position: newCount, total: MAX_REWARDED_VALIDATORS };
+      reward = { amount: EARLY_OPERATOR_REWARD, position: newCount, total: MAX_REWARDED_OPERATORS };
       try {
         const txBody = {
           from: "agent-0",
           to: name,
-          amount: EARLY_VALIDATOR_REWARD,
-          memo: `early-validator-reward #${newCount}`,
+          amount: EARLY_OPERATOR_REWARD,
+          memo: `early-operator-reward #${newCount}`,
         };
         // Try to submit to the first available validator
         const validators = [
