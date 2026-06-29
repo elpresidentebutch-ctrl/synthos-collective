@@ -57,4 +57,5 @@ validator-deployment/validators.txt
 validator-deployment/test-results.json
 validator-deployment/.dev.vars*
 scratch/*.local.txt
+scratch/*.local.json
 
