@@ -116,4 +116,3 @@ func main() {
 			i, nodes[i].IsValidator(agents[i].Identity.AgentID), h, root, bal, ok, finalized, votesFor, required)
 	}
 }
-

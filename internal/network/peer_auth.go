@@ -13,36 +13,36 @@ import (
 // Each peer is identified by their ED25519 public key.
 // Peers must sign handshake messages to prove identity.
 type PeerAuth struct {
-	mu                sync.RWMutex
-	nodeID            string
-	privateKey        ed25519.PrivateKey // Our node's private key
-	publicKey         ed25519.PublicKey  // Our node's public key
-	trustedPeers      map[string]ed25519.PublicKey // Agent ID -> public key
-	peerReputation    map[string]*PeerInfo // Agent ID -> connection metadata
-	requireSignature  bool // If true, all handshakes must be signed
-	replayProtection  map[string]int64 // Agent ID -> last handshake timestamp
-	replayWindow      int64 // Seconds allowed between identical handshakes
+	mu               sync.RWMutex
+	nodeID           string
+	privateKey       ed25519.PrivateKey           // Our node's private key
+	publicKey        ed25519.PublicKey            // Our node's public key
+	trustedPeers     map[string]ed25519.PublicKey // Agent ID -> public key
+	peerReputation   map[string]*PeerInfo         // Agent ID -> connection metadata
+	requireSignature bool                         // If true, all handshakes must be signed
+	replayProtection map[string]int64             // Agent ID -> last handshake timestamp
+	replayWindow     int64                        // Seconds allowed between identical handshakes
 }
 
 // PeerInfo tracks historical connection metadata for reputation tracking.
 type PeerInfo struct {
-	AgentID          string
-	PublicKeyHex     string
-	FirstSeen        time.Time
-	LastSeen         time.Time
-	ConnectionCount  int
-	FailedAttempts   int
-	Banned           bool
-	BanReason        string
+	AgentID         string
+	PublicKeyHex    string
+	FirstSeen       time.Time
+	LastSeen        time.Time
+	ConnectionCount int
+	FailedAttempts  int
+	Banned          bool
+	BanReason       string
 }
 
 // HandshakeMessage is sent by peers to identify themselves.
 type HandshakeMessage struct {
-	AgentID       string `json:"agent_id"`
-	PublicKeyHex  string `json:"public_key_hex"`
-	Timestamp     int64  `json:"timestamp"`
-	Signature     string `json:"signature"` // Signature of "agentID|timestamp"
-	ReplayNonce   string `json:"replay_nonce"` // Unique nonce per connection
+	AgentID      string `json:"agent_id"`
+	PublicKeyHex string `json:"public_key_hex"`
+	Timestamp    int64  `json:"timestamp"`
+	Signature    string `json:"signature"`    // Signature of "agentID|timestamp"
+	ReplayNonce  string `json:"replay_nonce"` // Unique nonce per connection
 }
 
 // NewPeerAuth creates a new peer authentication manager.

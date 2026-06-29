@@ -2,17 +2,18 @@ package chain
 
 import (
 	"errors"
+	"math/bits"
 	"sync"
 )
 
 // Pool represents a liquidity pool for a pair of assets.
 // One asset is always the native SYN coin.
 type Pool struct {
-	AssetID   string  `json:"asset_id"` // ID of the non-SYN asset
-	SynReserve uint64 `json:"syn_reserve"`
-	AssetReserve uint64 `json:"asset_reserve"`
-	TotalShares uint64 `json:"total_shares"`
-	Shares      map[Address]uint64 `json:"shares"`
+	AssetID      string             `json:"asset_id"` // ID of the non-SYN asset
+	SynReserve   uint64             `json:"syn_reserve"`
+	AssetReserve uint64             `json:"asset_reserve"`
+	TotalShares  uint64             `json:"total_shares"`
+	Shares       map[Address]uint64 `json:"shares"`
 }
 
 type DEX struct {
@@ -36,10 +37,23 @@ func (d *DEX) GetAmountOut(amountIn uint64, reserveIn uint64, reserveOut uint64)
 	}
 
 	// 0.3% fee
-	amountInWithFee := amountIn * 997
-	numerator := amountInWithFee * reserveOut
-	denominator := (reserveIn * 1000) + amountInWithFee
-	
+	amountInHi, amountInWithFee := bits.Mul64(amountIn, 997)
+	if amountInHi != 0 {
+		return 0, errors.New("swap input overflow")
+	}
+	numeratorHi, numerator := bits.Mul64(amountInWithFee, reserveOut)
+	if numeratorHi != 0 {
+		return 0, errors.New("swap numerator overflow")
+	}
+	reserveHi, scaledReserve := bits.Mul64(reserveIn, 1000)
+	if reserveHi != 0 {
+		return 0, errors.New("swap reserve overflow")
+	}
+	denominator, carry := bits.Add64(scaledReserve, amountInWithFee, 0)
+	if carry != 0 || denominator == 0 {
+		return 0, errors.New("swap denominator overflow")
+	}
+
 	return numerator / denominator, nil
 }
 
@@ -59,7 +73,7 @@ func (d *DEX) AddLiquidity(assetID string, synAmount uint64, assetAmount uint64,
 
 	var shares uint64
 	if pool.TotalShares == 0 {
-		shares = synAmount 
+		shares = synAmount
 	} else {
 		shareSyn := (synAmount * pool.TotalShares) / pool.SynReserve
 		shareAsset := (assetAmount * pool.TotalShares) / pool.AssetReserve
@@ -98,13 +112,21 @@ func (d *DEX) Swap(assetID string, amountIn uint64, fromSyn bool) (uint64, error
 	if fromSyn {
 		amountOut, err = d.GetAmountOut(amountIn, pool.SynReserve, pool.AssetReserve)
 		if err == nil {
-			pool.SynReserve += amountIn
+			nextReserve, err := safeAdd(pool.SynReserve, amountIn)
+			if err != nil {
+				return 0, errors.New("SYN reserve overflow")
+			}
+			pool.SynReserve = nextReserve
 			pool.AssetReserve -= amountOut
 		}
 	} else {
 		amountOut, err = d.GetAmountOut(amountIn, pool.AssetReserve, pool.SynReserve)
 		if err == nil {
-			pool.AssetReserve += amountIn
+			nextReserve, err := safeAdd(pool.AssetReserve, amountIn)
+			if err != nil {
+				return 0, errors.New("asset reserve overflow")
+			}
+			pool.AssetReserve = nextReserve
 			pool.SynReserve -= amountOut
 		}
 	}
@@ -128,5 +150,17 @@ func (d *DEX) SeedPool(assetID string, synAmount uint64, assetAmount uint64) {
 func (d *DEX) ListPools() map[string]*Pool {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
-	return d.Pools
+	out := make(map[string]*Pool, len(d.Pools))
+	for assetID, pool := range d.Pools {
+		if pool == nil {
+			continue
+		}
+		copyPool := *pool
+		copyPool.Shares = make(map[Address]uint64, len(pool.Shares))
+		for address, shares := range pool.Shares {
+			copyPool.Shares[address] = shares
+		}
+		out[assetID] = &copyPool
+	}
+	return out
 }

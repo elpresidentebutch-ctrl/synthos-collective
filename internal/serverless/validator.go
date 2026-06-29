@@ -17,22 +17,23 @@ import (
 // to discover and fetch them without central coordination. This is the "piggyback"
 // - we're using existing object storage as shared bulletin boards.
 type ServerlessMessage struct {
-	ID           string    `json:"id"`              // Unique message ID (base path)
-	Type         string    `json:"type"`            // "block", "transaction", "vote", etc.
-	Sender       string    `json:"sender"`          // Validator/agent ID (public key hex)
-	Height       uint64    `json:"height"`          // Block height for ordering
-	Timestamp    int64     `json:"timestamp"`       // Unix timestamp
-	Payload      string    `json:"payload"`         // JSON-encoded block/tx data
-	Signature    string    `json:"signature"`       // Ed25519 signature of (height|timestamp|payload)
-	TTL          int64     `json:"ttl"`             // Expiration timestamp (auto-cleanup)
-	CreatedAt    int64     `json:"created_at"`      // When message was created
+	ID        string `json:"id"`         // Unique message ID (base path)
+	Type      string `json:"type"`       // "block", "transaction", "vote", etc.
+	Sender    string `json:"sender"`     // Validator/agent ID (public key hex)
+	Height    uint64 `json:"height"`     // Block height for ordering
+	Timestamp int64  `json:"timestamp"`  // Unix timestamp
+	Payload   string `json:"payload"`    // JSON-encoded block/tx data
+	Signature string `json:"signature"`  // Ed25519 signature of (height|timestamp|payload)
+	TTL       int64  `json:"ttl"`        // Expiration timestamp (auto-cleanup)
+	CreatedAt int64  `json:"created_at"` // When message was created
 }
 
 // MessageBucket represents a shared object storage location where nodes
 // publish and discover messages. Nodes continuously poll specific paths.
 //
 // Path structure:
-//   /synthos/{network}/{height}/{sender}/{message-id}
+//
+//	/synthos/{network}/{height}/{sender}/{message-id}
 //
 // This hierarchical structure allows nodes to:
 // - Subscribe to specific heights ("give me all messages for height 100")
@@ -63,14 +64,14 @@ type MessageBucket interface {
 //
 // The entire validator is stateless - any cloud instance can resume work.
 type ServerlessValidator struct {
-	ValidatorID    string                    // Public key hex (also the discovery identity)
-	PrivateKey     ed25519.PrivateKey        // For signing messages
-	Bucket         MessageBucket             // Object storage backend
-	Network        string                    // Network name (mainnet, testnet, etc.)
-	PollInterval   time.Duration             // How often to poll storage
-	MessageTTL     int64                     // Seconds before messages expire
-	LastPolledAtom map[string]int64          // Last polled height per sender
-	blockValidator BlockValidator            // Validates blocks
+	ValidatorID    string             // Public key hex (also the discovery identity)
+	PrivateKey     ed25519.PrivateKey // For signing messages
+	Bucket         MessageBucket      // Object storage backend
+	Network        string             // Network name (mainnet, testnet, etc.)
+	PollInterval   time.Duration      // How often to poll storage
+	MessageTTL     int64              // Seconds before messages expire
+	LastPolledAtom map[string]int64   // Last polled height per sender
+	blockValidator BlockValidator     // Validates blocks
 	mu             sync.RWMutex
 }
 
@@ -88,12 +89,12 @@ func NewServerlessValidator(
 	blockValidator BlockValidator,
 ) *ServerlessValidator {
 	return &ServerlessValidator{
-		ValidatorID:   validatorID,
-		PrivateKey:    privateKey,
-		Bucket:        bucket,
-		Network:       network,
-		PollInterval:  100 * time.Millisecond,
-		MessageTTL:    300, // 5 minutes
+		ValidatorID:    validatorID,
+		PrivateKey:     privateKey,
+		Bucket:         bucket,
+		Network:        network,
+		PollInterval:   100 * time.Millisecond,
+		MessageTTL:     300, // 5 minutes
 		LastPolledAtom: make(map[string]int64),
 		blockValidator: blockValidator,
 	}
@@ -260,9 +261,9 @@ func (sv *ServerlessValidator) PollAndProcess(ctx interface{}) (map[string]inter
 	// (This is application-specific consensus logic.)
 
 	return map[string]interface{}{
-		"processed":      processed,
-		"duration_ms":    time.Since(start).Milliseconds(),
-		"validator_id":   sv.ValidatorID[:8],
-		"network":        sv.Network,
+		"processed":    processed,
+		"duration_ms":  time.Since(start).Milliseconds(),
+		"validator_id": sv.ValidatorID[:8],
+		"network":      sv.Network,
 	}, nil
 }

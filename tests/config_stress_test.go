@@ -138,10 +138,10 @@ func TestConfig_ExtremeValues(t *testing.T) {
 		key   string
 		value string
 	}{
-		{"CHAIN_ID", strconv.FormatUint(^uint64(0), 10)},  // max uint64
-		{"CONSENSUS_TIMEOUT", "8760h"},                     // 1 year
-		{"BLOCK_INTERVAL", "1ms"},                          // 1 millisecond
-		{"RATE_LIMIT_RPS", "1000000"},                      // 1M RPS
+		{"CHAIN_ID", strconv.FormatUint(^uint64(0), 10)}, // max uint64
+		{"CONSENSUS_TIMEOUT", "8760h"},                   // 1 year
+		{"BLOCK_INTERVAL", "1ms"},                        // 1 millisecond
+		{"RATE_LIMIT_RPS", "1000000"},                    // 1M RPS
 	}
 
 	for _, tc := range extremeCases {

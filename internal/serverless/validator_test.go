@@ -271,10 +271,10 @@ func TestServerlessArchitectureFlow(t *testing.T) {
 		// Validator 0 proposes a block.
 		t.Logf("  1. Validator 0 publishes Block %d to S3", blockHeight)
 		blockPayload := map[string]interface{}{
-			"height":      blockHeight,
-			"proposer":    validatorIDs[0][:8],
-			"txCount":     5 + blockHeight,
-			"stateRoot":   fmt.Sprintf("0x%d", blockHeight),
+			"height":    blockHeight,
+			"proposer":  validatorIDs[0][:8],
+			"txCount":   5 + blockHeight,
+			"stateRoot": fmt.Sprintf("0x%d", blockHeight),
 		}
 		validators[0].PublishMessage(ctx, "block", uint64(blockHeight), blockPayload)
 

@@ -195,4 +195,3 @@ func VerifyAndUnmarshalEnvelope[T any](
 	}
 	return out, nil
 }
-

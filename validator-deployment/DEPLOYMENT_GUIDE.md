@@ -1,235 +1,84 @@
-# Activate 15 SYNTHOS Immune Nodes to Cloudflare Workers
+# SYNTHOS Validator Deployment Guide
+
+This guide deploys serverless validator workers without committing or printing
+private keys. Any validator key that previously appeared in this repository is
+compromised and must not be reused.
 
 ## Prerequisites
 
-1. **Cloudflare Account** (free tier works)
-   - Sign up at https://dash.cloudflare.com
-   - Copy your Account ID and API Token
+- Node.js and npm
+- Cloudflare account
+- Wrangler CLI authenticated with Cloudflare
+- R2 access for the validator message bucket
 
-2. **Node.js + npm**
-   ```powershell
-   winget install nodejs
-   ```
-
-3. **Wrangler CLI** (Cloudflare's deployment tool)
-   ```powershell
-   npm install -g wrangler
-   ```
-
-## Quick Start (5 minutes)
-
-### Step 1: Generate Validator Keys
-
-Each immune node needs a keypair. Generate 15 of them:
-
-```powershell
-# PowerShell script to generate keys
-$validators = @()
-for ($i=1; $i -le 15; $i++) {
-    $privateKey = -join ((0..31) | ForEach-Object { [System.Convert]::ToString((Get-Random 255), 16).PadLeft(2, '0') })
-    $publicKey = (echo -n $privateKey | certutil -hashfile - SHA256 | head -1).Trim()
-    
-    $validators += @{
-        id = "validator-$i"
-        privateKey = $privateKey
-        publicKey = $publicKey
-    }
-    
-    Write-Host "✓ Generated validator-$i"
-}
-
-# Save to file
-$validators | Export-Csv -Path validator-keys.csv -NoTypeInformation
-```
-
-### Step 2: Update wrangler.toml
-
-Replace `paste_your_key_here` with actual private keys from previous step:
+## 1. Install Dependencies
 
 ```bash
-# Example (do this for all 15 validators)
-sed -i 's/validator-1.*PRIVATE_KEY = ".*"/[env.validator1]\nvars = { VALIDATOR_ID = "validator-1", PRIVATE_KEY = "YOUR_KEY_HERE", NETWORK = "mainnet" }/g' wrangler.toml
+npm install
 ```
 
-### Step 3: Create R2 Bucket
+## 2. Generate Fresh Validator Keys
+
+Generate keys only on a trusted machine:
 
 ```bash
-# Login to Cloudflare
-wrangler login
+npm run generate-keys
+```
 
-# Create bucket (name must be unique)
+The script writes `validator-keys.json`, which is ignored by Git and contains
+secret material. Move private keys into an encrypted password manager, HSM, or
+Cloudflare secret flow immediately.
+
+## 3. Provision Secrets
+
+Store each validator private key as a Wrangler secret:
+
+```bash
+wrangler secret put PRIVATE_KEY --env validator1
+wrangler secret put PRIVATE_KEY --env validator2
+```
+
+Repeat for every validator environment. Do not place private keys in
+`wrangler.toml`, shell history, logs, screenshots, or committed files.
+
+## 4. Create the R2 Bucket
+
+```bash
 wrangler r2 bucket create synthos-validators
 ```
 
-### Step 4: Activate Immune Nodes
+If the bucket already exists, verify that the account and binding match
+`wrangler.toml`.
+
+## 5. Deploy Validators
 
 ```bash
-# Activate all 15 immune nodes
-# Each gets its own subdomain: synthos-immune-node-1.workers.dev, etc.
-
-for i in {1..15}; do
-    echo "Deploying validator-$i..."
-    wrangler deploy --env validator-$i --name synthos-validator-$i
-done
+npm run deploy
 ```
 
-### Step 5: Verify Deployment
+The deploy script expects secrets to already be provisioned. It does not
+generate, print, or persist private keys.
+
+## 6. Verify Deployment
+
+Check worker health and logs:
 
 ```bash
-# Check logs for validator-1
-wrangler tail --env validator-1
-
-# Trigger manually
-curl https://synthos-validator-1.workers.dev/
-
-# Expected response:
-# {
-#   "validator": "validator-1",
-#   "status": "success",
-#   "processed": 0,
-#   "blocks_seen": 0,
-#   "timestamp": "2025-03-25T12:34:56.000Z"
-# }
+wrangler tail --env validator1
 ```
 
-## What Happens Now?
+Before enabling validator membership, confirm:
 
-✅ **Every 5 seconds, each immune node:**
-1. Wakes up (cron trigger)
-2. Polls R2 bucket for messages
-3. Validates blocks from other validators
-4. Publishes votes
-5. Proposes blocks (if eligible)
-6. Falls asleep
+- Each worker has a unique public identity in the registry.
+- `PRIVATE_KEY` is configured as a secret for every environment.
+- No validator can propose unless it uses the canonical Go state machine and
+  canonical Ed25519 envelope signing.
+- Old validator keys have been removed from active infrastructure.
 
-✅ **All 15 immune nodes:**
-- Run simultaneously (no coordination needed)
-- Store messages in shared R2 bucket
-- Reach consensus via Ed25519 signatures
-- Cost $0/month on free tier
+## Security Notes
 
-✅ **Consensus happens automatically:**
-- Validator A proposes Block #100
-- Immune Nodes B-E vote (stored in R2)
-- Immune Node F reads 2/3 quorum, accepts
-- Block finalized, chain advances
-
-## Monitoring
-
-### View Worker Logs
-```bash
-# Stream real-time logs
-wrangler tail --env validator-1
-
-# Expected output:
-# [validator-1] Poll complete: processed=5, blocks=2
-# [validator-2] Poll complete: processed=3, blocks=1
-# [validator-3] Poll complete: processed=4, blocks=1
-```
-
-### View R2 Bucket Contents
-```bash
-# List all messages
-wrangler r2 object list synthos-validators
-
-# Download a specific message
-wrangler r2 object get synthos-validators synthos/mainnet/100/validator-1/block-100-123456.json
-```
-
-### Check Cloudflare Dashboard
-1. Go to https://dash.cloudflare.com
-2. Select Workers & Pages
-3. View each immune node's metrics:
-   - Invocations per day
-   - CPU time
-   - Errors
-   - Logs
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────┐
-│   Cloudflare Workers (15 x Immune Nodes)      │
-│  ┌──────────┬──────────┬──────────────┐    │
-│  │Validator1│Validator2│...Validator15│    │
-│  └────┬─────┴────┬─────┴──────┬───────┘    │
-│       │          │             │            │
-│       └──────────┴─────────────┘            │
-│            Polls every 5s                   │
-└────────────────┬────────────────────────────┘
-                 │
-                 ▼
-        ┌─────────────────┐
-        │  Cloudflare R2  │
-        │  (Object Store) │
-        │                 │
-        │ Block messages  │
-        │ Vote messages   │
-        │ Metadata        │
-        └─────────────────┘
-```
-
-## Costs
-
-| Item | Cost | Notes |
-|------|------|-------|
-| Workers invocations | $0 | 10k free/day (need 4.3k for 15 validators) |
-| R2 storage | $0 | First 10GB free (messages ~100MB/day) |
-| R2 API calls | $0 | First 1M free/month |
-| **TOTAL** | **$0** | Completely free on free tier |
-
-## Next Steps
-
-1. **Monitor consensus:** Check logs to see blocks being proposed/voted
-2. **Add real signing:** Replace stub `signMessage()` with real ed25519
-3. **Add validator registry:** Use DNS TXT records for dynamic discovery
-4. **Add slashing:** Penalize misbehaving validators
-5. **Scale to 100 immune nodes:** Still free (Cloudflare scales automatically)
-
-## Troubleshooting
-
-**Workers failing to run?**
-```bash
-# Check Cloudflare is configured correctly
-wrangler whoami
-
-# Re-authenticate:
-wrangler logout
-wrangler login
-```
-
-**R2 bucket not accessible?**
-```bash
-# Verify bucket was created
-wrangler r2 bucket list
-
-# Grant Workers access to bucket in wrangler.toml
-# (should already be configured)
-```
-
-**No messages in R2?**
-```bash
-# Check if workers are actually running
-wrangler tail --env validator-1
-
-# If no logs, worker may have crashed
-# Check error logs in Cloudflare dashboard
-```
-
-## Comparison: SYNTHOS vs Traditional L1
-
-| Feature | SYNTHOS Serverless | Ethereum | Solana |
-|---------|-------------------|----------|--------|
-| Cost per validator | $0 | $100-500/month | $50-200/month |
-| Needs listening port | ❌ No | ✅ Yes | ✅ Yes |
-| Works behind firewall | ✅ Always | ⚠️ Needs config | ⚠️ Needs config |
-| Works from home | ✅ Yes | ❌ Usually blocked | ❌ Usually blocked |
-| Downtime penalty | ❌ None | ✅ Slashing | ✅ Slashing |
-| Admin overhead | Minimal | High | High |
-| **You can run 35+ for free** | ✅ Yes | ❌ No | ❌ No |
-
----
-
-**You now have a globally-distributed, permission-less, $0/month blockchain running on Cloudflare Workers.**
-
-Questions? Check `wrangler --help` or ask ChatGPT "how to deploy Cloudflare Workers with R2".
+- Historical keys in this repository are compromised.
+- `validator-keys.json` and `validators.txt` are ignored and should remain local
+  only.
+- Public keys may be published in an authenticated validator registry.
+- Private keys must be rotated through a controlled network upgrade.

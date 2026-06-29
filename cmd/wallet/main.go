@@ -33,4 +33,3 @@ func main() {
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(out)
 }
-

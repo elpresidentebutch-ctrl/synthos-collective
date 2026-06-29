@@ -1,6 +1,7 @@
 package rpc
 
 import (
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -9,11 +10,11 @@ import (
 // TokenBucket implements a simple token bucket rate limiter.
 // Used to rate limit RPC endpoints per-client IP.
 type TokenBucket struct {
-	capacity  int       // Max tokens available
-	tokens    float64   // Current token count
-	refillRate float64  // Tokens per second
+	capacity   int     // Max tokens available
+	tokens     float64 // Current token count
+	refillRate float64 // Tokens per second
 	lastRefill time.Time
-	mu        sync.Mutex
+	mu         sync.Mutex
 }
 
 // NewTokenBucket creates a new token bucket with the given capacity
@@ -53,12 +54,12 @@ func (tb *TokenBucket) Allow() bool {
 
 // RateLimiter tracks per-IP token buckets and enforces rate limits.
 type RateLimiter struct {
-	capacity       int
+	capacity        int
 	tokensPerSecond float64
-	buckets        map[string]*TokenBucket
-	mu             sync.RWMutex
-	cleanupTicker  *time.Ticker
-	stopCleanup    chan struct{}
+	buckets         map[string]*TokenBucket
+	mu              sync.RWMutex
+	cleanupTicker   *time.Ticker
+	stopCleanup     chan struct{}
 }
 
 // NewRateLimiter creates a new rate limiter with given RPS (requests per second).
@@ -120,9 +121,9 @@ func (rl *RateLimiter) Close() {
 // Middleware returns an HTTP middleware that enforces rate limiting.
 func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		clientIP := r.RemoteAddr
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			clientIP = xff
+		clientIP, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			clientIP = r.RemoteAddr
 		}
 
 		if !rl.Allow(clientIP) {

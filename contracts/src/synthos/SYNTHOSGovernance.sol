@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "./SYNToken.sol";
+import "./SYNTHOSTimelock.sol";
 
 /**
  * @title SYNTHOSGovernance
@@ -61,8 +62,11 @@ contract SYNTHOSGovernance {
         uint256 votes_abstain;
         bool cancelled;
         bool executed;
+        bool exists;
         mapping(address => bool) has_voted;
         mapping(address => uint8) votes; // 1 = for, 2 = against, 3 = abstain
+        address[] targets;
+        uint256[] values;
         bytes[] calldatas;
     }
 
@@ -78,7 +82,7 @@ contract SYNTHOSGovernance {
     mapping(address => uint256) public voting_power;
 
     uint256 public proposal_count = 0;
-    address public governance_timelock;
+    SYNTHOSTimelock public governance_timelock;
 
     // Events
     event ProposalCreated(
@@ -104,7 +108,9 @@ contract SYNTHOSGovernance {
 
     constructor(address token_addr, address timelock_addr) {
         synToken = SYNToken(token_addr);
-        governance_timelock = timelock_addr;
+        require(token_addr != address(0), "invalid token");
+        require(timelock_addr != address(0), "invalid timelock");
+        governance_timelock = SYNTHOSTimelock(payable(timelock_addr));
     }
 
     /**
@@ -112,33 +118,15 @@ contract SYNTHOSGovernance {
      * @param delegate_addr Address to delegate to
      */
     function delegateVotingPower(address delegate_addr) public {
-        require(delegate_addr != address(0), "Invalid delegate address");
-        
-        uint256 balance = synToken.balanceOf(msg.sender);
-        require(balance > 0, "No voting power");
-
-        delegates[msg.sender].delegate = delegate_addr;
-        delegates[msg.sender].voting_power = balance;
-        voting_power[delegate_addr] += balance;
-
-        emit DelegationChanged(msg.sender, delegate_addr, balance);
+        delegate_addr;
+        revert("delegation disabled pending snapshot voting");
     }
 
     /**
      * @dev Revoke voting power delegation
      */
     function revokeDelegation() public {
-        address current_delegate = delegates[msg.sender].delegate;
-        uint256 power = delegates[msg.sender].voting_power;
-
-        if (current_delegate != address(0) && power > 0) {
-            voting_power[current_delegate] -= power;
-        }
-
-        delegates[msg.sender].delegate = address(0);
-        delegates[msg.sender].voting_power = 0;
-
-        emit DelegationChanged(msg.sender, address(0), 0);
+        revert("delegation disabled pending snapshot voting");
     }
 
     /**
@@ -187,6 +175,23 @@ contract SYNTHOSGovernance {
         p.votes_abstain = 0;
         p.cancelled = false;
         p.executed = false;
+        p.exists = true;
+
+        for (uint256 i = 0; i < targets.length; i++) {
+            require(targets[i] != address(0), "invalid target");
+            p.targets.push(targets[i]);
+            p.values.push(values[i]);
+            if (bytes(signatures[i]).length == 0) {
+                p.calldatas.push(calldatas[i]);
+            } else {
+                p.calldatas.push(
+                    abi.encodePacked(
+                        bytes4(keccak256(bytes(signatures[i]))),
+                        calldatas[i]
+                    )
+                );
+            }
+        }
 
         emit ProposalCreated(
             proposal_id,
@@ -207,18 +212,13 @@ contract SYNTHOSGovernance {
      */
     function castVote(uint256 proposal_id, uint8 vote) public {
         Proposal storage p = proposals[proposal_id];
-        
+        require(p.exists, "proposal not found");
         require(block.number >= p.start_block, "Voting not started");
         require(block.number <= p.end_block, "Voting ended");
         require(!p.has_voted[msg.sender], "Already voted");
         require(vote >= 1 && vote <= 3, "Invalid vote");
 
         uint256 voting_weight = synToken.balanceOf(msg.sender);
-        address delegate = delegates[msg.sender].delegate;
-        
-        if (delegate != address(0)) {
-            voting_weight = delegates[msg.sender].voting_power;
-        }
 
         require(voting_weight > 0, "No voting power");
 
@@ -242,10 +242,11 @@ contract SYNTHOSGovernance {
      */
     function queueProposal(uint256 proposal_id) public {
         Proposal storage p = proposals[proposal_id];
-        
+        require(p.exists, "proposal not found");
         require(block.number > p.end_block, "Voting not ended");
         require(!p.executed, "Already executed");
         require(!p.cancelled, "Cancelled");
+        require(p.eta == 0, "Already queued");
 
         uint256 total_for = p.votes_for;
         uint256 total_against = p.votes_against;
@@ -257,7 +258,20 @@ contract SYNTHOSGovernance {
             "Did not meet supermajority"
         );
 
-        p.eta = block.timestamp + EXECUTION_DELAY;
+        uint256 delay = governance_timelock.getMinDelay();
+        if (delay < EXECUTION_DELAY) {
+            delay = EXECUTION_DELAY;
+        }
+        bytes32 salt = bytes32(proposal_id);
+        governance_timelock.scheduleBatch(
+            p.targets,
+            p.values,
+            p.calldatas,
+            bytes32(0),
+            salt,
+            delay
+        );
+        p.eta = block.timestamp + delay;
         emit ProposalQueued(proposal_id, p.eta);
     }
 
@@ -265,14 +279,21 @@ contract SYNTHOSGovernance {
      * @dev Execute a queued proposal
      * @param proposal_id ID of proposal
      */
-    function executeProposal(uint256 proposal_id) public {
+    function executeProposal(uint256 proposal_id) public payable {
         Proposal storage p = proposals[proposal_id];
-        
+        require(p.exists, "proposal not found");
         require(p.eta > 0, "Proposal not queued");
         require(p.eta <= block.timestamp, "Timelock not expired");
         require(!p.executed, "Already executed");
 
         p.executed = true;
+        governance_timelock.executeBatch{value: msg.value}(
+            p.targets,
+            p.values,
+            p.calldatas,
+            bytes32(0),
+            bytes32(proposal_id)
+        );
         emit ProposalExecuted(proposal_id);
     }
 
@@ -283,9 +304,20 @@ contract SYNTHOSGovernance {
     function cancelProposal(uint256 proposal_id) public {
         Proposal storage p = proposals[proposal_id];
         
-        require(msg.sender == p.proposer || msg.sender == governance_timelock, "Unauthorized");
+        require(p.exists, "proposal not found");
+        require(msg.sender == p.proposer || msg.sender == address(governance_timelock), "Unauthorized");
         require(!p.executed, "Already executed");
 
+        if (p.eta > 0) {
+            bytes32 operationId = governance_timelock.hashOperationBatch(
+                p.targets,
+                p.values,
+                p.calldatas,
+                bytes32(0),
+                bytes32(proposal_id)
+            );
+            governance_timelock.cancel(operationId);
+        }
         p.cancelled = true;
         emit ProposalCancelled(proposal_id);
     }
@@ -297,7 +329,7 @@ contract SYNTHOSGovernance {
      */
     function getProposalState(uint256 proposal_id) public view returns (ProposalState) {
         Proposal storage p = proposals[proposal_id];
-        
+        if (!p.exists) return ProposalState.CANCELLED;
         if (p.cancelled) return ProposalState.CANCELLED;
         if (p.executed) return ProposalState.EXECUTED;
         if (block.number <= p.start_block) return ProposalState.PENDING;

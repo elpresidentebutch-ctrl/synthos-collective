@@ -57,4 +57,3 @@ func (c *ReplayCache) cleanupLocked(now time.Time) {
 		}
 	}
 }
-

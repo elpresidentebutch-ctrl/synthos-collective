@@ -4,16 +4,22 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"sync"
 	"time"
 )
 
 // Chain is a minimal L1 ledger: blocks + state + mempool.
 // Consensus is intentionally left as a pluggable component (agents coordinate it).
 type Chain struct {
+	mu sync.RWMutex
+
 	ChainID string
-	State   *State
-	DEX     *DEX
-	Oracle  *Oracle
+	// TxChainID is the signed transaction domain. It must be unique per network.
+	// Zero is treated as 1 only for backwards-compatible local snapshots.
+	TxChainID uint64
+	State     *State
+	DEX       *DEX
+	Oracle    *Oracle
 
 	Blocks  []*Block
 	Mempool map[string]Tx
@@ -30,12 +36,13 @@ func NewChain(genesis Genesis) (*Chain, error) {
 		return nil, err
 	}
 	c := &Chain{
-		ChainID: genesis.ChainID,
-		State:   st,
-		DEX:     NewDEX(),
-		Oracle:  NewOracle(),
-		Blocks:  make([]*Block, 0, 1024),
-		Mempool: make(map[string]Tx),
+		ChainID:   genesis.ChainID,
+		TxChainID: genesis.TransactionChainID(),
+		State:     st,
+		DEX:       NewDEX(),
+		Oracle:    NewOracle(),
+		Blocks:    make([]*Block, 0, 1024),
+		Mempool:   make(map[string]Tx),
 	}
 
 	// Create genesis block (height 0).
@@ -57,6 +64,12 @@ func NewChain(genesis Genesis) (*Chain, error) {
 }
 
 func (c *Chain) Height() uint64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.heightLocked()
+}
+
+func (c *Chain) heightLocked() uint64 {
 	if len(c.Blocks) == 0 {
 		return 0
 	}
@@ -64,6 +77,12 @@ func (c *Chain) Height() uint64 {
 }
 
 func (c *Chain) Tip() *Block {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.tipLocked()
+}
+
+func (c *Chain) tipLocked() *Block {
 	if len(c.Blocks) == 0 {
 		return nil
 	}
@@ -73,21 +92,30 @@ func (c *Chain) Tip() *Block {
 // BlocksFrom returns all blocks from height `from` onward.
 // Compatible with the JS validator GET /blocks?from=N protocol.
 func (c *Chain) BlocksFrom(from int) []*Block {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	if from < 0 {
 		from = 0
 	}
 	if from >= len(c.Blocks) {
 		return nil
 	}
-	return c.Blocks[from:]
+	out := make([]*Block, len(c.Blocks[from:]))
+	copy(out, c.Blocks[from:])
+	return out
 }
 
 func (c *Chain) SubmitTx(tx Tx) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if tx.ID == "" {
 		return errors.New("missing transaction ID")
 	}
 	if err := tx.Verify(); err != nil {
 		return err
+	}
+	if tx.ChainID != c.transactionChainIDLocked() {
+		return fmt.Errorf("wrong transaction chain ID: got %d, want %d", tx.ChainID, c.transactionChainIDLocked())
 	}
 
 	// SECURITY: Reject duplicate transaction IDs to prevent replay via mempool.
@@ -108,6 +136,8 @@ func (c *Chain) SubmitTx(tx Tx) error {
 // BuildBlock creates a candidate block from mempool against the current state.
 // This does NOT finalize; agents will vote and then call FinalizeBlock.
 func (c *Chain) BuildBlock(proposerID string, proposerPoCRoot string, maxTx int) (*Block, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	if len(c.Blocks) == 0 {
 		return nil, ErrNoGenesis
 	}
@@ -150,7 +180,7 @@ func (c *Chain) BuildBlock(proposerID string, proposerPoCRoot string, maxTx int)
 		txs = append(txs, tx)
 	}
 
-	parent := c.Tip()
+	parent := c.tipLocked()
 	b := &Block{
 		Header: BlockHeader{
 			Height:     parent.Header.Height + 1,
@@ -172,10 +202,17 @@ func (c *Chain) BuildBlock(proposerID string, proposerPoCRoot string, maxTx int)
 // ValidateBlock checks basic structure and replays txs to confirm StateRoot.
 // SECURITY: Enforces signature verification on all transactions before block acceptance.
 func (c *Chain) ValidateBlock(b *Block) error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.validateBlockLocked(b)
+}
+
+// validateBlockLocked is pure: validation must never mutate canonical state.
+func (c *Chain) validateBlockLocked(b *Block) error {
 	if b == nil || b.Hash == "" {
 		return ErrBadBlock
 	}
-	tip := c.Tip()
+	tip := c.tipLocked()
 	if tip == nil {
 		return ErrNoGenesis
 	}
@@ -192,11 +229,11 @@ func (c *Chain) ValidateBlock(b *Block) error {
 
 	// SECURITY: Verify all transaction signatures before applying
 	for _, tx := range b.Tx {
+		if tx.ChainID != c.transactionChainIDLocked() {
+			return fmt.Errorf("wrong transaction chain ID in block: got %d, want %d", tx.ChainID, c.transactionChainIDLocked())
+		}
 		if err := tx.Verify(); err != nil {
-			// ENFORCER: Slash the proposer for submitting invalid transactions
-			proposerAddr := Address("0x" + b.Header.ProposerID)
-			c.State.Slash(proposerAddr, 10) // 10% penalty
-			return fmt.Errorf("invalid transaction signature in block: %w (Proposer slashed)", err)
+			return fmt.Errorf("invalid transaction signature in block: %w", err)
 		}
 	}
 
@@ -215,7 +252,9 @@ func (c *Chain) ValidateBlock(b *Block) error {
 // FinalizeBlock commits a validated block to canonical chain state.
 // Distributes collected fees to the block proposer.
 func (c *Chain) FinalizeBlock(b *Block) error {
-	if err := c.ValidateBlock(b); err != nil {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := c.validateBlockLocked(b); err != nil {
 		return err
 	}
 
@@ -223,8 +262,14 @@ func (c *Chain) FinalizeBlock(b *Block) error {
 	var totalFees uint64
 	for _, tx := range b.Tx {
 		// Apply to canonical state (should not fail if ValidateBlock passed).
-		_ = c.State.ApplyTx(tx)
-		totalFees += tx.Fee
+		if err := c.State.ApplyTx(tx); err != nil {
+			return fmt.Errorf("apply finalized transaction %s: %w", tx.ID, err)
+		}
+		var err error
+		totalFees, err = safeAdd(totalFees, tx.Fee)
+		if err != nil {
+			return fmt.Errorf("block fee overflow: %w", err)
+		}
 		delete(c.Mempool, tx.ID)
 	}
 
@@ -232,10 +277,14 @@ func (c *Chain) FinalizeBlock(b *Block) error {
 	if totalFees > 0 && b.Header.ProposerID != "" {
 		burnAmount := (totalFees * BURN_PERCENT) / 100
 		rewardAmount := totalFees - burnAmount
-		
+
 		proposerAddr := Address("0x" + b.Header.ProposerID)
 		proposer := c.State.Get(proposerAddr)
-		proposer.Balance += rewardAmount
+		nextBalance, err := safeAdd(proposer.Balance, rewardAmount)
+		if err != nil {
+			return fmt.Errorf("proposer reward overflow: %w", err)
+		}
+		proposer.Balance = nextBalance
 		c.State.Set(proposerAddr, proposer)
 
 		// Cryptographically burn tokens (permanently destroying them)
@@ -245,4 +294,49 @@ func (c *Chain) FinalizeBlock(b *Block) error {
 	b.Finalized = true
 	c.Blocks = append(c.Blocks, b)
 	return nil
+}
+
+func (c *Chain) transactionChainIDLocked() uint64 {
+	if c.TxChainID == 0 {
+		return 1
+	}
+	return c.TxChainID
+}
+
+func (c *Chain) TransactionChainID() uint64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.transactionChainIDLocked()
+}
+
+func (c *Chain) MempoolSnapshot() map[string]Tx {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	out := make(map[string]Tx, len(c.Mempool))
+	for id, tx := range c.Mempool {
+		out[id] = tx
+	}
+	return out
+}
+
+// SnapshotData returns a consistent persistence view.
+func (c *Chain) SnapshotData() (string, uint64, []*Block, *State) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	blocks := make([]*Block, len(c.Blocks))
+	for i, block := range c.Blocks {
+		if block == nil {
+			continue
+		}
+		copyBlock := *block
+		copyBlock.Tx = append([]Tx(nil), block.Tx...)
+		if block.ValidatorVotes != nil {
+			copyBlock.ValidatorVotes = make(map[string]int, len(block.ValidatorVotes))
+			for validator, vote := range block.ValidatorVotes {
+				copyBlock.ValidatorVotes[validator] = vote
+			}
+		}
+		blocks[i] = &copyBlock
+	}
+	return c.ChainID, c.transactionChainIDLocked(), blocks, c.State.Clone()
 }

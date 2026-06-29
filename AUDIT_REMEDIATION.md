@@ -135,7 +135,7 @@ ErrInsufficientReputation
 ```bash
 # Development
 AGENT_ID=agent_local_001
-AGENT_PRIVATE_KEY=00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
+AGENT_PRIVATE_KEY=CHANGEME_USE_A_SECRET_STORE
 
 # Production (HSM)
 HSM_ENABLED=true

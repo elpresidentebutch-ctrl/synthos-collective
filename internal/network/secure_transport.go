@@ -19,13 +19,13 @@ import (
 // SecureTCPTransport extends TCPTransport with TLS encryption and peer authentication.
 // All node-to-node communication is encrypted and authenticated.
 type SecureTCPTransport struct {
-	nodeID           string
-	listenAddr       string
-	privateKey       ed25519.PrivateKey
-	certManager      *CertificateManager
-	peerAuth         *PeerAuth
-	enableTLS        bool
-	requirePeerAuth  bool
+	nodeID          string
+	listenAddr      string
+	privateKey      ed25519.PrivateKey
+	certManager     *CertificateManager
+	peerAuth        *PeerAuth
+	enableTLS       bool
+	requirePeerAuth bool
 
 	mu               sync.RWMutex
 	listener         net.Listener

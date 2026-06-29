@@ -6,8 +6,9 @@
   <meta name="theme-color" content="#0b0e14" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <title>Synthos Mobile Validator</title>
+  <title>SYNTHOS Immune Node</title>
   <link rel="manifest" href="manifest.json" />
+  <script src="runtime.js"></script>
   <style>
     :root {
       --bg: #0b0e14;
@@ -335,14 +336,14 @@
     <h1>Synthos</h1>
     <p>Run a validator node from your phone. Sync blocks, verify transactions, and earn rewards on the Synthos network.</p>
     <div class="reward-badge">🎁 First 200 validators earn 50 SYN</div>
-    <button class="connect-btn" id="connectBtn" onclick="connectToNetwork()">Connect to Synthos</button>
+    <button class="connect-btn" id="connectBtn" onclick="connectToNetwork()">Run My SYNTHOS Node</button>
     <div class="landing-footer">Decentralized AI agent blockchain · No download required</div>
   </div>
 
   <!-- ─── Validator App (hidden until Connect) ───────────────── -->
   <div class="app hidden" id="validatorApp">
     <div class="header">
-      <h1>Synthos Validator</h1>
+      <h1>SYNTHOS Immune Node</h1>
       <div class="status-label">
         <span class="status-dot" id="connDot"></span>
         <span id="connLabel">Connecting...</span>
@@ -350,6 +351,12 @@
     </div>
 
     <div id="warnBanner" class="warn-banner" style="display:none"></div>
+
+    <div class="card">
+      <div class="card-title">Device Runtime</div>
+      <div class="value" id="runtimeLabel">Detecting...</div>
+      <div style="color:var(--muted);font-size:12px;margin-top:8px" id="runtimeDetail"></div>
+    </div>
 
     <!-- Tabs -->
     <div class="tabs">
@@ -514,9 +521,14 @@
 <script>
 // ─── Connect Landing ────────────────────────────────────────────────────────
 function connectToNetwork() {
+  const runtime = window.SynthosRuntime.fromBrowser();
+  window.synthosRuntimeProfile = runtime;
+  localStorage.setItem("synthos-runtime-tier", runtime.tier);
   document.getElementById("landingScreen").style.display = "none";
   const app = document.getElementById("validatorApp");
   app.classList.remove("hidden");
+  document.getElementById("runtimeLabel").textContent = runtime.label;
+  document.getElementById("runtimeDetail").textContent = runtime.detail;
   boot();
 }
 
@@ -789,6 +801,7 @@ async function syncFromNetwork() {
 
 async function registerNode() {
   const name = myPeerId || `mobile-${Math.random().toString(36).slice(2, 8)}`;
+  const runtime = window.synthosRuntimeProfile || window.SynthosRuntime.fromBrowser();
   for (const registryUrl of PEER_REGISTRY_URLS) {
     try {
       const resp = await fetch(`${registryUrl}/register`, {
@@ -798,7 +811,11 @@ async function registerNode() {
           name: name,
           url: window.location.href,
           cloud: 'mobile-browser',
-          mode: 'outbound_only',
+          mode: runtime.tier,
+          role: runtime.consensusEligible ? 'validator' : 'immune-sentinel',
+          consensus_eligible: runtime.consensusEligible,
+          continuous: runtime.continuous,
+          background: runtime.continuous ? true : 'best-effort',
           inbound_ports: 0
         })
       });
@@ -813,6 +830,7 @@ async function registerNode() {
 
 async function setupBackgroundAgent(swReg) {
   if (!swReg?.active || !myPeerId) return;
+  const runtime = window.synthosRuntimeProfile || window.SynthosRuntime.fromBrowser();
 
   if (navigator.storage?.persist) {
     try {
@@ -828,6 +846,7 @@ async function setupBackgroundAgent(swReg) {
       registryUrl: PEER_REGISTRY_URL,
       registryUrls: PEER_REGISTRY_URLS,
       cloud: "mobile-background",
+      runtimeTier: runtime.tier,
     },
   });
 

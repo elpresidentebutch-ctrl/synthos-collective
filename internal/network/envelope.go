@@ -11,17 +11,17 @@ import (
 // Envelope is the signed message container relayed through untrusted infrastructure.
 // Relays must treat it as opaque bytes; all trust decisions are made by agents.
 type Envelope struct {
-	Version               string          `json:"version"`
-	MessageType           string          `json:"message_type"`
-	FromAgentID           string          `json:"from_agent"`
-	ToAgentID             string          `json:"to_agent,omitempty"`
-	Topic                 string          `json:"topic,omitempty"`
-	Nonce                 string          `json:"nonce"`
-	Timestamp             time.Time       `json:"timestamp"`
-	Payload               json.RawMessage  `json:"payload"`
-	ProofOfComputationRoot string         `json:"proof_of_computation_root"`
-	HardwareIDHash        string          `json:"hardware_id_hash"`
-	Signature             string          `json:"signature"`
+	Version                string          `json:"version"`
+	MessageType            string          `json:"message_type"`
+	FromAgentID            string          `json:"from_agent"`
+	ToAgentID              string          `json:"to_agent,omitempty"`
+	Topic                  string          `json:"topic,omitempty"`
+	Nonce                  string          `json:"nonce"`
+	Timestamp              time.Time       `json:"timestamp"`
+	Payload                json.RawMessage `json:"payload"`
+	ProofOfComputationRoot string          `json:"proof_of_computation_root"`
+	HardwareIDHash         string          `json:"hardware_id_hash"`
+	Signature              string          `json:"signature"`
 }
 
 var (
@@ -45,27 +45,27 @@ func NonceHex(b []byte) string {
 // Signature is excluded by design.
 func (e Envelope) SigningBytes() ([]byte, error) {
 	tmp := struct {
-		Version               string         `json:"version"`
-		MessageType           string         `json:"message_type"`
-		FromAgentID           string         `json:"from_agent"`
-		ToAgentID             string         `json:"to_agent,omitempty"`
-		Topic                 string         `json:"topic,omitempty"`
-		Nonce                 string         `json:"nonce"`
-		Timestamp             time.Time      `json:"timestamp"`
-		Payload               json.RawMessage `json:"payload"`
-		ProofOfComputationRoot string        `json:"proof_of_computation_root"`
-		HardwareIDHash        string         `json:"hardware_id_hash"`
+		Version                string          `json:"version"`
+		MessageType            string          `json:"message_type"`
+		FromAgentID            string          `json:"from_agent"`
+		ToAgentID              string          `json:"to_agent,omitempty"`
+		Topic                  string          `json:"topic,omitempty"`
+		Nonce                  string          `json:"nonce"`
+		Timestamp              time.Time       `json:"timestamp"`
+		Payload                json.RawMessage `json:"payload"`
+		ProofOfComputationRoot string          `json:"proof_of_computation_root"`
+		HardwareIDHash         string          `json:"hardware_id_hash"`
 	}{
-		Version:               e.Version,
-		MessageType:           e.MessageType,
-		FromAgentID:           e.FromAgentID,
-		ToAgentID:             e.ToAgentID,
-		Topic:                 e.Topic,
-		Nonce:                 e.Nonce,
-		Timestamp:             e.Timestamp,
-		Payload:               e.Payload,
+		Version:                e.Version,
+		MessageType:            e.MessageType,
+		FromAgentID:            e.FromAgentID,
+		ToAgentID:              e.ToAgentID,
+		Topic:                  e.Topic,
+		Nonce:                  e.Nonce,
+		Timestamp:              e.Timestamp,
+		Payload:                e.Payload,
 		ProofOfComputationRoot: e.ProofOfComputationRoot,
-		HardwareIDHash:        e.HardwareIDHash,
+		HardwareIDHash:         e.HardwareIDHash,
 	}
 	return json.Marshal(tmp)
 }
@@ -88,4 +88,3 @@ func (e Envelope) ValidateBasic() error {
 	}
 	return nil
 }
-

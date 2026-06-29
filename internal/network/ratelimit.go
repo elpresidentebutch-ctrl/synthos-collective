@@ -78,4 +78,3 @@ func (l *PeerLimiter) Allow(peerID string, now time.Time) bool {
 
 	return b.Allow(now)
 }
-

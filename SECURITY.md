@@ -101,7 +101,7 @@ This document establishes the security model, threat framework, and controls for
 ### Format
 - ED25519 private: 32 bytes = 64 hex chars
 - Public key: derived from private
-- Example: `AGENT_PRIVATE_KEY=00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff`
+- Example: `AGENT_PRIVATE_KEY=CHANGEME_USE_A_SECRET_STORE`
 
 ---
 

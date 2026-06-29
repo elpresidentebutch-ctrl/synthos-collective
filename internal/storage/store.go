@@ -29,19 +29,22 @@ func New(dir string) (*Store, error) {
 }
 
 type snapshot struct {
-	ChainID string        `json:"chain_id"`
-	Blocks  []*chain.Block `json:"blocks"`
-	State   *chain.State  `json:"state"`
+	ChainID   string         `json:"chain_id"`
+	TxChainID uint64         `json:"tx_chain_id"`
+	Blocks    []*chain.Block `json:"blocks"`
+	State     *chain.State   `json:"state"`
 }
 
 // Snapshot is the exported view for loading.
 type Snapshot = snapshot
 
 func (s *Store) Save(c *chain.Chain) error {
+	chainID, txChainID, blocks, state := c.SnapshotData()
 	snap := snapshot{
-		ChainID: c.ChainID,
-		Blocks:  c.Blocks,
-		State:   c.State,
+		ChainID:   chainID,
+		TxChainID: txChainID,
+		Blocks:    blocks,
+		State:     state,
 	}
 	b, err := json.MarshalIndent(snap, "", "  ")
 	if err != nil {
@@ -67,4 +70,3 @@ func (s *Store) Load() (*Snapshot, error) {
 	}
 	return &snap, nil
 }
-

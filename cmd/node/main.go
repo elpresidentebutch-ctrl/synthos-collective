@@ -27,16 +27,16 @@ var (
 
 func main() {
 	// 1. Initialize Identity & Hardware Binding
-	hwID := "hardware-desktop-v1" 
+	hwID := "hardware-desktop-v1"
 	vaultPath := ".synthos/vault.json"
 	passphrase := os.Getenv("SYNTHOS_PASSPHRASE")
 	if passphrase == "" {
-		passphrase = "default_sovereign_secret" 
+		passphrase = "default_sovereign_secret"
 	}
 
 	var pub ed25519.PublicKey
 	var priv ed25519.PrivateKey
-	
+
 	if _, err := os.Stat(vaultPath); err == nil {
 		log.Println("🔓 Vault found. Decrypting agent identity...")
 		var loadErr error
@@ -44,7 +44,7 @@ func main() {
 		if loadErr != nil {
 			log.Fatalf("❌ Vault Decryption Failed: %v", loadErr)
 		}
-		passphrase = "CLEARED" 
+		passphrase = "CLEARED"
 		pub = priv.Public().(ed25519.PublicKey)
 	} else {
 		log.Println("✨ No vault found. Generating new hardware-bound identity...")
@@ -78,7 +78,7 @@ func main() {
 	if registryURL == "" {
 		registryURL = BOOTSTRAP_ANCHORS[0]
 	}
-	
+
 	t := network.NewRelayTransport([]string{registryURL})
 	t.SelfName = agentID
 	t.SelfURL = "" // No self-URL because we don't listen
@@ -94,7 +94,7 @@ func main() {
 		func(a chain.Address) {
 			log.Printf("🔥 EXECUTING AUTO-SLASH ON %s", a)
 			acc := c.State.Get(a)
-			
+
 			// Split slashed stake 50% Treasury, 50% Founder
 			half := acc.Balance / 2
 			otherHalf := acc.Balance - half
@@ -109,7 +109,7 @@ func main() {
 			treasuryAcc := c.State.Get(treasuryAddr)
 			treasuryAcc.Balance += otherHalf
 			c.State.Set(treasuryAddr, treasuryAcc)
-			
+
 			acc.Balance = 0 // 100% Stake Recycled (50/50 Split)
 			c.State.Set(a, acc)
 		},
@@ -124,7 +124,7 @@ func main() {
 		defer mp.Shutdown(ctx)
 		log.Printf("📊 OpenTelemetry Enabled: Pushing to monitoring.synthos-mesh.net")
 	}
-	
+
 	if err := t.Start(); err != nil {
 		log.Printf("⚠️  Failed to start outbound transport: %v", err)
 	}
@@ -135,9 +135,9 @@ func main() {
 	log.Printf("✅ Node %s (Addr: %s) is running in ABSOLUTE SILENCE mode.", agentID, addr)
 	log.Printf("🛡️  Immune System ACTIVE: Distributed Consensus Mode Engaged.")
 	log.Printf("📡 Status: Outbound Sign Language Active. No ports open.")
-	
+
 	// 7. Start the Autonomous Idle Worker (Fractal Heartbeat + Immune Pulse)
-	go startIdleWorker(a, c, priv, uint64(1), immune) 
+	go startIdleWorker(a, c, priv, uint64(1), immune)
 
 	<-stop
 

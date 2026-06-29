@@ -125,9 +125,10 @@ func (s *Server) handleAccount(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMempool(w http.ResponseWriter, r *http.Request) {
+	mempool := s.Chain.MempoolSnapshot()
 	writeJSON(w, map[string]any{
-		"size": len(s.Chain.Mempool),
-		"tx":   s.Chain.Mempool,
+		"size": len(mempool),
+		"tx":   mempool,
 	})
 }
 
@@ -190,35 +191,11 @@ func (s *Server) handleDEXQuote(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDEXSwap(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	var req struct {
-		Asset   string `json:"asset"`
-		Amount  uint64 `json:"amount"`
-		FromSyn bool   `json:"from_syn"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	out, err := s.Chain.DEX.Swap(req.Asset, req.Amount, req.FromSyn)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	if s.Store != nil {
-		_ = s.Store.Save(s.Chain)
-	}
-	writeJSON(w, map[string]any{
-		"ok":         true,
-		"asset":      req.Asset,
-		"amount_in":  req.Amount,
-		"amount_out": out,
-		"from_syn":   req.FromSyn,
-		"pools":      s.Chain.DEX.ListPools(),
-	})
+	http.Error(
+		w,
+		"DEX mutation is disabled until swaps are signed transactions finalized by consensus",
+		http.StatusNotImplemented,
+	)
 }
 
 func (s *Server) handleImmuneStatus(w http.ResponseWriter, r *http.Request) {

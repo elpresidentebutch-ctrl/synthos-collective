@@ -71,4 +71,3 @@ func (w *Wallet) Fingerprint() (string, error) {
 	sum := sha256.Sum256(w.Public)
 	return "0x" + hex.EncodeToString(sum[:8]), nil
 }
-

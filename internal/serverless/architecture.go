@@ -31,7 +31,6 @@ import (
 // 2. Strongly eventual consistency (not instant finality)
 // 3. Depends on cloud providers for reliability
 // 4. Storage costs (S3 can get expensive at scale)
-//
 const PiggybacArchitectureGuide = `
 SYNTHOS SERVERLESS ARCHITECTURE
 =================================
@@ -249,25 +248,25 @@ NEXT STEPS:
 // Instead of writing each message immediately, we batch them
 // and upload every N messages or every T time.
 type MessageBuffer struct {
-	bucket   MessageBucket
-	network  string
-	sender   string
-	maxSize  int
-	maxAge   time.Duration
-	buffer   []*ServerlessMessage
+	bucket    MessageBucket
+	network   string
+	sender    string
+	maxSize   int
+	maxAge    time.Duration
+	buffer    []*ServerlessMessage
 	lastFlush time.Time
-	mu       sync.RWMutex
+	mu        sync.RWMutex
 }
 
 // NewMessageBuffer creates a message batching buffer.
 func NewMessageBuffer(bucket MessageBucket, network, sender string, maxSize int, maxAge time.Duration) *MessageBuffer {
 	return &MessageBuffer{
-		bucket:   bucket,
-		network:  network,
-		sender:   sender,
-		maxSize:  maxSize,
-		maxAge:   maxAge,
-		buffer:   make([]*ServerlessMessage, 0, maxSize),
+		bucket:    bucket,
+		network:   network,
+		sender:    sender,
+		maxSize:   maxSize,
+		maxAge:    maxAge,
+		buffer:    make([]*ServerlessMessage, 0, maxSize),
 		lastFlush: time.Now(),
 	}
 }

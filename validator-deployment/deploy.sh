@@ -1,83 +1,28 @@
 #!/bin/bash
-# Deploy 15 SYNTHOS validators to Cloudflare Workers
+# Deploy SYNTHOS validators after secrets have been provisioned.
 
-set -e
+set -euo pipefail
 
 VALIDATORS=(
-    "validator-1"
-    "validator-2"
-    "validator-3"
-    "validator-4"
-    "validator-5"
-    "validator-6"
-    "validator-7"
-    "validator-8"
-    "validator-9"
-    "validator-10"
-    "validator-11"
-    "validator-12"
-    "validator-13"
-    "validator-14"
-    "validator-15"
+    "validator1" "validator2" "validator3" "validator4" "validator5"
+    "validator6" "validator7" "validator8" "validator9" "validator10"
+    "validator11" "validator12" "validator13" "validator14" "validator15"
 )
 
-echo "🚀 SYNTHOS VALIDATOR DEPLOYMENT"
-echo "===================================="
-echo ""
-echo "Deploying 15 validators to Cloudflare Workers"
-echo "Storage: Cloudflare R2"
-echo "Cost: $0/month (on free tier)"
-echo ""
+echo "SYNTHOS VALIDATOR DEPLOYMENT"
+echo "Private keys must already be stored as Wrangler secrets."
+echo "Example: wrangler secret put PRIVATE_KEY --env validator1"
 
-# Step 1: Install Wrangler if not present
-if ! command -v wrangler &> /dev/null; then
-    echo "📦 Installing Wrangler CLI..."
-    npm install -g wrangler
+if ! command -v wrangler >/dev/null 2>&1; then
+    echo "wrangler is required" >&2
+    exit 1
 fi
 
-# Step 2: Login to Cloudflare
-echo "🔐 Authenticating with Cloudflare..."
-wrangler login
+wrangler r2 bucket create synthos-validators || echo "R2 bucket already exists"
 
-# Step 3: Create R2 bucket
-echo "📦 Creating R2 bucket..."
-wrangler r2 bucket create synthos-validators || echo "Bucket may already exist"
-
-# Step 4: Deploy each validator
-for VALIDATOR in "${VALIDATORS[@]}"; do
-    echo ""
-    echo "⚙️  Deploying $VALIDATOR..."
-    
-    # Generate keypair (in production, use real keys)
-    PRIVATE_KEY=$(openssl rand -hex 32)
-    PUBLIC_KEY=$(echo -n "$PRIVATE_KEY" | sha256sum | cut -d' ' -f1)
-    
-    # Deploy with environment variables
-    wrangler deploy --env "$VALIDATOR" \
-        --name "synthos-$VALIDATOR" \
-        --routes "synthos-$VALIDATOR.example.com/*"
-    
-    echo "✅ $VALIDATOR deployed successfully"
-    echo "   Private Key: $PRIVATE_KEY"
-    echo "   Public Key: $PUBLIC_KEY"
-    
-    # Save credentials for reference
-    echo "$VALIDATOR|$PUBLIC_KEY|$PRIVATE_KEY" >> validators.txt
+for validator in "${VALIDATORS[@]}"; do
+    echo "Deploying ${validator} without exposing secret material..."
+    wrangler deploy --env "${validator}"
 done
 
-echo ""
-echo "✅ DEPLOYMENT COMPLETE!"
-echo ""
-echo "Summary:"
-echo "--------"
-echo "✓ 15 validators deployed"
-echo "✓ R2 bucket created (free first 10GB)"
-echo "✓ Cron triggers active (every 5 seconds)"
-echo "✓ Cost: $0/month on free tier"
-echo ""
-echo "Validator credentials saved to: validators.txt"
-echo ""
-echo "Next steps:"
-echo "1. Monitor at: https://dash.cloudflare.com/"
-echo "2. Check logs: wrangler tail --env validator-1"
-echo "3. Trigger manually: curl https://synthos-validator-1.example.com/"
+echo "Deployment complete. Verify each worker before enabling validator membership."

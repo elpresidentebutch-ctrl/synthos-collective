@@ -59,6 +59,9 @@ async function pollAndProcess(env) {
 	const bucket = env.VALIDATOR_BUCKET
 	const network = env.NETWORK || 'mainnet'
 	const privateKey = env.PRIVATE_KEY
+	if (!privateKey) {
+		throw new Error('PRIVATE_KEY secret is not configured; use wrangler secret put PRIVATE_KEY --env <validator>')
+	}
 
 	let processed = 0
 	let blocksProcessed = 0
@@ -127,27 +130,10 @@ async function pollAndProcess(env) {
  * Create a new block proposal
  */
 function createBlock(validatorID, blockHeight, privateKey) {
-	const block = {
-		id: `block-${blockHeight}-${Date.now()}`,
-		type: 'block',
-		validator: validatorID,
-		height: blockHeight,
-		timestamp: Math.floor(Date.now() / 1000),
-		transactions: [
-			{
-				from: 'system',
-				to: 'reward',
-				amount: 10,
-				nonce: blockHeight
-			}
-		],
-		stateRoot: `0x${Math.random().toString(16).slice(2)}`
-	}
-
-	// Sign block (would use actual ed25519 in production)
-	block.signature = signMessage(JSON.stringify(block), privateKey)
-	
-	return block
+	throw new Error(
+		`validator ${validatorID} cannot propose height ${blockHeight}: ` +
+		'serverless proposal construction is disabled until it executes the canonical Go state machine'
+	)
 }
 
 /**
@@ -219,14 +205,13 @@ async function markProcessed(bucket, messageID, validatorID) {
  * Simple message signing (would use ed25519 in production)
  */
 function signMessage(message, privateKey) {
-	// Stub - in production, use ed25519
-	return `sig_${privateKey.slice(0, 16)}_${Math.random().toString(36).slice(2)}`
+	throw new Error('stub signing disabled; use canonical Ed25519 envelope signing')
 }
 
 /**
  * Verify message signature
  */
 function verifySignature(message) {
-	// Stub - in production, verify ed25519 signature against sender's public key
-	return message.signature && message.signature.length > 0
+	// Fail closed. A non-empty string is not cryptographic authentication.
+	return false
 }

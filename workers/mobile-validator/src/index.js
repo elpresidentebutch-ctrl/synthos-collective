@@ -10,6 +10,7 @@
 import HTML from "../index.html";
 import SW from "../sw.js";
 import MANIFEST from "../manifest.json";
+import RUNTIME from "../runtime.js";
 
 function headers(contentType, cacheSeconds = 0) {
   const h = {
@@ -46,6 +47,12 @@ export default {
     if (path === "/manifest.json") {
       return new Response(MANIFEST, {
         headers: headers("application/manifest+json", 86400),
+      });
+    }
+
+    if (path === "/runtime.js") {
+      return new Response(RUNTIME, {
+        headers: headers("application/javascript", 3600),
       });
     }
 

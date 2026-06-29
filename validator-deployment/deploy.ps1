@@ -27,34 +27,16 @@ try {
     Write-Host "Bucket may already exist or creation failed."
 }
 
-# Step 4: Deploy each validator
-$OutputLog = "validators.txt"
-Clear-Content $OutputLog -ErrorAction SilentlyContinue
-
+# Step 4: Deploy each validator.
+# PRIVATE_KEY must already exist as a Wrangler secret for each environment.
 foreach ($Validator in $Validators) {
     Write-Host ""
     Write-Host "Deploying $Validator..."
     
-    # Generate random keypair
-    $Bytes = New-Object Byte[] 32
-    [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($Bytes)
-    $PrivateKey = [System.BitConverter]::ToString($Bytes).Replace("-", "").ToLower()
-    
-    # Hash it for the public key
-    $Sha256 = [System.Security.Cryptography.SHA256]::Create()
-    $HashBytes = $Sha256.ComputeHash($Bytes)
-    $PublicKey = [System.BitConverter]::ToString($HashBytes).Replace("-", "").ToLower()
-    
-    # Deploy with environment variables
+    # Deploy without printing or persisting secret material.
     npx wrangler deploy --env "$Validator" --name "synthos-$Validator"
     
     Write-Host "$Validator deployed successfully"
-    Write-Host "   Private Key: $PrivateKey"
-    Write-Host "   Public Key: $PublicKey"
-    
-    # Save credentials for reference
-    $Line = "$Validator" + "|" + "$PublicKey" + "|" + "$PrivateKey"
-    Add-Content -Path $OutputLog -Value $Line
 }
 
 Write-Host ""
@@ -66,8 +48,6 @@ Write-Host "5 validators deployed"
 Write-Host "R2 bucket created (free first 10GB)"
 Write-Host "Cron triggers active (every 5 seconds)"
 Write-Host "Cost: $0/month on free tier"
-Write-Host ""
-Write-Host "Validator credentials saved to: validators.txt"
 Write-Host ""
 Write-Host "Next steps:"
 Write-Host "1. Monitor at: https://dash.cloudflare.com/"

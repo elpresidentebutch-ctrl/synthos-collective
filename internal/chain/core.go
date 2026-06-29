@@ -256,9 +256,11 @@ func (s *State) Get(a Address) Account {
 	if !ok {
 		return Account{Assets: make(map[string]uint64)}
 	}
-	if acc.Assets == nil {
-		acc.Assets = make(map[string]uint64)
+	assets := make(map[string]uint64, len(acc.Assets))
+	for assetID, balance := range acc.Assets {
+		assets[assetID] = balance
 	}
+	acc.Assets = assets
 	return acc
 }
 
@@ -268,6 +270,11 @@ func (s *State) Set(a Address, ac Account) {
 	if ac.Assets == nil {
 		ac.Assets = make(map[string]uint64)
 	}
+	assets := make(map[string]uint64, len(ac.Assets))
+	for assetID, balance := range ac.Assets {
+		assets[assetID] = balance
+	}
+	ac.Assets = assets
 	s.Accounts[a] = ac
 }
 
@@ -323,10 +330,6 @@ func (s *State) ApplyTx(tx Tx) error {
 
 	from.Nonce += 1
 
-	if err := s.applyImmuneMetadata(tx); err != nil {
-		return err
-	}
-
 	isInnerCircle := false
 	for _, kv := range tx.Metadata {
 		if kv.Key == "type" && kv.Value == "inner_circle_purchase" {
@@ -335,25 +338,56 @@ func (s *State) ApplyTx(tx Tx) error {
 		}
 	}
 
+	// Calculate every credited balance before mutating state. This preserves
+	// transaction atomicity when an addition would overflow.
+	var nextRecipient Account
+	var nextFounder Account
+	founderChanged := false
 	if isInnerCircle {
-		f := s.Get(founderAddr)
-		f.Balance += tx.Amount
-		s.Set(founderAddr, f)
-	} else {
-		if tx.AssetID == "" || tx.AssetID == "syn" {
-			to.Balance += tx.Amount
-		} else {
-			to.Assets[tx.AssetID] += tx.Amount
+		nextFounder = s.Get(founderAddr)
+		nextBalance, err := safeAdd(nextFounder.Balance, tx.Amount)
+		if err != nil {
+			return errors.New("founder balance overflow detected")
 		}
-		s.Set(tx.To, to)
+		nextFounder.Balance = nextBalance
+		founderChanged = true
+	} else {
+		nextRecipient = to
+		if tx.AssetID == "" || tx.AssetID == "syn" {
+			nextBalance, err := safeAdd(nextRecipient.Balance, tx.Amount)
+			if err != nil {
+				return errors.New("recipient balance overflow detected")
+			}
+			nextRecipient.Balance = nextBalance
+		} else {
+			nextAssetBalance, err := safeAdd(nextRecipient.Assets[tx.AssetID], tx.Amount)
+			if err != nil {
+				return errors.New("recipient asset balance overflow detected")
+			}
+			nextRecipient.Assets[tx.AssetID] = nextAssetBalance
+		}
 
 		if commission > 0 {
-			f := s.Get(founderAddr)
-			f.Balance += commission
-			s.Set(founderAddr, f)
+			nextFounder = s.Get(founderAddr)
+			nextBalance, err := safeAdd(nextFounder.Balance, commission)
+			if err != nil {
+				return errors.New("founder commission overflow detected")
+			}
+			nextFounder.Balance = nextBalance
+			founderChanged = true
 		}
 	}
 
+	if err := s.applyImmuneMetadata(tx); err != nil {
+		return err
+	}
+
+	if !isInnerCircle {
+		s.Set(tx.To, nextRecipient)
+	}
+	if founderChanged {
+		s.Set(founderAddr, nextFounder)
+	}
 	s.Set(tx.From, from)
 	return nil
 }
@@ -528,6 +562,7 @@ func (s *State) Clone() *State {
 		out.SovereignProofs[k] = v
 	}
 	out.LastSovereignProofID = s.LastSovereignProofID
+	out.TotalSupply = s.TotalSupply
 	return out
 }
 

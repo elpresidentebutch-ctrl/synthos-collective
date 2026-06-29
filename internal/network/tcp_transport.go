@@ -19,9 +19,9 @@ type TCPTransport struct {
 	nodeID     string
 	listenAddr string
 
-	mu        sync.RWMutex
-	listener  net.Listener
-	peers     map[string]string // agentID -> "host:port"
+	mu            sync.RWMutex
+	listener      net.Listener
+	peers         map[string]string // agentID -> "host:port"
 	agentHandler  func(fromAgentID string, payload []byte)
 	topicHandlers map[string]func(fromAgentID string, payload []byte)
 }
@@ -179,4 +179,3 @@ func (t *TCPTransport) dispatch(payload []byte) {
 		agentHandler(env.FromAgentID, payload)
 	}
 }
-

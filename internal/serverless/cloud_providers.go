@@ -76,9 +76,10 @@ func (sb *S3MessageBucket) DeleteMessage(ctx interface{}, id string) error {
 // Cloudflare Workers are globally distributed, permission-less, and serverless.
 //
 // Example worker:
-//   addEventListener('fetch', event => {
-//     event.respondWith(handleValidator(event.request))
-//   })
+//
+//	addEventListener('fetch', event => {
+//	  event.respondWith(handleValidator(event.request))
+//	})
 type CloudFlareWorkerHandler struct {
 	validator *ServerlessValidator
 }
@@ -129,12 +130,12 @@ func (h *AWSLambdaHandler) HandleRequest(ctx context.Context, event interface{})
 // This makes the network permission-less - anyone can add their validator
 // by publishing their public key in DNS or adding to bootstrap.
 type ValidatorDiscovery struct {
-	network          string
-	dnsProvider      string // "cloudflare", "route53", etc.
-	bootstrapList    []string
-	discoveredCache  map[string]int64 // ValidatorID -> last discovered
-	discoveredKeysC  map[string]bool  // ValidatorID -> exists
-	mu               sync.RWMutex
+	network         string
+	dnsProvider     string // "cloudflare", "route53", etc.
+	bootstrapList   []string
+	discoveredCache map[string]int64 // ValidatorID -> last discovered
+	discoveredKeysC map[string]bool  // ValidatorID -> exists
+	mu              sync.RWMutex
 }
 
 // NewValidatorDiscovery creates a discovery client.
@@ -149,7 +150,8 @@ func NewValidatorDiscovery(network string) *ValidatorDiscovery {
 
 // DiscoverValidators queries DNS for validators on the network.
 // In DNS, validators are stored as TXT records:
-//   synthos-{network}-validators.example.com TXT "pk1=abc123... pk2=def456..."
+//
+//	synthos-{network}-validators.example.com TXT "pk1=abc123... pk2=def456..."
 //
 // This creates a permission-less validator registry - anyone can update their
 // DNS records to add themselves to the network.
@@ -178,12 +180,14 @@ func (vd *ValidatorDiscovery) AddBootstrapValidator(publicKeyHex string) {
 // 1. User creates free Cloudflare Worker account (or AWS free tier)
 // 2. User generates Ed25519 keypair locally
 // 3. User publishes their public key in:
-//    - DNS TXT record, OR
-//    - Hardcoded bootstrap list in config
+//   - DNS TXT record, OR
+//   - Hardcoded bootstrap list in config
+//
 // 4. User deploys worker code that:
-//    - Polls S3 bucket for messages
-//    - Validates and processes them
-//    - Publishes votes/blocks to S3
+//   - Polls S3 bucket for messages
+//   - Validates and processes them
+//   - Publishes votes/blocks to S3
+//
 // 5. Network automatically recognizes their validator
 //
 // SECURITY:

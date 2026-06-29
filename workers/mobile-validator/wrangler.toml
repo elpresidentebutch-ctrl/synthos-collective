@@ -10,5 +10,5 @@ compatibility_date = "2024-12-01"
 [rules]
   [[rules]]
   type = "Text"
-  globs = ["**/*.html", "**/*.json"]
+  globs = ["**/*.html", "**/*.json", "**/runtime.js"]
   fallthrough = true

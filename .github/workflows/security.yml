@@ -22,13 +22,13 @@ jobs:
       - name: Run GoSec
         uses: securego/gosec@master
         with:
-          args: '-no-fail -fmt json -out gosec-report.json ./...'
+          args: '-fmt json -out gosec-report.json ./...'
       
       # Nancy: Go dependency vulnerability scanner
       - name: Go Dependency Audit (Nancy)
         run: |
           go install github.com/sonatype-nexus-community/nancy@latest
-          go list -json -m all | nancy sleuth --severity high --output json || echo "Vulnerabilities found, but continuing..."
+          go list -json -m all | nancy sleuth --severity high --output json
       
       # Test coverage
       - name: Run Tests with Coverage
@@ -69,7 +69,7 @@ jobs:
       - name: Install Dependencies
         run: |
           cd contracts
-          npm install --legacy-peer-deps
+          npm ci --legacy-peer-deps
 
       - name: Install Slither
         run: python -m pip install --upgrade pip slither-analyzer
@@ -78,13 +78,13 @@ jobs:
       - name: Run Slither Analysis
         run: |
           cd contracts
-          slither . --filter-paths "node_modules|artifacts|cache|test" || true
+          slither . --filter-paths "node_modules|artifacts|cache|test"
       
       # NPM Audit: Dependency check
       - name: NPM Dependency Audit
         run: |
           cd contracts
-          npm audit --audit-level=high || true
+          npm audit --audit-level=high
 
   linting:
     runs-on: ubuntu-latest

@@ -24,11 +24,10 @@ func main() {
 
 	fmt.Printf("Wallet Address: %s\n", addr)
 	fmt.Printf("Public Key:     %s\n", pubHex)
-	fmt.Printf("Private Key:    %s\n", privHex)
+	fmt.Println("Private Key:    <written to scratch/USER_WALLET.local.txt>")
 
-	// Save to a file for the user
 	walletInfo := fmt.Sprintf("Address: %s\nPublic Key: %s\nPrivate Key: %s\n", addr, pubHex, privHex)
-	err = os.WriteFile("USER_WALLET.txt", []byte(walletInfo), 0644)
+	err = os.WriteFile("scratch/USER_WALLET.local.txt", []byte(walletInfo), 0600)
 	if err != nil {
 		log.Fatalf("Failed to save wallet: %v", err)
 	}

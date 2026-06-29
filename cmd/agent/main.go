@@ -78,13 +78,12 @@ func main() {
 	_ = a.SendEnvelope(env)
 
 	state := map[string]any{
-		"identity": a.Identity,
+		"identity":           a.Identity,
 		"latest_proof_valid": ok,
-		"proof_root": a.ProofRoot(),
+		"proof_root":         a.ProofRoot(),
 	}
 
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(state)
 }
-

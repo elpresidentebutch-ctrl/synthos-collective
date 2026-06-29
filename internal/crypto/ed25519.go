@@ -49,4 +49,3 @@ func PublicKeyBytes(pubHex string) ([]byte, error) {
 	}
 	return b, nil
 }
-

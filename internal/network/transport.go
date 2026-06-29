@@ -28,4 +28,3 @@ type Transport interface {
 	// OnTopicMessage registers a handler for messages received on a topic.
 	OnTopicMessage(topic string, handler func(fromAgentID string, payload []byte))
 }
-

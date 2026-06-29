@@ -19,19 +19,19 @@ type SlashingEvent struct {
 type SlashingType string
 
 const (
-	DoubleSigning  SlashingType = "double_signing"  // Signed two blocks at same height
-	InvalidBlock   SlashingType = "invalid_block"   // Proposed block with invalid txs
-	Downtime       SlashingType = "downtime"        // Validator offline for N blocks
-	Equivocation   SlashingType = "equivocation"    // Conflicting validator votes
+	DoubleSigning SlashingType = "double_signing" // Signed two blocks at same height
+	InvalidBlock  SlashingType = "invalid_block"  // Proposed block with invalid txs
+	Downtime      SlashingType = "downtime"       // Validator offline for N blocks
+	Equivocation  SlashingType = "equivocation"   // Conflicting validator votes
 )
 
 // SlashingParams defines penalties for misbehavior
 type SlashingParams struct {
-	DoubleSignPenalty  uint64        // Tokens slashed for double-signing (e.g., 5% of stake)
-	InvalidBlockPenalty uint64       // Tokens slashed for invalid block proposal
-	DowntimePenalty    uint64        // Tokens slashed per block missed
-	SlashingWindow     uint64        // Number of recent blocks to track for downtime
-	JailDuration       time.Duration // How long validator is jailed after slashing
+	DoubleSignPenalty   uint64        // Tokens slashed for double-signing (e.g., 5% of stake)
+	InvalidBlockPenalty uint64        // Tokens slashed for invalid block proposal
+	DowntimePenalty     uint64        // Tokens slashed per block missed
+	SlashingWindow      uint64        // Number of recent blocks to track for downtime
+	JailDuration        time.Duration // How long validator is jailed after slashing
 }
 
 // SlashingTracker tracks validator misbehavior and applies penalties
@@ -39,10 +39,10 @@ type SlashingTracker struct {
 	mu              sync.RWMutex
 	params          SlashingParams
 	events          []SlashingEvent
-	validatorStakes map[string]uint64       // Validator -> stake amount
-	jailedUntil     map[string]time.Time    // Validator -> jail end time
-	signedBlocks    map[string][]uint64     // Validator -> heights of blocks signed (for double-sign detection)
-	missedBlocks    map[string]uint64       // Validator -> count of blocks missed in window
+	validatorStakes map[string]uint64    // Validator -> stake amount
+	jailedUntil     map[string]time.Time // Validator -> jail end time
+	signedBlocks    map[string][]uint64  // Validator -> heights of blocks signed (for double-sign detection)
+	missedBlocks    map[string]uint64    // Validator -> count of blocks missed in window
 }
 
 // NewSlashingTracker creates a new slashing tracker with default penalties
@@ -149,7 +149,7 @@ func (st *SlashingTracker) recordSlashingLocked(validatorID string, eventType Sl
 	// Jail validator
 	st.jailedUntil[validatorID] = time.Now().Add(st.params.JailDuration)
 
-	return fmt.Errorf("validator %s slashed for %s: penalty=%d stake_remaining=%d", 
+	return fmt.Errorf("validator %s slashed for %s: penalty=%d stake_remaining=%d",
 		validatorID, eventType, penalty, st.validatorStakes[validatorID])
 }
 

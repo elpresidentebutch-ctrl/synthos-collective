@@ -12,24 +12,24 @@ import (
 // -----------------------------
 
 type Proposal struct {
-	ID          string
-	Description string
-	Amount      uint64
-	Recipient   Address
-	VotesFor    uint64
+	ID           string
+	Description  string
+	Amount       uint64
+	Recipient    Address
+	VotesFor     uint64
 	VotesAgainst uint64
-	IsActive    bool
+	IsActive     bool
 }
 
 type TreasuryGovernance struct {
-	mu             sync.Mutex
-	Proposals      map[string]*Proposal
-	FounderAddress Address
-	TreasuryAddr   Address
-	RaffleActive   bool
+	mu              sync.Mutex
+	Proposals       map[string]*Proposal
+	FounderAddress  Address
+	TreasuryAddr    Address
+	RaffleActive    bool
 	RaffleThreshold uint64
 	RaffleReward    uint64
-	GetStake       func(Address) uint64
+	GetStake        func(Address) uint64
 }
 
 func NewTreasuryGovernance(founder Address, getStake func(Address) uint64) *TreasuryGovernance {
@@ -95,7 +95,7 @@ func (tg *TreasuryGovernance) CheckRaffle(treasuryBalance uint64, communityMembe
 
 	if treasuryBalance >= tg.RaffleThreshold {
 		tg.RaffleActive = true
-		
+
 		if len(communityMembers) > 0 {
 			// Select random community member for the raffle payout
 			rand.Seed(time.Now().UnixNano())

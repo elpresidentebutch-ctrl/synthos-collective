@@ -1,5 +1,11 @@
 # SYNTHOS Collective - Agent-Native L1 (Go)
 
+> **Security status:** active research and hardening. This repository is not
+> approved for mainnet or custody of valuable assets. Previously committed
+> founder, community, wallet, and validator keys are compromised and must never
+> be reused. The serverless validator proposal path and direct RPC DEX mutation
+> are disabled until they share the canonical authenticated state machine.
+
 ## Overview
 
 SYNTHOS Collective is an agent-native Layer-1 blockchain written in Go. The system treats agents as first-class network participants: agents propose/validate blocks, relay consensus messages, and maintain ledger state.

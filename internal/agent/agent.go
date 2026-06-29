@@ -44,17 +44,17 @@ const (
 
 // Identity holds an agent's unique identity.
 type Identity struct {
-	AgentID                    string    `json:"agent_id"`
-	PublicKey                  string    `json:"public_key"`
-	PrivateKeyHash             string    `json:"private_key_hash"`
-	HardwareID                 string    `json:"hardware_id"`
-	ProofOfComputationRoot     string    `json:"proof_of_computation_root"`
-	CreatedAt                  time.Time `json:"created_at"`
-	Stake                      int       `json:"stake"`
-	Reputation                 int       `json:"reputation"`
-	ConsensusRoundsParticipated int      `json:"consensus_rounds_participated"`
-	BlocksValidated            int       `json:"blocks_validated"`
-	ProposalsVoted             int       `json:"proposals_voted"`
+	AgentID                     string    `json:"agent_id"`
+	PublicKey                   string    `json:"public_key"`
+	PrivateKeyHash              string    `json:"private_key_hash"`
+	HardwareID                  string    `json:"hardware_id"`
+	ProofOfComputationRoot      string    `json:"proof_of_computation_root"`
+	CreatedAt                   time.Time `json:"created_at"`
+	Stake                       int       `json:"stake"`
+	Reputation                  int       `json:"reputation"`
+	ConsensusRoundsParticipated int       `json:"consensus_rounds_participated"`
+	BlocksValidated             int       `json:"blocks_validated"`
+	ProposalsVoted              int       `json:"proposals_voted"`
 }
 
 // ProofOfComputation is a per-agent, hardware-bound record of work.
@@ -78,7 +78,7 @@ type ProofOfComputation struct {
 // Each instance is meant to be a full, independent agent with all roles
 // built in and a local proof-of-computation ledger bound to its hardware ID.
 type Agent struct {
-	mu        sync.RWMutex  // SECURITY: Protects concurrent access to ProofLog
+	mu        sync.RWMutex // SECURITY: Protects concurrent access to ProofLog
 	Identity  Identity
 	NetworkID string
 
@@ -106,9 +106,9 @@ func NewAgent(agentID, publicKey, privateKeyHash, hardwareID string, initialStak
 	}
 
 	a := &Agent{
-		Identity:  id,
-		NetworkID: "synthos_mainnet",
-		ProofLog:  make([]ProofOfComputation, 0, 64),
+		Identity:    id,
+		NetworkID:   "synthos_mainnet",
+		ProofLog:    make([]ProofOfComputation, 0, 64),
 		replayCache: network.NewReplayCache(10 * time.Minute),
 	}
 
@@ -123,7 +123,7 @@ func NewAgent(agentID, publicKey, privateKeyHash, hardwareID string, initialStak
 func (a *Agent) AttachKeys(keys synthoscrypto.KeyPair) error {
 	// Validate private key: Go's ed25519.PrivateKey is 64 bytes (seed + public key)
 	if keys.Private == nil || len(keys.Private) != 64 {
-		return ErrInvalidPublicKey  // Reuse error for consistency
+		return ErrInvalidPublicKey // Reuse error for consistency
 	}
 	// Validate public key (ED25519 public key = 32 bytes)
 	if keys.Public == nil || len(keys.Public) != 32 {
@@ -145,15 +145,15 @@ func (a *Agent) AttachTransport(t network.Transport) {
 }
 
 var (
-	ErrNoTransport             = errors.New("agent has no transport attached")
-	ErrNoKeys                  = errors.New("agent has no signing keys attached")
-	ErrReplay                  = errors.New("replay detected")
-	ErrBadSignature            = errors.New("bad signature")
-	ErrBadEnvelope             = errors.New("invalid envelope")
-	ErrInvalidPublicKey        = errors.New("invalid public key format")
-	ErrAgentIDMismatch         = errors.New("agent id does not match public key")
+	ErrNoTransport               = errors.New("agent has no transport attached")
+	ErrNoKeys                    = errors.New("agent has no signing keys attached")
+	ErrReplay                    = errors.New("replay detected")
+	ErrBadSignature              = errors.New("bad signature")
+	ErrBadEnvelope               = errors.New("invalid envelope")
+	ErrInvalidPublicKey          = errors.New("invalid public key format")
+	ErrAgentIDMismatch           = errors.New("agent id does not match public key")
 	ErrInvalidProofOfComputation = errors.New("invalid proof of computation")
-	ErrInsufficientReputation  = errors.New("insufficient reputation for role")
+	ErrInsufficientReputation    = errors.New("insufficient reputation for role")
 )
 
 // BuildEnvelope creates and signs an envelope for the given message type.
@@ -177,16 +177,16 @@ func (a *Agent) BuildEnvelope(messageType string, toAgentID string, topic string
 
 	nonce := randomNonce()
 	env := network.Envelope{
-		Version:               "v1",
-		MessageType:           messageType,
-		FromAgentID:           a.Identity.AgentID,
-		ToAgentID:             toAgentID,
-		Topic:                 topic,
-		Nonce:                 "0x" + nonce,
-		Timestamp:             time.Now().UTC(),
-		Payload:               rawPayload,
+		Version:                "v1",
+		MessageType:            messageType,
+		FromAgentID:            a.Identity.AgentID,
+		ToAgentID:              toAgentID,
+		Topic:                  topic,
+		Nonce:                  "0x" + nonce,
+		Timestamp:              time.Now().UTC(),
+		Payload:                rawPayload,
 		ProofOfComputationRoot: a.ProofRoot(),
-		HardwareIDHash:        network.HardwareIDHashHex(a.Identity.HardwareID),
+		HardwareIDHash:         network.HardwareIDHashHex(a.Identity.HardwareID),
 	}
 
 	signBytes, err := env.SigningBytes()
@@ -226,22 +226,22 @@ func (a *Agent) VerifyIdentity() error {
 	if err != nil || len(pubBytes) != 32 {
 		return ErrInvalidPublicKey
 	}
-	
+
 	// 2. Verify agent ID matches public key hash
 	if a.Identity.AgentID == "" {
 		return ErrAgentIDMismatch
 	}
-	
+
 	// 3. Verify proof-of-computation binding (hardware ID present)
 	if a.Identity.HardwareID == "" || a.Identity.ProofOfComputationRoot == "" {
 		return ErrInvalidProofOfComputation
 	}
-	
+
 	// 4. Check minimum reputation threshold
 	if a.Identity.Reputation < 0 {
 		return ErrInsufficientReputation
 	}
-	
+
 	return nil
 }
 
@@ -251,7 +251,7 @@ func (a *Agent) CanPerformRole(role Role) error {
 	if err := a.VerifyIdentity(); err != nil {
 		return err
 	}
-	
+
 	// Check role-specific reputation requirements
 	switch role {
 	case RoleValidator:
@@ -284,7 +284,7 @@ func (a *Agent) CanPerformRole(role Role) error {
 	default:
 		return errors.New("unknown role: " + string(role))
 	}
-	
+
 	return nil
 }
 
@@ -439,4 +439,3 @@ func randomNonce() string {
 	}
 	return hex.EncodeToString(buf[:16])
 }
-

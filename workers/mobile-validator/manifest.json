@@ -1,6 +1,6 @@
 {
-  "name": "Synthos Validator",
-  "short_name": "Synthos",
+  "name": "SYNTHOS Immune Node",
+  "short_name": "SYNTHOS Node",
   "description": "Synthos mobile light validator — sync, verify, and transact from your phone",
   "start_url": ".",
   "display": "standalone",

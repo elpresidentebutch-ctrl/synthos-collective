@@ -5,7 +5,7 @@
 const CACHE_NAME = "synthos-validator-v1";
 const CONFIG_CACHE = "synthos-validator-config-v1";
 const CONFIG_URL = "/__synthos_background_config__";
-const ASSETS = ["/", "/index.html", "/manifest.json"];
+const ASSETS = ["/", "/index.html", "/manifest.json", "/runtime.js"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -88,9 +88,11 @@ async function runBackgroundHeartbeat() {
         name: cfg.peerId,
         url: cfg.nodeUrl || self.location.origin,
         cloud: cfg.cloud || "mobile-background",
-        mode: "outbound_only",
+        mode: cfg.runtimeTier || "browser-sentinel",
+        role: "immune-sentinel",
+        consensus_eligible: false,
         inbound_ports: 0,
-        background: true,
+        background: "best-effort",
         heartbeat_at: new Date().toISOString(),
       }),
     })

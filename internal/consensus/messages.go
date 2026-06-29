@@ -17,4 +17,3 @@ type BlockVote struct {
 	VoterID   string `json:"voter_id"`
 	Vote      int    `json:"vote"` // -1, 0, 1
 }
-

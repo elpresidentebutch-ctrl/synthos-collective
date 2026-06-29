@@ -9,9 +9,9 @@ import (
 // envelope verification pipeline without standing up any real relay servers.
 // It simulates an untrusted relay fabric by allowing arbitrary fanout.
 type MemoryTransport struct {
-	mu            sync.RWMutex
-	nodes         map[string]*memoryNode
-	started       bool
+	mu      sync.RWMutex
+	nodes   map[string]*memoryNode
+	started bool
 }
 
 type memoryNode struct {
@@ -60,8 +60,8 @@ type memoryNodeTransport struct {
 	self string
 }
 
-func (t *memoryNodeTransport) Start() error  { return t.bus.Start() }
-func (t *memoryNodeTransport) Close() error  { return t.bus.Close() }
+func (t *memoryNodeTransport) Start() error { return t.bus.Start() }
+func (t *memoryNodeTransport) Close() error { return t.bus.Close() }
 
 func (t *memoryNodeTransport) SendToAgent(agentID string, payload []byte) error {
 	t.bus.mu.RLock()
@@ -105,4 +105,3 @@ func (t *memoryNodeTransport) OnTopicMessage(topic string, handler func(fromAgen
 	n := t.bus.nodes[t.self]
 	n.topicHandlers[topic] = handler
 }
-

@@ -14,4 +14,3 @@ func AddressFromPublicKey(pub []byte) Address {
 	sum := sha256.Sum256(pub)
 	return Address("0x" + hex.EncodeToString(sum[:20]))
 }
-

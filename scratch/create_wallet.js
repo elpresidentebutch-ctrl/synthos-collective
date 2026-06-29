@@ -12,5 +12,6 @@ const privHex = "0x" + privateKey.export({ type: 'pkcs8', format: 'der' }).toStr
 
 // Let's just output the keys and I'll derive the address if I can see the code.
 const output = `Public Key: ${pubHex}\nPrivate Key: ${privHex}\n`;
-fs.writeFileSync('USER_WALLET_NODE.txt', output);
-console.log(output);
+fs.writeFileSync('scratch/USER_WALLET_NODE.local.txt', output, { mode: 0o600 });
+console.log(`Public Key: ${pubHex}`);
+console.log('Private Key: <written to scratch/USER_WALLET_NODE.local.txt>');

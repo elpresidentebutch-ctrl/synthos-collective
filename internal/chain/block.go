@@ -8,8 +8,8 @@ import (
 )
 
 type BlockHeader struct {
-	Height     uint64    `json:"height"`
-	ParentHash string    `json:"parent_hash"`
+	Height     uint64 `json:"height"`
+	ParentHash string `json:"parent_hash"`
 	// Timestamp is consensus-critical ONLY for genesis (height 0).
 	// For all non-genesis blocks it must be the zero value.
 	Timestamp  time.Time `json:"timestamp,omitempty"`
@@ -23,11 +23,11 @@ type BlockHeader struct {
 }
 
 type Block struct {
-	Header       BlockHeader `json:"header"`
-	Tx           []Tx        `json:"tx"`
-	Hash         string      `json:"hash"`
+	Header         BlockHeader    `json:"header"`
+	Tx             []Tx           `json:"tx"`
+	Hash           string         `json:"hash"`
 	ValidatorVotes map[string]int `json:"validator_votes,omitempty"` // agentID -> -1/0/1
-	Finalized    bool        `json:"finalized"`
+	Finalized      bool           `json:"finalized"`
 }
 
 func (b *Block) ComputeHash() (string, error) {
@@ -46,4 +46,3 @@ func (b *Block) ComputeHash() (string, error) {
 	b.Hash = "0x" + hex.EncodeToString(sum[:16])
 	return b.Hash, nil
 }
-

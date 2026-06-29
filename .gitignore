@@ -49,3 +49,12 @@ dist/
 .dev.vars
 wrangler.toml.bak
 
+# Sovereign identity material (never commit)
+*_KEYS*.txt
+*WALLET*.txt
+validator-deployment/validator-keys.json
+validator-deployment/validators.txt
+validator-deployment/test-results.json
+validator-deployment/.dev.vars*
+scratch/*.local.txt
+

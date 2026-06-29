@@ -48,12 +48,13 @@ func main() {
 	var ch *chain.Chain
 	if snap, err := st.Load(); err == nil && snap != nil && len(snap.Blocks) > 0 && snap.State != nil {
 		ch = &chain.Chain{
-			ChainID: snap.ChainID,
-			State:   snap.State,
-			DEX:     chain.NewDEX(),
-			Oracle:  chain.NewOracle(),
-			Blocks:  snap.Blocks,
-			Mempool: make(map[string]chain.Tx),
+			ChainID:   snap.ChainID,
+			TxChainID: snap.TxChainID,
+			State:     snap.State,
+			DEX:       chain.NewDEX(),
+			Oracle:    chain.NewOracle(),
+			Blocks:    snap.Blocks,
+			Mempool:   make(map[string]chain.Tx),
 		}
 	} else {
 		ch, err = chain.NewChain(gen)

@@ -155,6 +155,12 @@ func (n *Node) handleRaw(from string, payload []byte) {
 			return
 		}
 		b := prop.Block
+		if b.Header.ProposerID != env.FromAgentID {
+			if n.Logf != nil {
+				n.Logf("drop: proposer identity mismatch from_agent=%s proposer_id=%s", env.FromAgentID, b.Header.ProposerID)
+			}
+			return
+		}
 		// Height sanity: proposal must extend our current tip.
 		expectedHeight := n.Chain.Height() + 1
 		if b.Header.Height != expectedHeight {
@@ -168,6 +174,7 @@ func (n *Node) handleRaw(from string, payload []byte) {
 			if n.Logf != nil {
 				n.Logf("warn: proposal validate failed hash=%s err=%v", b.Hash, err)
 			}
+			return
 		}
 		n.Consensus.OnProposal(&b)
 
