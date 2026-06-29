@@ -105,6 +105,13 @@ Noise messages must be domain-separated, authenticated, rate-limited, and
 excluded from consensus state transitions. The protocol must always distinguish
 privacy cover traffic from transactions, votes, evidence, and governance.
 
+The Go node implements this distinction with signed `cover_noise` envelopes on
+the `privacy/cover-noise` topic. Nodes verify the envelope signature, replay
+nonce, hardware commitment, payload domain, scope, and inbound rate limit, then
+drop the payload before consensus or state handling. By contrast,
+`sovereign_noise_proof` transaction metadata records only a proof commitment in
+immune state; it is not the cover traffic itself.
+
 ## Constitutional invariants
 
 1. Validation is pure and cannot mutate canonical state.

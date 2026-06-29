@@ -40,6 +40,7 @@ const (
 	MessageStateSync        MessageType = "state_sync"
 	MessageGovernanceProp   MessageType = "governance_proposal"
 	MessageGovernanceVote   MessageType = "governance_vote"
+	MessageCoverNoise       MessageType = "cover_noise"
 )
 
 // Identity holds an agent's unique identity.
@@ -197,6 +198,41 @@ func (a *Agent) BuildEnvelope(messageType string, toAgentID string, topic string
 	env.Signature = "0x" + base64.StdEncoding.EncodeToString(sig)
 
 	return env, nil
+}
+
+// BuildCoverNoiseEnvelope creates authenticated privacy cover traffic.
+//
+// Cover-noise envelopes are transport-only. Receivers verify and drop them;
+// they are never consensus votes, transactions, evidence, or governance input.
+func (a *Agent) BuildCoverNoiseEnvelope(toAgentID string, scope string, paddingBytes int) (network.Envelope, error) {
+	if scope == "" {
+		scope = "local_opt_in"
+	}
+	if paddingBytes < 0 {
+		paddingBytes = 0
+	}
+	if paddingBytes > network.MaxCoverNoisePaddingLen {
+		paddingBytes = network.MaxCoverNoisePaddingLen
+	}
+	padding := make([]byte, paddingBytes)
+	if len(padding) > 0 {
+		if _, err := rand.Read(padding); err != nil {
+			return network.Envelope{}, err
+		}
+	}
+	noiseID := randomNonce()
+	payload := network.CoverNoisePayload{
+		Domain:    network.CoverNoiseDomain,
+		Scope:     scope,
+		NoiseID:   "0x" + noiseID,
+		Padding:   base64.StdEncoding.EncodeToString(padding),
+		CreatedAt: time.Now().UTC(),
+	}
+	topic := network.TopicCoverNoise
+	if toAgentID != "" {
+		topic = ""
+	}
+	return a.BuildEnvelope(network.MessageCoverNoise, toAgentID, topic, payload)
 }
 
 // SendEnvelope serializes and sends an envelope through the attached transport.

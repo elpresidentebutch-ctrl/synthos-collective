@@ -96,6 +96,9 @@ func (n *Node) Start() error {
 	n.Transport.OnTopicMessage(consensus.TopicVotes, func(from string, payload []byte) {
 		n.handleRaw(from, payload)
 	})
+	n.Transport.OnTopicMessage(network.TopicCoverNoise, func(from string, payload []byte) {
+		n.handleRaw(from, payload)
+	})
 	return nil
 }
 
@@ -134,6 +137,25 @@ func (n *Node) handleRaw(from string, payload []byte) {
 	if n.InboundLimiter != nil && !n.InboundLimiter.Allow(env.FromAgentID, now) {
 		if n.Logf != nil {
 			n.Logf("drop: rate-limited from_agent=%s", env.FromAgentID)
+		}
+		return
+	}
+
+	if env.MessageType == network.MessageCoverNoise {
+		if _, err := consensus.VerifyAndUnmarshalEnvelope[network.CoverNoisePayload](n.Agent.VerifyEnvelope, env, pub, now); err != nil {
+			if n.Logf != nil {
+				n.Logf("drop: bad cover noise verify from_agent=%s err=%v", env.FromAgentID, err)
+			}
+			return
+		}
+		if _, err := network.DecodeCoverNoise(env); err != nil {
+			if n.Logf != nil {
+				n.Logf("drop: bad cover noise domain from_agent=%s err=%v", env.FromAgentID, err)
+			}
+			return
+		}
+		if n.Logf != nil {
+			n.Logf("drop: verified transport-only cover noise from_agent=%s", env.FromAgentID)
 		}
 		return
 	}
