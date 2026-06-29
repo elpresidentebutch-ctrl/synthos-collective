@@ -9,10 +9,15 @@ import "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 
 /**
  * @title SYNTHOSAdopterRewards
- * @dev Rewards early adopters who register and keep a SYNTHOS node alive.
+ * @dev Rewards verified operators who register and keep a SYNTHOS node alive.
  *
  * This contract does not mint SYN. It must be funded from the
- * VALIDATOR_REWARDS / adopter rewards allocation in SynCoin.
+ * IMMUNE_NODE_REWARDS allocation in SynCoin.
+ *
+ * Rewards are capped at one reward stream per operator address. An operator
+ * may run multiple nodes operationally, but this contract only rewards the
+ * first registered node for that operator. Monthly rewards are claimed in
+ * arrears after the configured reward interval has elapsed.
  */
 contract SYNTHOSAdopterRewards is Ownable, Pausable {
     using SafeERC20 for IERC20;
@@ -33,7 +38,7 @@ contract SYNTHOSAdopterRewards is Ownable, Pausable {
     uint256 public activationReward;
     uint256 public heartbeatReward;
     uint256 public heartbeatInterval;
-    uint256 public maxHeartbeatClaimsPerNode;
+    uint256 public maxHeartbeatClaimsPerOperator;
     bytes32 public adopterMerkleRoot;
     bool public adopterMerkleGateRequired;
 
@@ -65,7 +70,7 @@ contract SYNTHOSAdopterRewards is Ownable, Pausable {
         uint256 activationReward,
         uint256 heartbeatReward,
         uint256 heartbeatInterval,
-        uint256 maxHeartbeatClaimsPerNode
+        uint256 maxHeartbeatClaimsPerOperator
     );
     event AdopterMerkleRootUpdated(bytes32 indexed root, bool gateRequired);
 
@@ -74,7 +79,7 @@ contract SYNTHOSAdopterRewards is Ownable, Pausable {
         uint256 activationReward_,
         uint256 heartbeatReward_,
         uint256 heartbeatInterval_,
-        uint256 maxHeartbeatClaimsPerNode_
+        uint256 maxHeartbeatClaimsPerOperator_
     ) {
         require(synTokenAddress != address(0), "invalid token");
         require(heartbeatInterval_ > 0, "invalid heartbeat interval");
@@ -83,7 +88,7 @@ contract SYNTHOSAdopterRewards is Ownable, Pausable {
         activationReward = activationReward_;
         heartbeatReward = heartbeatReward_;
         heartbeatInterval = heartbeatInterval_;
-        maxHeartbeatClaimsPerNode = maxHeartbeatClaimsPerNode_;
+        maxHeartbeatClaimsPerOperator = maxHeartbeatClaimsPerOperator_;
     }
 
     function registerAndClaim(
@@ -192,7 +197,7 @@ contract SYNTHOSAdopterRewards is Ownable, Pausable {
             "heartbeat interval not met"
         );
         require(
-            node.heartbeatClaims < maxHeartbeatClaimsPerNode,
+            node.heartbeatClaims < maxHeartbeatClaimsPerOperator,
             "heartbeat reward cap reached"
         );
 
@@ -221,19 +226,19 @@ contract SYNTHOSAdopterRewards is Ownable, Pausable {
         uint256 activationReward_,
         uint256 heartbeatReward_,
         uint256 heartbeatInterval_,
-        uint256 maxHeartbeatClaimsPerNode_
+        uint256 maxHeartbeatClaimsPerOperator_
     ) external onlyOwner {
         require(heartbeatInterval_ > 0, "invalid heartbeat interval");
         activationReward = activationReward_;
         heartbeatReward = heartbeatReward_;
         heartbeatInterval = heartbeatInterval_;
-        maxHeartbeatClaimsPerNode = maxHeartbeatClaimsPerNode_;
+        maxHeartbeatClaimsPerOperator = maxHeartbeatClaimsPerOperator_;
 
         emit RewardPolicyUpdated(
             activationReward_,
             heartbeatReward_,
             heartbeatInterval_,
-            maxHeartbeatClaimsPerNode_
+            maxHeartbeatClaimsPerOperator_
         );
     }
 

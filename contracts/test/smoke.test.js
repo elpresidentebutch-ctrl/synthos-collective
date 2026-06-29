@@ -53,10 +53,10 @@ describe("post-incubation compile / deploy smoke", function () {
     );
     const adopterRewards = await AdopterRewards.deploy(
       tokenAddr,
+      ethers.parseUnits("500", 18),
       ethers.parseUnits("1000", 18),
-      ethers.parseUnits("25", 18),
-      86400,
-      365
+      2592000,
+      120
     );
     await adopterRewards.waitForDeployment();
 
@@ -132,8 +132,14 @@ describe("post-incubation compile / deploy smoke", function () {
       nodeId
     );
     expect(await token.balanceOf(deployer.address)).to.equal(
-      ethers.parseUnits("1000", 18)
+      ethers.parseUnits("500", 18)
     );
+    await expect(
+      adopterRewards.registerAndClaim(
+        ethers.keccak256(ethers.toUtf8Bytes("second-node-same-operator")),
+        "DESKTOP"
+      )
+    ).to.be.revertedWith("operator already registered");
 
     const gatedHardwareCommitment = ethers.keccak256(
       ethers.toUtf8Bytes("desktop-node-merkle-test")
@@ -157,7 +163,7 @@ describe("post-incubation compile / deploy smoke", function () {
     );
     expect(await adopterRewards.adopterMerkleRoot()).to.equal(merkleLeaf);
     expect(await token.balanceOf(adopter.address)).to.equal(
-      ethers.parseUnits("1000", 18)
+      ethers.parseUnits("500", 18)
     );
     expect(await dex.synToken()).to.equal(tokenAddr);
     expect(

@@ -58,9 +58,10 @@ func main() {
 	c, _ := chain.NewChain(chain.Genesis{
 		ChainID: "synthos_mainnet",
 		Alloc: map[chain.Address]uint64{
-			addr: 1_000_000_000,
-			"0x205042f06cd3aa7d9a88deec39b9d0ba6b9fbf2b": 79_000_000_000,
-			"0x4823d9af45c0e297d818eb58cb049a0860337aeb": 20_000_000_000,
+			addr: 500_000_000,
+			"0x205042f06cd3aa7d9a88deec39b9d0ba6b9fbf2b": 79_500_000_000,
+			"0x4823d9af45c0e297d818eb58cb049a0860337aeb": 17_000_000_000,
+			"0x4823d9af45c0e297d818eb58cb049a0860337aec": 3_000_000_000,
 		},
 	})
 

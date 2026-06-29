@@ -111,14 +111,18 @@ async function main() {
 
   const founderWallet = process.env.FOUNDER_WALLET || deployer.address;
   const founderOpsWallet = process.env.FOUNDER_OPS_WALLET || founderWallet;
+  const cmoWallet = process.env.CMO_WALLET || deployer.address;
+  const immuneNodeRewardsWallet = process.env.IMMUNE_NODE_REWARDS_WALLET || null;
+  const validatorRewardsWallet = process.env.VALIDATOR_REWARDS_WALLET || null;
   const dexLiquidityWallet = process.env.DEX_LIQUIDITY_WALLET || deployer.address;
   const communityWallet = process.env.COMMUNITY_WALLET || deployer.address;
   const treasuryWallet = process.env.TREASURY_WALLET || deployer.address;
+  const strategicReserveWallet = process.env.STRATEGIC_RESERVE_WALLET || treasuryWallet;
 
-  const activationReward = ethers.parseUnits(process.env.ADOPTER_ACTIVATION_REWARD || "1000", 18);
-  const heartbeatReward = ethers.parseUnits(process.env.ADOPTER_HEARTBEAT_REWARD || "25", 18);
-  const heartbeatInterval = BigInt(process.env.ADOPTER_HEARTBEAT_INTERVAL || "86400");
-  const maxHeartbeatClaims = BigInt(process.env.ADOPTER_MAX_HEARTBEAT_CLAIMS || "365");
+  const activationReward = ethers.parseUnits(process.env.ADOPTER_ACTIVATION_REWARD || "500", 18);
+  const heartbeatReward = ethers.parseUnits(process.env.ADOPTER_HEARTBEAT_REWARD || "1000", 18);
+  const heartbeatInterval = BigInt(process.env.ADOPTER_HEARTBEAT_INTERVAL || "2592000");
+  const maxHeartbeatClaims = BigInt(process.env.ADOPTER_MAX_HEARTBEAT_CLAIMS_PER_OPERATOR || process.env.ADOPTER_MAX_HEARTBEAT_CLAIMS || "120");
   const merkle = adopterMerkleConfig();
 
   const syn = await deployContract("SynCoin");
@@ -175,12 +179,17 @@ async function main() {
   ]);
 
   console.log("Allocating genesis supply");
+  const immuneNodeRewardsRecipient = immuneNodeRewardsWallet || adopterRewards.address;
+  const validatorRewardsRecipient = validatorRewardsWallet || staking.address;
   const allocations = [
     [founderVesting.address, await token.FOUNDER_VESTING_ALLOCATION(), "FOUNDER_VESTING"],
+    [cmoWallet, await token.CMO_LAUNCH_GRANT(), "CMO_LAUNCH_GRANT"],
     [founderOpsWallet, await token.FOUNDER_OPERATIONS_GRANT(), "FOUNDER_OPERATIONS_GRANT"],
-    [adopterRewards.address, await token.VALIDATOR_REWARDS_ALLOCATION(), "VALIDATOR_REWARDS"],
+    [immuneNodeRewardsRecipient, await token.IMMUNE_NODE_REWARDS_ALLOCATION(), "IMMUNE_NODE_REWARDS"],
+    [validatorRewardsRecipient, await token.VALIDATOR_REWARDS_ALLOCATION(), "VALIDATOR_REWARDS"],
     [communityWallet, await token.COMMUNITY_ALLOCATION(), "COMMUNITY"],
     [treasuryWallet, await token.ECOSYSTEM_TREASURY_ALLOCATION(), "ECOSYSTEM_TREASURY"],
+    [strategicReserveWallet, await token.STRATEGIC_RESERVE_ALLOCATION(), "STRATEGIC_RESERVE"],
   ];
 
   for (const [recipient, amount, label] of allocations) {
@@ -252,19 +261,26 @@ async function main() {
     deployer: deployer.address,
     tokenomics: {
       totalSupply: "100000000000",
-      founderVesting: "20000000000",
-      founderOperationsGrant: "500000000",
-      adopterRewardsBucket: "30000000000",
-      dexLiquidity: "29000000000",
-      community: "14500000000",
-      treasury: "6000000000",
+      immuneNodeRewards: "22000000000",
+      dexLiquidity: "20000000000",
+      founderVesting: "17000000000",
+      validatorRewards: "12000000000",
+      communityAdopterRewards: "12500000000",
+      ecosystemTreasury: "10000000000",
+      cmoLaunchGrant: "3000000000",
+      strategicReserve: "3000000000",
+      founderLaunchAllocation: "500000000",
     },
     wallets: {
       founderWallet,
       founderOpsWallet,
+      cmoWallet,
+      immuneNodeRewardsWallet: immuneNodeRewardsRecipient,
+      validatorRewardsWallet: validatorRewardsRecipient,
       dexLiquidityWallet,
       communityWallet,
       treasuryWallet,
+      strategicReserveWallet,
     },
     contracts: {
       synCoin: syn.address,
@@ -281,7 +297,7 @@ async function main() {
       activationReward: ethers.formatUnits(activationReward, 18),
       heartbeatReward: ethers.formatUnits(heartbeatReward, 18),
       heartbeatIntervalSeconds: heartbeatInterval.toString(),
-      maxHeartbeatClaims: maxHeartbeatClaims.toString(),
+      maxHeartbeatClaimsPerOperator: maxHeartbeatClaims.toString(),
       merkleRoot: merkle.root,
       merkleGateRequired: merkle.gateRequired,
       merkleSource: merkle.source,

@@ -1,6 +1,6 @@
 {
   "network": "hardhat",
-  "deployedAt": "2026-06-29T08:44:12.440Z",
+  "deployedAt": "2026-06-29T08:34:40.924Z",
   "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
   "tokenomics": {
     "totalSupply": "100000000000",
@@ -56,10 +56,10 @@
     }
   ],
   "adopterRewards": {
-    "activationReward": "500.0",
-    "monthlyReward": "1000.0",
-    "rewardIntervalSeconds": "2592000",
-    "maxMonthlyClaimsPerOperator": "120",
+    "activationReward": "1000.0",
+    "heartbeatReward": "25.0",
+    "heartbeatIntervalSeconds": "86400",
+    "maxHeartbeatClaimsPerOperator": "365",
     "merkleRoot": "0x0000000000000000000000000000000000000000000000000000000000000000",
     "merkleGateRequired": false,
     "merkleSource": "none",

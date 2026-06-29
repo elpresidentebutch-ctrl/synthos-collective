@@ -19,14 +19,17 @@ import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Snapshot.sol";
 contract SynCoin is ERC20, ERC20Burnable, ERC20Pausable, ERC20Snapshot, Ownable {
     uint256 public constant INITIAL_SUPPLY = 100_000_000_000 * 10 ** 18;
 
-    uint256 public constant LOCKED_DEX_LIQUIDITY_ALLOCATION = 29_000_000_000 * 10 ** 18;
-    uint256 public constant VALIDATOR_REWARDS_ALLOCATION = 30_000_000_000 * 10 ** 18;
-    uint256 public constant COMMUNITY_ALLOCATION = 14_500_000_000 * 10 ** 18;
-    uint256 public constant ECOSYSTEM_TREASURY_ALLOCATION = 6_000_000_000 * 10 ** 18;
-    uint256 public constant FOUNDER_VESTING_ALLOCATION = 20_000_000_000 * 10 ** 18;
+    uint256 public constant IMMUNE_NODE_REWARDS_ALLOCATION = 22_000_000_000 * 10 ** 18;
+    uint256 public constant LOCKED_DEX_LIQUIDITY_ALLOCATION = 20_000_000_000 * 10 ** 18;
+    uint256 public constant FOUNDER_VESTING_ALLOCATION = 17_000_000_000 * 10 ** 18;
+    uint256 public constant VALIDATOR_REWARDS_ALLOCATION = 12_000_000_000 * 10 ** 18;
+    uint256 public constant COMMUNITY_ALLOCATION = 12_500_000_000 * 10 ** 18;
+    uint256 public constant ECOSYSTEM_TREASURY_ALLOCATION = 10_000_000_000 * 10 ** 18;
+    uint256 public constant CMO_LAUNCH_GRANT = 3_000_000_000 * 10 ** 18;
+    uint256 public constant STRATEGIC_RESERVE_ALLOCATION = 3_000_000_000 * 10 ** 18;
     uint256 public constant FOUNDER_OPERATIONS_GRANT = 500_000_000 * 10 ** 18;
 
-    uint256 public constant FOUNDER_ANNUAL_RELEASE = 2_000_000_000 * 10 ** 18;
+    uint256 public constant FOUNDER_ANNUAL_RELEASE = 1_700_000_000 * 10 ** 18;
     uint256 public constant FOUNDER_RELEASE_COUNT = 10;
     uint256 public constant FOUNDER_FIRST_RELEASE_YEAR = 2027;
     uint256 public constant FOUNDER_FIRST_RELEASE_MONTH = 5;
@@ -43,21 +46,27 @@ contract SynCoin is ERC20, ERC20Burnable, ERC20Pausable, ERC20Snapshot, Ownable 
     event GenesisAllocationDeclared(string allocationType, uint256 amount);
 
     constructor() ERC20("SYNTHOS", "SYN") {
-        uint256 allocationTotal = LOCKED_DEX_LIQUIDITY_ALLOCATION
+        uint256 allocationTotal = IMMUNE_NODE_REWARDS_ALLOCATION
+            + LOCKED_DEX_LIQUIDITY_ALLOCATION
+            + FOUNDER_VESTING_ALLOCATION
             + VALIDATOR_REWARDS_ALLOCATION
             + COMMUNITY_ALLOCATION
             + ECOSYSTEM_TREASURY_ALLOCATION
-            + FOUNDER_VESTING_ALLOCATION
+            + CMO_LAUNCH_GRANT
+            + STRATEGIC_RESERVE_ALLOCATION
             + FOUNDER_OPERATIONS_GRANT;
         require(allocationTotal == INITIAL_SUPPLY, "allocation total mismatch");
 
         _mint(address(this), INITIAL_SUPPLY);
 
+        emit GenesisAllocationDeclared("IMMUNE_NODE_REWARDS", IMMUNE_NODE_REWARDS_ALLOCATION);
         emit GenesisAllocationDeclared("LOCKED_DEX_LIQUIDITY", LOCKED_DEX_LIQUIDITY_ALLOCATION);
+        emit GenesisAllocationDeclared("FOUNDER_VESTING", FOUNDER_VESTING_ALLOCATION);
         emit GenesisAllocationDeclared("VALIDATOR_REWARDS", VALIDATOR_REWARDS_ALLOCATION);
         emit GenesisAllocationDeclared("COMMUNITY", COMMUNITY_ALLOCATION);
         emit GenesisAllocationDeclared("ECOSYSTEM_TREASURY", ECOSYSTEM_TREASURY_ALLOCATION);
-        emit GenesisAllocationDeclared("FOUNDER_VESTING", FOUNDER_VESTING_ALLOCATION);
+        emit GenesisAllocationDeclared("CMO_LAUNCH_GRANT", CMO_LAUNCH_GRANT);
+        emit GenesisAllocationDeclared("STRATEGIC_RESERVE", STRATEGIC_RESERVE_ALLOCATION);
         emit GenesisAllocationDeclared("FOUNDER_OPERATIONS_GRANT", FOUNDER_OPERATIONS_GRANT);
     }
 
@@ -93,11 +102,14 @@ contract SynCoin is ERC20, ERC20Burnable, ERC20Pausable, ERC20Snapshot, Ownable 
     }
 
     function tokenomicsTotal() external pure returns (uint256) {
-        return LOCKED_DEX_LIQUIDITY_ALLOCATION
+        return IMMUNE_NODE_REWARDS_ALLOCATION
+            + LOCKED_DEX_LIQUIDITY_ALLOCATION
+            + FOUNDER_VESTING_ALLOCATION
             + VALIDATOR_REWARDS_ALLOCATION
             + COMMUNITY_ALLOCATION
             + ECOSYSTEM_TREASURY_ALLOCATION
-            + FOUNDER_VESTING_ALLOCATION
+            + CMO_LAUNCH_GRANT
+            + STRATEGIC_RESERVE_ALLOCATION
             + FOUNDER_OPERATIONS_GRANT;
     }
 
