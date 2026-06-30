@@ -20,7 +20,9 @@ Welcome to the SYNTHOS Agent comprehensive documentation suite. This guide helps
 
 ### For Smart Contracts
 1. [SMART_CONTRACTS.md](SMART_CONTRACTS.md) - Token, Governance, and Staking contracts
-2. [CONTRACT_DEPLOYMENT.md](CONTRACT_DEPLOYMENT.md) - Deployment orchestration and management
+2. [TOKENOMICS.md](TOKENOMICS.md) - Canonical SYN supply, launch allocations, vesting, and reward policy
+3. [SYN_TOKEN_LAUNCH_RUNBOOK.md](SYN_TOKEN_LAUNCH_RUNBOOK.md) - SYN token launch gates, wallet setup, testnet rehearsal, and mainnet sequence
+4. [DEX_LAUNCH_RUNBOOK.md](DEX_LAUNCH_RUNBOOK.md) - DEX launch and liquidity procedure
 
 ### For DevOps/Operations - Production
 1. [DEPLOYMENT_PRODUCTION.md](DEPLOYMENT_PRODUCTION.md) - Deployment guide, monitoring, backups
@@ -219,6 +221,8 @@ Welcome to the SYNTHOS Agent comprehensive documentation suite. This guide helps
 
 #### Smart Contracts
 - [SMART_CONTRACTS.md - Token Contract](SMART_CONTRACTS.md#synthos-token-contract)
+- [TOKENOMICS.md - SYN Tokenomics](TOKENOMICS.md)
+- [SYN_TOKEN_LAUNCH_RUNBOOK.md - SYN Token Launch Runbook](SYN_TOKEN_LAUNCH_RUNBOOK.md)
 - [SMART_CONTRACTS.md - Governance Contract](SMART_CONTRACTS.md#synthos-governance-contract)
 - [SMART_CONTRACTS.md - Staking Contract](SMART_CONTRACTS.md#synthos-staking-contract)
 
