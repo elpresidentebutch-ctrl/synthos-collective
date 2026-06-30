@@ -25,9 +25,10 @@ Welcome to the SYNTHOS Agent comprehensive documentation suite. This guide helps
 4. [DEX_LAUNCH_RUNBOOK.md](DEX_LAUNCH_RUNBOOK.md) - DEX launch and liquidity procedure
 
 ### For DevOps/Operations - Production
-1. [DEPLOYMENT_PRODUCTION.md](DEPLOYMENT_PRODUCTION.md) - Deployment guide, monitoring, backups
-2. [ADVANCED_PATTERNS.md](ADVANCED_PATTERNS.md) - Production patterns and best practices
-3. [COMPLETE_ARCHITECTURE.md#Monitoring-&-Observability](COMPLETE_ARCHITECTURE.md) - Monitoring systems
+1. [CLOUDLESS_NETWORK.md](CLOUDLESS_NETWORK.md) - Self-hosted peer registry and Cloudflare-free node operation
+2. [DEPLOYMENT_PRODUCTION.md](DEPLOYMENT_PRODUCTION.md) - Deployment guide, monitoring, backups
+3. [ADVANCED_PATTERNS.md](ADVANCED_PATTERNS.md) - Production patterns and best practices
+4. [COMPLETE_ARCHITECTURE.md#Monitoring-&-Observability](COMPLETE_ARCHITECTURE.md) - Monitoring systems
 
 ---
 

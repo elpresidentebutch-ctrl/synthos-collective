@@ -31,7 +31,7 @@ SYNTHOS serverless immune nodes:
 - ✅ No listening ports (outbound-only polling)
 - ✅ Works behind ANY firewall (NAT, corporate, residential)
 - ✅ Real decentralization (no central relays/RPC needed)
-- ✅ **$0/month cost** (Cloudflare free tier supports 35+ immune nodes)
+- ✅ **Cloudless operation path** (self-hosted registry plus SYNTHOS nodes; legacy Cloudflare adapters remain optional)
 - ✅ No uptime penalties (Byzantine tolerant)
 
 ### Complete Benefits Breakdown
