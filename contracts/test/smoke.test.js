@@ -57,6 +57,12 @@ describe("post-incubation compile / deploy smoke", function () {
     const rewards = await Rewards.deploy(await gov.getAddress());
     await rewards.waitForDeployment();
 
+    const ComplianceRegistry = await ethers.getContractFactory(
+      "SYNTHOSComplianceRegistry"
+    );
+    const compliance = await ComplianceRegistry.deploy();
+    await compliance.waitForDeployment();
+
     const AdopterRewards = await ethers.getContractFactory(
       "SYNTHOSAdopterRewards"
     );
@@ -133,6 +139,7 @@ describe("post-incubation compile / deploy smoke", function () {
 
     expect(await token.getAddress()).to.match(/^0x[a-fA-F0-9]{40}$/);
     expect(await staking.getAddress()).to.match(/^0x[a-fA-F0-9]{40}$/);
+    expect(await compliance.getAddress()).to.match(/^0x[a-fA-F0-9]{40}$/);
     expect(await token.balanceOf(await founderVesting.getAddress())).to.equal(
       await token.FOUNDER_VESTING_ALLOCATION()
     );
@@ -187,5 +194,28 @@ describe("post-incubation compile / deploy smoke", function () {
     expect(
       await dex.quoteSynForAsset(await b12.getAddress(), ethers.parseUnits("1000", 18))
     ).to.be.gt(0);
+
+    const disclosureHash = ethers.keccak256(
+      ethers.toUtf8Bytes("SYNTHOS token risk disclosure v1")
+    );
+    const jurisdictionHash = ethers.keccak256(ethers.toUtf8Bytes("US"));
+    await compliance.setComplianceRecord(
+      adopter.address,
+      3, // ImmuneOperator
+      true,
+      true,
+      false,
+      false,
+      0,
+      ethers.ZeroHash,
+      jurisdictionHash
+    );
+    expect(await compliance.eligibleToReceive(adopter.address, 3)).to.equal(false);
+    await compliance.connect(adopter).acknowledgeDisclosure(disclosureHash);
+    expect(await compliance.eligibleToReceive(adopter.address, 3)).to.equal(true);
+    await compliance.revokeRecipient(adopter.address, "operator disqualified");
+    expect(await compliance.eligibleToReceive(adopter.address, 3)).to.equal(false);
+    await compliance.restoreRecipient(adopter.address);
+    expect(await compliance.eligibleToReceive(adopter.address, 3)).to.equal(true);
   });
 });

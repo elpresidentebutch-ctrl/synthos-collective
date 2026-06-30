@@ -152,6 +152,8 @@ async function main() {
     governance.address,
   ]);
 
+  const complianceRegistry = await deployContract("SYNTHOSComplianceRegistry");
+
   const adopterRewards = await deployContract("SYNTHOSAdopterRewards", [
     syn.address,
     activationReward,
@@ -288,6 +290,7 @@ async function main() {
       governance: governance.address,
       staking: staking.address,
       rewardDistributor: rewardDistributor.address,
+      complianceRegistry: complianceRegistry.address,
       adopterRewards: adopterRewards.address,
       dex: dex.address,
       founderVesting: founderVesting.address,
