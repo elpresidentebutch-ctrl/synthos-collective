@@ -139,11 +139,92 @@ Standard immune-node operator rewards should begin with the following policy:
 
 Running additional nodes does not multiply rewards. Additional nodes may improve network coverage, reputation, and operational usefulness, but rewards remain capped at one standard stream per verified operator.
 
-## 9. Operator Payment Requirements
+## 9. Node Reward Classes and 10-Year Capacity
+
+SYNTHOS uses one operator identity and one rewards program experience, but keeps separate accounting for distinct work classes.
+
+| Reward Class | Source Bucket | Amount | Target / Period |
+|---|---:|---:|---|
+| Immune Node Operators | Immune Node Rewards | 22,000,000,000 SYN | 100,000 operators for 10 years |
+| Validator Operators | Validator / Security Rewards | 12,000,000,000 SYN | 5,000 validators for 10 years |
+| Community / Builders / Adopters | Community / Adopter Rewards | 12,500,000,000 SYN | Grant-based over 10 years |
+| **Total Rewards Program** |  | **46,500,000,000 SYN** |  |
+
+A verified operator may earn from more than one reward class only when the operator performs distinct, verified work for each class. Duplicate nodes, duplicate wallets, duplicate endpoints, fake identities, or repeated submissions do not create duplicate reward rights.
+
+### 9.1 Immune Node Reward Breakdown
+
+The Immune Node Rewards allocation is **22,000,000,000 SYN**.
+
+| Sub-Bucket | Amount | Purpose |
+|---|---:|---|
+| Standard heartbeat rewards | 15,000,000,000 SYN | Monthly heartbeat rewards for verified immune-node operators |
+| Early verified operator rewards | 500,000,000 SYN | One-time 500 SYN early operator rewards |
+| Reliability / uptime bonuses | 2,000,000,000 SYN | Extra rewards for high uptime, clean proofs, and long-term reliability |
+| Future immune-node expansion | 3,000,000,000 SYN | Later waves, new device classes, mobile/native expansion |
+| Fraud reserve / governance reserve | 1,500,000,000 SYN | Unclaimed, rejected, disputed, or governance-directed rewards |
+| **Total** | **22,000,000,000 SYN** |  |
+
+Per immune-node operator:
+
+| Item | Amount | Timing |
+|---|---:|---|
+| Early verified operator reward | 500 SYN | One time |
+| Heartbeat reward | 1,000 SYN | Monthly in arrears |
+| Year 1 maximum | 12,500 SYN | 500 SYN + 12 monthly heartbeat periods |
+| Year 2+ annual maximum | 12,000 SYN | 12 monthly heartbeat periods |
+| 10-year maximum | 120,500 SYN | 500 SYN + 120 monthly heartbeat periods |
+
+At the 100,000-operator planning target, the 10-year immune-node cost is **12,050,000,000 SYN**, leaving **9,950,000,000 SYN** in the Immune Node Rewards allocation for reliability bonuses, future expansion, reserve, disputes, rejected claims, and governance-directed adjustments.
+
+### 9.2 Validator / Security Reward Breakdown
+
+The Validator / Security Rewards allocation is **12,000,000,000 SYN**.
+
+| Sub-Bucket | Amount | Purpose |
+|---|---:|---|
+| Validator uptime and finality rewards | 5,000,000,000 SYN | Rewards validators for participating in consensus and finality |
+| Staking / delegation rewards | 3,000,000,000 SYN | Rewards stakers and delegators supporting validators |
+| Security incident / slashing-response incentives | 1,000,000,000 SYN | Rewards security reports, emergency response, and slashing evidence |
+| Testnet-to-mainnet validator migration rewards | 1,000,000,000 SYN | Rewards early validators who help prove the network before launch |
+| Long-term validator reserve | 2,000,000,000 SYN | Future validator incentives and governance-adjusted security needs |
+| **Total** | **12,000,000,000 SYN** |  |
+
+Per validator operator:
+
+| Item | Amount | Timing |
+|---|---:|---|
+| Validator activation / migration reward | 10,000 SYN | One time after approved onboarding |
+| Validator uptime/finality reward | 5,000 SYN | Monthly in arrears |
+| Performance bonus cap | Up to 2,500 SYN | Monthly, based on uptime/finality/security performance |
+| Year 1 maximum | 100,000 SYN | 10,000 SYN + 12 months at 7,500 SYN max |
+| Year 2+ annual maximum | 90,000 SYN | 12 months at 7,500 SYN max |
+| 10-year maximum | 910,000 SYN | If consistently top-performing |
+
+At the 5,000-validator planning target, the 10-year maximum validator cost is **4,550,000,000 SYN**, leaving **7,450,000,000 SYN** in the Validator / Security Rewards allocation for staking/delegation rewards, security incentives, migration rewards, long-term reserve, and governance-directed adjustments.
+
+### 9.3 Community / Adopter Reward Breakdown
+
+The Community / Adopter Rewards allocation is **12,500,000,000 SYN**.
+
+| Sub-Bucket | Amount | Purpose |
+|---|---:|---|
+| Testnet participation | 2,000,000,000 SYN | Users who test wallets, nodes, claims, DEX, staking, and apps |
+| Builder grants | 2,500,000,000 SYN | Developers building tools, dashboards, apps, and integrations |
+| Ambassador / education rewards | 1,500,000,000 SYN | Community leads, explainers, tutorials, events, and onboarding |
+| Bug reports / QA / documentation | 1,500,000,000 SYN | Useful bug reports, docs, translations, and security-adjacent QA |
+| Early adopter campaigns | 2,000,000,000 SYN | Approved campaigns for real users, not bot farms |
+| Retroactive public goods | 1,000,000,000 SYN | Rewards for work that proves valuable after the fact |
+| Community reserve | 2,000,000,000 SYN | Future growth, partnerships, and governance-directed campaigns |
+| **Total** | **12,500,000,000 SYN** |  |
+
+Community and builder rewards are generally grant-based, campaign-based, or retroactive. They are not automatic monthly operator wages.
+
+## 10. Operator Payment Requirements
 
 To receive immune-node operator rewards, an operator must satisfy the following requirements.
 
-### 9.1 Verified Operator Status
+### 10.1 Verified Operator Status
 
 Each operator must register as a verified SYNTHOS operator before earning rewards. Verification may include:
 
@@ -156,7 +237,7 @@ Each operator must register as a verified SYNTHOS operator before earning reward
 
 Rewards are paid to the verified operator wallet. The operator is responsible for securing that wallet.
 
-### 9.2 One Reward Stream Per Operator
+### 10.2 One Reward Stream Per Operator
 
 Rewards are paid per verified operator, not per node, device, wallet, endpoint, server, household, or installation.
 
@@ -164,7 +245,7 @@ A verified operator may run multiple immune nodes, but the operator receives onl
 
 Operators may not split, duplicate, sell, rent, proxy, or misrepresent identities to claim multiple reward streams.
 
-### 9.3 Required Node Operation
+### 10.3 Required Node Operation
 
 To earn a heartbeat reward for a reward period, the operator must:
 
@@ -177,13 +258,13 @@ To earn a heartbeat reward for a reward period, the operator must:
 - avoid behavior that harms the network, other operators, users, or the SYNTHOS ecosystem; and
 - comply with any additional technical requirements published before or during the reward period.
 
-### 9.4 Heartbeat Proofs
+### 10.4 Heartbeat Proofs
 
 Heartbeat proofs are the primary proof that an operator kept an immune node active during the reward period.
 
 Each valid heartbeat proof should show that the operator's node was alive, participating, and bound to the registered operator identity or hardware commitment. SYNTHOS may reject heartbeat proofs that are incomplete, duplicated, suspicious, late, replayed, or inconsistent with network records.
 
-### 9.5 Payment Timing
+### 10.5 Payment Timing
 
 Operator heartbeat rewards are paid one month in arrears.
 
@@ -191,7 +272,7 @@ This means the operator must complete the reward period first. After the period 
 
 No operator is entitled to payment in advance for uptime that has not happened yet.
 
-### 9.6 Reward Amounts
+### 10.6 Reward Amounts
 
 The initial operator reward policy is:
 
@@ -202,7 +283,7 @@ The initial operator reward policy is:
 
 SYNTHOS governance may adjust future reward amounts, eligibility standards, claim windows, proof requirements, or reward caps, but changes should be disclosed clearly before they apply to future reward periods.
 
-### 9.7 Forfeiture and Disqualification
+### 10.7 Forfeiture and Disqualification
 
 An operator may lose eligibility for a reward period, have rewards delayed, or be disqualified from the program if the operator:
 
@@ -217,13 +298,13 @@ An operator may lose eligibility for a reward period, have rewards delayed, or b
 
 Disqualified rewards remain in the Immune Node Rewards allocation unless governance approves another use.
 
-### 9.8 No Guaranteed Employment or Income
+### 10.8 No Guaranteed Employment or Income
 
 Immune-node operator rewards are network participation incentives. They are not wages, salary, employment compensation, or a guarantee of income.
 
 Reward eligibility depends on proof of participation, compliance with program rules, available reward funding, and the continued operation of the SYNTHOS rewards program.
 
-## 10. Liquidity
+## 11. Liquidity
 
 SYNTHOS allocates **20,000,000,000 SYN** for locked liquidity.
 
@@ -237,7 +318,7 @@ Before launch, the liquidity plan should clearly state:
 - the lock duration, unlock terms, and emergency rules; and
 - how liquidity actions will be disclosed to the community.
 
-## 11. Governance and Treasury
+## 12. Governance and Treasury
 
 SYNTHOS allocates **10,000,000,000 SYN** to the ecosystem treasury.
 
@@ -253,7 +334,7 @@ Before public launch, SYNTHOS should define:
 - proposal rules; and
 - public reporting expectations.
 
-## 12. Launch Requirements
+## 13. Launch Requirements
 
 Before public token launch, SYNTHOS should complete the following:
 
@@ -268,6 +349,7 @@ Before public token launch, SYNTHOS should complete the following:
 - confirm the Ecosystem Treasury allocation is 10,000,000,000 SYN;
 - confirm the Strategic Reserve allocation is 3,000,000,000 SYN;
 - define the final immune-node reward rules;
+- confirm the node reward class breakdown and 10-year capacity plan;
 - publish operator payment requirements before the first paid heartbeat period;
 - define the final validator reward rules;
 - define the final adopter reward rules;
@@ -276,7 +358,7 @@ Before public token launch, SYNTHOS should complete the following:
 - complete legal, tax, securities, and compliance review;
 - prepare public disclosures that match this document and the deployed contracts.
 
-## 13. Legal Notice
+## 14. Legal Notice
 
 This document is informational and operational. It is not legal, tax, securities, financial, or investment advice.
 

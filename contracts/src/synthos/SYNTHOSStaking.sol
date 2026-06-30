@@ -19,6 +19,16 @@ contract SYNTHOSStaking {
     uint256 public constant MINIMUM_VALIDATOR_STAKE = 100_000 * 10**18; // 100k SYN
     uint256 public constant UNSTAKE_COOLDOWN = 7 days; // 7-day unstaking period
     uint256 public constant SLASH_RATE = 10; // 10% slashing rate
+    uint256 public constant TARGET_VALIDATOR_OPERATORS = 5_000;
+    uint256 public constant TEN_YEAR_VALIDATOR_PERIODS = 120;
+    uint256 public constant VALIDATOR_ACTIVATION_REWARD = 10_000 * 10**18;
+    uint256 public constant VALIDATOR_MONTHLY_BASE_REWARD = 5_000 * 10**18;
+    uint256 public constant VALIDATOR_MONTHLY_PERFORMANCE_BONUS_CAP = 2_500 * 10**18;
+    uint256 public constant TEN_YEAR_MAX_REWARD_PER_VALIDATOR =
+        VALIDATOR_ACTIVATION_REWARD
+        + ((VALIDATOR_MONTHLY_BASE_REWARD + VALIDATOR_MONTHLY_PERFORMANCE_BONUS_CAP) * TEN_YEAR_VALIDATOR_PERIODS);
+    uint256 public constant TEN_YEAR_TARGET_VALIDATOR_BUDGET =
+        TEN_YEAR_MAX_REWARD_PER_VALIDATOR * TARGET_VALIDATOR_OPERATORS;
 
     // Token reference
     SYNToken public synToken;
@@ -60,7 +70,7 @@ contract SYNTHOSStaking {
     uint256 public reward_pool = 0;
     uint256 public current_epoch = 1;
     uint256 public epoch_start_time = block.timestamp;
-    uint256 public epoch_duration = 1 days;
+    uint256 public epoch_duration = 30 days;
 
     // Owner/governance
     address public governance;
@@ -295,10 +305,7 @@ contract SYNTHOSStaking {
      * @return Epoch rewards amount
      */
     function calculateEpochRewards() public view returns (uint256) {
-        // Base reward = 5% annual inflation
-        uint256 annual_inflation = (total_staked * 5) / 100;
-        uint256 epoch_rewards = annual_inflation / (365 days / epoch_duration);
-        return epoch_rewards;
+        return VALIDATOR_MONTHLY_BASE_REWARD * getValidatorCount();
     }
 
     /**

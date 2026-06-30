@@ -22,6 +22,16 @@ import "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 contract SYNTHOSAdopterRewards is Ownable, Pausable {
     using SafeERC20 for IERC20;
 
+    uint256 public constant TARGET_IMMUNE_OPERATORS = 100_000;
+    uint256 public constant TEN_YEAR_HEARTBEAT_PERIODS = 120;
+    uint256 public constant DEFAULT_EARLY_OPERATOR_REWARD = 500 * 10 ** 18;
+    uint256 public constant DEFAULT_HEARTBEAT_REWARD = 1_000 * 10 ** 18;
+    uint256 public constant DEFAULT_HEARTBEAT_INTERVAL = 30 days;
+    uint256 public constant TEN_YEAR_MAX_REWARD_PER_OPERATOR =
+        DEFAULT_EARLY_OPERATOR_REWARD + (DEFAULT_HEARTBEAT_REWARD * TEN_YEAR_HEARTBEAT_PERIODS);
+    uint256 public constant TEN_YEAR_TARGET_OPERATOR_BUDGET =
+        TEN_YEAR_MAX_REWARD_PER_OPERATOR * TARGET_IMMUNE_OPERATORS;
+
     struct AdopterNode {
         address operator;
         bytes32 hardwareCommitment;

@@ -29,6 +29,26 @@ contract SynCoin is ERC20, ERC20Burnable, ERC20Pausable, ERC20Snapshot, Ownable 
     uint256 public constant STRATEGIC_RESERVE_ALLOCATION = 3_000_000_000 * 10 ** 18;
     uint256 public constant FOUNDER_OPERATIONS_GRANT = 500_000_000 * 10 ** 18;
 
+    uint256 public constant IMMUNE_STANDARD_HEARTBEAT_REWARDS = 15_000_000_000 * 10 ** 18;
+    uint256 public constant IMMUNE_EARLY_OPERATOR_REWARDS = 500_000_000 * 10 ** 18;
+    uint256 public constant IMMUNE_RELIABILITY_BONUSES = 2_000_000_000 * 10 ** 18;
+    uint256 public constant IMMUNE_FUTURE_EXPANSION = 3_000_000_000 * 10 ** 18;
+    uint256 public constant IMMUNE_FRAUD_GOVERNANCE_RESERVE = 1_500_000_000 * 10 ** 18;
+
+    uint256 public constant VALIDATOR_UPTIME_FINALITY_REWARDS = 5_000_000_000 * 10 ** 18;
+    uint256 public constant VALIDATOR_STAKING_DELEGATION_REWARDS = 3_000_000_000 * 10 ** 18;
+    uint256 public constant VALIDATOR_SECURITY_INCENTIVES = 1_000_000_000 * 10 ** 18;
+    uint256 public constant VALIDATOR_TESTNET_MAINNET_MIGRATION = 1_000_000_000 * 10 ** 18;
+    uint256 public constant VALIDATOR_LONG_TERM_RESERVE = 2_000_000_000 * 10 ** 18;
+
+    uint256 public constant COMMUNITY_TESTNET_PARTICIPATION = 2_000_000_000 * 10 ** 18;
+    uint256 public constant COMMUNITY_BUILDER_GRANTS = 2_500_000_000 * 10 ** 18;
+    uint256 public constant COMMUNITY_AMBASSADOR_EDUCATION = 1_500_000_000 * 10 ** 18;
+    uint256 public constant COMMUNITY_BUG_DOCS_QA = 1_500_000_000 * 10 ** 18;
+    uint256 public constant COMMUNITY_EARLY_ADOPTER_CAMPAIGNS = 2_000_000_000 * 10 ** 18;
+    uint256 public constant COMMUNITY_RETRO_PUBLIC_GOODS = 1_000_000_000 * 10 ** 18;
+    uint256 public constant COMMUNITY_RESERVE = 2_000_000_000 * 10 ** 18;
+
     uint256 public constant FOUNDER_ANNUAL_RELEASE = 1_700_000_000 * 10 ** 18;
     uint256 public constant FOUNDER_RELEASE_COUNT = 10;
     uint256 public constant FOUNDER_FIRST_RELEASE_YEAR = 2027;
@@ -56,6 +76,9 @@ contract SynCoin is ERC20, ERC20Burnable, ERC20Pausable, ERC20Snapshot, Ownable 
             + STRATEGIC_RESERVE_ALLOCATION
             + FOUNDER_OPERATIONS_GRANT;
         require(allocationTotal == INITIAL_SUPPLY, "allocation total mismatch");
+        require(immuneRewardsBreakdownTotal() == IMMUNE_NODE_REWARDS_ALLOCATION, "immune breakdown mismatch");
+        require(validatorRewardsBreakdownTotal() == VALIDATOR_REWARDS_ALLOCATION, "validator breakdown mismatch");
+        require(communityRewardsBreakdownTotal() == COMMUNITY_ALLOCATION, "community breakdown mismatch");
 
         _mint(address(this), INITIAL_SUPPLY);
 
@@ -111,6 +134,32 @@ contract SynCoin is ERC20, ERC20Burnable, ERC20Pausable, ERC20Snapshot, Ownable 
             + CMO_LAUNCH_GRANT
             + STRATEGIC_RESERVE_ALLOCATION
             + FOUNDER_OPERATIONS_GRANT;
+    }
+
+    function immuneRewardsBreakdownTotal() public pure returns (uint256) {
+        return IMMUNE_STANDARD_HEARTBEAT_REWARDS
+            + IMMUNE_EARLY_OPERATOR_REWARDS
+            + IMMUNE_RELIABILITY_BONUSES
+            + IMMUNE_FUTURE_EXPANSION
+            + IMMUNE_FRAUD_GOVERNANCE_RESERVE;
+    }
+
+    function validatorRewardsBreakdownTotal() public pure returns (uint256) {
+        return VALIDATOR_UPTIME_FINALITY_REWARDS
+            + VALIDATOR_STAKING_DELEGATION_REWARDS
+            + VALIDATOR_SECURITY_INCENTIVES
+            + VALIDATOR_TESTNET_MAINNET_MIGRATION
+            + VALIDATOR_LONG_TERM_RESERVE;
+    }
+
+    function communityRewardsBreakdownTotal() public pure returns (uint256) {
+        return COMMUNITY_TESTNET_PARTICIPATION
+            + COMMUNITY_BUILDER_GRANTS
+            + COMMUNITY_AMBASSADOR_EDUCATION
+            + COMMUNITY_BUG_DOCS_QA
+            + COMMUNITY_EARLY_ADOPTER_CAMPAIGNS
+            + COMMUNITY_RETRO_PUBLIC_GOODS
+            + COMMUNITY_RESERVE;
     }
 
     function _beforeTokenTransfer(

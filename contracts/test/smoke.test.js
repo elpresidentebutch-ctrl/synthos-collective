@@ -18,6 +18,15 @@ describe("post-incubation compile / deploy smoke", function () {
       ethers.parseUnits("100000000000", 18)
     );
     expect(await token.tokenomicsTotal()).to.equal(await token.INITIAL_SUPPLY());
+    expect(await token.immuneRewardsBreakdownTotal()).to.equal(
+      await token.IMMUNE_NODE_REWARDS_ALLOCATION()
+    );
+    expect(await token.validatorRewardsBreakdownTotal()).to.equal(
+      await token.VALIDATOR_REWARDS_ALLOCATION()
+    );
+    expect(await token.communityRewardsBreakdownTotal()).to.equal(
+      await token.COMMUNITY_ALLOCATION()
+    );
 
     const Timelock = await ethers.getContractFactory("SYNTHOSTimelock");
     const timelock = await Timelock.deploy(
@@ -95,8 +104,8 @@ describe("post-incubation compile / deploy smoke", function () {
     );
     await token.allocateTokens(
       await adopterRewards.getAddress(),
-      await token.VALIDATOR_REWARDS_ALLOCATION(),
-      "VALIDATOR_REWARDS"
+      await token.IMMUNE_NODE_REWARDS_ALLOCATION(),
+      "IMMUNE_NODE_REWARDS"
     );
     await token.allocateTokens(
       deployer.address,
@@ -133,6 +142,15 @@ describe("post-incubation compile / deploy smoke", function () {
     );
     expect(await token.balanceOf(deployer.address)).to.equal(
       ethers.parseUnits("500", 18)
+    );
+    expect(await adopterRewards.TARGET_IMMUNE_OPERATORS()).to.equal(100000);
+    expect(await adopterRewards.TEN_YEAR_HEARTBEAT_PERIODS()).to.equal(120);
+    expect(await adopterRewards.TEN_YEAR_MAX_REWARD_PER_OPERATOR()).to.equal(
+      ethers.parseUnits("120500", 18)
+    );
+    expect(await staking.TARGET_VALIDATOR_OPERATORS()).to.equal(5000);
+    expect(await staking.TEN_YEAR_MAX_REWARD_PER_VALIDATOR()).to.equal(
+      ethers.parseUnits("910000", 18)
     );
     await expect(
       adopterRewards.registerAndClaim(
