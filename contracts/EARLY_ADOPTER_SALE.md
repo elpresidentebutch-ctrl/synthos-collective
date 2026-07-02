@@ -28,6 +28,10 @@ SYN received = crypto payment USD value / 0.05
 7. Payment goes directly to the treasury wallet and SYN transfers immediately
    to the beneficiary.
 
+There is no manual payment confirmation status in the sale path. If the buyer
+is eligible, the payment asset is enabled, the sale contract has enough SYN, and
+the transaction succeeds on-chain, SYN is delivered in the same transaction.
+
 Native coin payments are optional. They require the owner to set
 `nativeUsdPrice18` because the contract does not use a live price oracle.
 
