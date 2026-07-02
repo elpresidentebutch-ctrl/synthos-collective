@@ -47,6 +47,34 @@ Rules:
 - Remaining liquidity allocation should stay in reserve until governance or
   multisig/timelock approves additional deployment.
 
+## Add Your Token Later
+
+If the SYNTHOS contracts are deployed before your token contract exists, leave
+`DEX_POOLS_JSON=[]` for the initial deployment. When the token is real and
+verified, add the SYN pair with:
+
+```bash
+DEPLOYMENT_FILE=deployments/latest.json \
+DEX_ASSET_ADDRESS=0xYourTokenAddress \
+DEX_ASSET_SYMBOL=YOUR \
+DEX_ASSET_DECIMALS=18 \
+DEX_SYN_LIQUIDITY=10000000 \
+DEX_ASSET_LIQUIDITY=50000 \
+pnpm dex:add-pool --network synthos
+```
+
+The script uses the deployed `SYNTHOSDex` as the router, creates the
+`SYN/YOUR` pool if it does not exist, approves both sides, adds liquidity, and
+writes a timestamped pool record under `contracts/deployments/`.
+
+Do not run this until:
+
+- The token contract is deployed.
+- The token address is final and verified.
+- The DEX operator wallet holds the intended SYN liquidity.
+- The DEX operator wallet holds the intended token liquidity.
+- Governance/multisig approval for the pool has been recorded.
+
 ## Launch Checks
 
 Before launch:

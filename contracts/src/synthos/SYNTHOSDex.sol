@@ -36,6 +36,7 @@ contract SYNTHOSDex is Ownable, Pausable, ReentrancyGuard {
     address[] public poolAssets;
 
     event PoolCreated(address indexed asset);
+    event PoolActiveSet(address indexed asset, bool active);
     event LiquidityAdded(
         address indexed provider,
         address indexed asset,
@@ -78,6 +79,14 @@ contract SYNTHOSDex is Ownable, Pausable, ReentrancyGuard {
         poolAssets.push(asset);
 
         emit PoolCreated(asset);
+    }
+
+    function setPoolActive(address asset, bool active) external onlyOwner {
+        Pool storage pool = pools[asset];
+        require(pool.asset != address(0), "pool not found");
+        pool.active = active;
+
+        emit PoolActiveSet(asset, active);
     }
 
     function addLiquidity(

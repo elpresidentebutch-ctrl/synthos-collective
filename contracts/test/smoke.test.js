@@ -492,4 +492,71 @@ describe("post-incubation compile / deploy smoke", function () {
     await compliance.restoreRecipient(adopter.address);
     expect(await compliance.eligibleToReceive(adopter.address, 3)).to.equal(true);
   });
+
+  it("lets the launch operator add a real token pool after DEX deployment", async function () {
+    const [operator, trader, outsider] = await ethers.getSigners();
+
+    const SynCoin = await ethers.getContractFactory("SynCoin");
+    const syn = await SynCoin.deploy();
+    await syn.waitForDeployment();
+
+    const Dex = await ethers.getContractFactory("SYNTHOSDex");
+    const dex = await Dex.deploy(await syn.getAddress());
+    await dex.waitForDeployment();
+
+    const MockERC20 = await ethers.getContractFactory("MockERC20");
+    const launchToken = await MockERC20.deploy(
+      "Founder Launch Token",
+      "FLT",
+      operator.address,
+      ethers.parseUnits("1000000", 18)
+    );
+    await launchToken.waitForDeployment();
+
+    await expect(
+      dex.connect(outsider).createPool(await launchToken.getAddress())
+    ).to.be.revertedWith("Ownable: caller is not the owner");
+
+    await dex.createPool(await launchToken.getAddress());
+    expect(await dex.poolCount()).to.equal(1);
+
+    await syn.allocateTokens(
+      operator.address,
+      ethers.parseUnits("100000", 18),
+      "LOCKED_DEX_LIQUIDITY"
+    );
+    await syn.approve(await dex.getAddress(), ethers.parseUnits("100000", 18));
+    await launchToken.approve(await dex.getAddress(), ethers.parseUnits("50000", 18));
+
+    await dex.addLiquidity(
+      await launchToken.getAddress(),
+      ethers.parseUnits("100000", 18),
+      ethers.parseUnits("50000", 18)
+    );
+
+    await syn.allocateTokens(
+      trader.address,
+      ethers.parseUnits("1000", 18),
+      "COMMUNITY"
+    );
+    await syn.connect(trader).approve(await dex.getAddress(), ethers.parseUnits("1000", 18));
+
+    const quote = await dex.quoteSynForAsset(
+      await launchToken.getAddress(),
+      ethers.parseUnits("100", 18)
+    );
+    expect(quote).to.be.gt(0);
+
+    await dex.connect(trader).swapExactSynForAsset(
+      await launchToken.getAddress(),
+      ethers.parseUnits("100", 18),
+      1
+    );
+    expect(await launchToken.balanceOf(trader.address)).to.equal(quote);
+
+    await dex.setPoolActive(await launchToken.getAddress(), false);
+    await expect(
+      dex.quoteSynForAsset(await launchToken.getAddress(), ethers.parseUnits("1", 18))
+    ).to.be.revertedWith("pool not active");
+  });
 });

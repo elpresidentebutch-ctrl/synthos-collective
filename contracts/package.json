@@ -7,6 +7,7 @@
     "compile": "hardhat compile",
     "test": "hardhat test",
     "deploy:synthos:local": "hardhat run scripts/deploy-synthos.js --network hardhat",
+    "dex:add-pool": "hardhat run scripts/add-dex-pool.js",
     "postdeploy:check": "hardhat run scripts/post-deploy-check.js",
     "readiness:contracts": "hardhat compile && hardhat test && hardhat run scripts/readiness-check.js --network hardhat",
     "merkle:adopters": "node scripts/build-adopter-merkle.js",
