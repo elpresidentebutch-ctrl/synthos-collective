@@ -1,6 +1,6 @@
 # SYNTHOS Early Adopter Crypto Sale
 
-`SYNTHOSEarlyAdopterSale` is the automated crypto-only sale contract for the
+`SYNTHOSEarlyAdopterPresale` is the automated crypto-only pre-sale contract for the
 early adopter allocation.
 
 ## Price
@@ -22,20 +22,20 @@ SYN received = crypto payment USD value / 0.05
 ## Flow
 
 1. Deploy `SynCoin`, `SYNTHOSComplianceRegistry`, and
-   `SYNTHOSEarlyAdopterSale`.
-2. Fund the sale contract with 250,000,000 SYN from
+   `SYNTHOSEarlyAdopterPresale`.
+2. Fund the pre-sale contract with 250,000,000 SYN from
    `COMMUNITY_EARLY_ADOPTER_CAMPAIGNS`.
 3. Mark an early adopter wallet eligible in `SYNTHOSComplianceRegistry` as
    category `Community`.
 4. Enable accepted crypto payment assets, such as USDC, USDT, WBTC, WETH, or
    native ETH.
-5. Buyer approves the sale contract to spend the payment token.
+5. Buyer approves the pre-sale contract to spend the payment token.
 6. Buyer calls `buyWithToken(paymentAsset, paymentAmount, beneficiary)`.
 7. Payment goes directly to the treasury wallet and SYN transfers immediately
    to the beneficiary.
 
 There is no manual payment confirmation status in the sale path. If the buyer
-is eligible, the payment asset is enabled, the sale contract has enough SYN, and
+is eligible, the payment asset is enabled, the pre-sale contract has enough SYN, and
 the transaction succeeds on-chain, SYN is delivered in the same transaction.
 
 Native coin payments are optional. They require the owner to set
@@ -49,13 +49,13 @@ Early adopter sale proceeds should be received by the SYNTHOS treasury wallet:
 0xdAE5DF4807274D7a115bB5078c94b023453A05F5
 ```
 
-The sale contract forwards ERC-20 payments and native-chain payments directly
+The pre-sale contract forwards ERC-20 payments and native-chain payments directly
 to this treasury wallet.
 
 ## Accepted Crypto Assets
 
 Automatic purchase settlement works with assets that exist on the same EVM
-network as the sale contract:
+network as the pre-sale contract:
 
 | Asset | Automatic path |
 | --- | --- |

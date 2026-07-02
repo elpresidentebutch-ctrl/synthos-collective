@@ -573,7 +573,7 @@ describe("post-incubation compile / deploy smoke", function () {
     const compliance = await ComplianceRegistry.deploy();
     await compliance.waitForDeployment();
 
-    const Sale = await ethers.getContractFactory("SYNTHOSEarlyAdopterSale");
+    const Sale = await ethers.getContractFactory("SYNTHOSEarlyAdopterPresale");
     const sale = await Sale.deploy(
       await syn.getAddress(),
       await compliance.getAddress(),
@@ -688,7 +688,7 @@ describe("post-incubation compile / deploy smoke", function () {
     const compliance = await ComplianceRegistry.deploy();
     await compliance.waitForDeployment();
 
-    const Sale = await ethers.getContractFactory("SYNTHOSEarlyAdopterSale");
+    const Sale = await ethers.getContractFactory("SYNTHOSEarlyAdopterPresale");
     const sale = await Sale.deploy(
       await syn.getAddress(),
       await compliance.getAddress(),
@@ -780,7 +780,7 @@ describe("post-incubation compile / deploy smoke", function () {
     const compliance = await ComplianceRegistry.deploy();
     await compliance.waitForDeployment();
 
-    const Sale = await ethers.getContractFactory("SYNTHOSEarlyAdopterSale");
+    const Sale = await ethers.getContractFactory("SYNTHOSEarlyAdopterPresale");
     const sale = await Sale.deploy(
       await syn.getAddress(),
       await compliance.getAddress(),

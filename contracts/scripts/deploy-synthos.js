@@ -225,7 +225,7 @@ async function main() {
 
   const complianceRegistry = await deployContract("SYNTHOSComplianceRegistry");
 
-  const earlyAdopterSale = await deployContract("SYNTHOSEarlyAdopterSale", [
+  const earlyAdopterSale = await deployContract("SYNTHOSEarlyAdopterPresale", [
     syn.address,
     complianceRegistry.address,
     treasuryWallet,
@@ -367,7 +367,7 @@ async function main() {
   const ownableTransfers = [
     ["SynCoin", token],
     ["SYNTHOSAdopterRewards", adopterRewards.contract],
-    ["SYNTHOSEarlyAdopterSale", earlyAdopterSale.contract],
+    ["SYNTHOSEarlyAdopterPresale", earlyAdopterSale.contract],
     ["SYNTHOSDex", dex.contract],
     ["SYNTHOSComplianceRegistry", complianceRegistry.contract],
   ];
