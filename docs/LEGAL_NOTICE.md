@@ -24,7 +24,7 @@ This notice is **not** legal, tax, financial, or investment advice. It does not 
 
 ## Contact
 
-Rights inquiries and permission requests should be directed to the project’s **designated legal or business contact** for James G. Isham Williams, Sr. *(Add email or counsel reference when published externally.)*
+Rights inquiries and permission requests should be directed through the SYNTHOS Collective repository owner at `https://github.com/elpresidentebutch-ctrl/synthos-collective` unless a counsel-approved contact is published separately.
 
 ---
 

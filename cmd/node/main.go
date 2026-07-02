@@ -71,7 +71,7 @@ func main() {
 	c.DEX.SeedPool("MOMENTUM", 2_000_000, 10_000)
 
 	// 3. Initialize Agent with 7 Core Functions
-	a := agent.NewAgent(agentID, "0x"+fmt.Sprintf("%x", pub), "0x...", hwID, 1000000)
+	a := agent.NewAgent(agentID, "0x"+fmt.Sprintf("%x", pub), string(addr), hwID, 1000000)
 
 	// 4. Setup Outbound 'Sign Language' Transport (NO LISTENERS)
 	BOOTSTRAP_ANCHORS := []string{"http://synthos-anchor-1.world:8080"}

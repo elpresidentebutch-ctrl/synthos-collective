@@ -8,7 +8,7 @@ You can keep the existing B12 website and give it a real backend by deploying
 Deploy the Worker, then point the B12 site at it:
 
 ```text
-https://synthos-site-backend.<your-worker-subdomain>.workers.dev
+https://synthos-site-backend.jamesishamwilliams.workers.dev
 ```
 
 Core endpoints:

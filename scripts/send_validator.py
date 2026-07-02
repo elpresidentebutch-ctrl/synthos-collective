@@ -27,9 +27,8 @@ def send_validator_email(to_email, smtp_user, smtp_pass):
         print(f"[ERROR] Failed to send to {to_email}: {e}")
 
 if __name__ == "__main__":
-    # To use this, fill in your actual email credentials
-    SENDER_EMAIL = os.environ.get("SENDER_EMAIL", "your_email@gmail.com")
-    SENDER_PASS = os.environ.get("SENDER_PASS", "your_app_password")
+    SENDER_EMAIL = os.environ["SENDER_EMAIL"]
+    SENDER_PASS = os.environ["SENDER_PASS"]
     
     # You can loop through a trusted contact list here
     contacts = [

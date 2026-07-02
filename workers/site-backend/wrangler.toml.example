@@ -7,7 +7,7 @@ CHAIN_ID = "synthos-l1-devnet"
 RELAY_URLS = "https://synthos-peer-registry.jamesishamwilliams.workers.dev"
 
 # Optional:
-# CONTACT_WEBHOOK_URL = "https://example.com/webhook"
+# CONTACT_WEBHOOK_URL = ""
 #
 # Optional validator override:
 # VALIDATORS_JSON = '[{"name":"synthos-validator-11","url":"https://synthos-validator-11.jamesishamwilliams.workers.dev","role":"validator"}]'

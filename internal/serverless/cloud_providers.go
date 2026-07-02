@@ -151,7 +151,7 @@ func NewValidatorDiscovery(network string) *ValidatorDiscovery {
 // DiscoverValidators queries DNS for validators on the network.
 // In DNS, validators are stored as TXT records:
 //
-//	synthos-{network}-validators.example.com TXT "pk1=abc123... pk2=def456..."
+//	validators.synthos.local TXT "pk1=ed25519-public-key-1 pk2=ed25519-public-key-2"
 //
 // This creates a permission-less validator registry - anyone can update their
 // DNS records to add themselves to the network.
@@ -211,16 +211,12 @@ func ExampleWorkerCode() string {
 // Minimal Cloudflare Worker validator
 import { ServerlessValidator } from './validator.js'
 
-const MY_PUBLIC_KEY = 'YOUR_PUBLIC_KEY_HEX_HERE'
-const MY_PRIVATE_KEY = 'YOUR_PRIVATE_KEY_HEX_HERE'  // Never hardcode in production!
-const S3_BUCKET = 'https://bucket.example.com'
-
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     const validator = new ServerlessValidator(
-      MY_PUBLIC_KEY,
-      MY_PRIVATE_KEY,
-      new S3MessageBucket(S3_BUCKET),
+      env.SYNTHOS_VALIDATOR_PUBLIC_KEY,
+      env.SYNTHOS_VALIDATOR_PRIVATE_KEY,
+      new S3MessageBucket(env.SYNTHOS_MESSAGE_BUCKET_URL),
       'mainnet'
     )
 

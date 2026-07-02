@@ -110,10 +110,10 @@ Every role should follow this pattern:
 from src.core.base_role import Role
 from src.core.event import Event, EventType
 
-class YourRole(Role):
+class ValidatorObserverRole(Role):
     def __init__(self, agent):
         super().__init__(agent)
-        self.name = "YourRole"
+        self.name = "ValidatorObserverRole"
         self.version = "1.0.0"
         
     async def initialize(self):

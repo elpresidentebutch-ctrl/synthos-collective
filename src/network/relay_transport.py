@@ -7,9 +7,9 @@ discovery and HTTP gossip for message delivery.
 
 Usage:
     transport = RelayTransport(
-        registry_url="https://synthos-peer-registry.example.workers.dev",
+        registry_url="https://synthos-peer-registry.jamesishamwilliams.workers.dev",
         self_name="synthos-py-agent-1",
-        self_url="https://my-agent.example.com",
+        self_url="",
     )
     await transport.start()
 

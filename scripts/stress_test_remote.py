@@ -338,12 +338,12 @@ async def main():
     config = load_config(args.nodes_file)
     nodes = parse_nodes(config)
 
-    # Check for placeholder URLs
-    placeholder_nodes = [n for n in nodes if "YOUR_TUNNEL_DOMAIN" in n.url]
-    if placeholder_nodes:
-        print("ERROR: Node URLs still have placeholder values.")
-        print("Edit config/nodes.json and replace YOUR_TUNNEL_DOMAIN with your actual")
-        print("Cloudflare tunnel domains (e.g., synthos-validator-11.cfargotunnel.com)")
+    # Check for unset URLs
+    unset_nodes = [n for n in nodes if not n.url or n.url == "about:blank"]
+    if unset_nodes:
+        print("ERROR: Node URLs are unset.")
+        print("Edit config/nodes.json with the actual validator URLs.")
+        print("Cloudflare tunnel domains are visible in Zero Trust under Networks -> Tunnels.")
         print()
         print("To find your tunnel URLs:")
         print("  1. Go to https://one.dash.cloudflare.com/ -> Networks -> Tunnels")

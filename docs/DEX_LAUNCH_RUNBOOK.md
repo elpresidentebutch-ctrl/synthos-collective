@@ -26,18 +26,18 @@ Local Hardhat ports are developer-only rehearsal infrastructure, not the SYNTHOS
 Set real production addresses before deploying outside local Hardhat:
 
 ```powershell
-$env:FOUNDER_WALLET="0x..."
-$env:FOUNDER_OPS_WALLET="0x..."
-$env:DEX_LIQUIDITY_WALLET="0x..."
-$env:COMMUNITY_WALLET="0x..."
-$env:TREASURY_WALLET="0x..."
+$env:FOUNDER_WALLET="0x170D6650347ff4DaAC78B359e09C59a0e2D9758c"
+$env:FOUNDER_OPS_WALLET="0xaedA7Eda4b49C93291293B050E3D5DDF595e7a1E"
+$env:DEX_LIQUIDITY_WALLET="0x5a2d2495c3834aD6443f0B134999A3B20CaF9060"
+$env:COMMUNITY_WALLET="0xbb38733E80A1CD00268D3cB0BC1Da545122D4660"
+$env:TREASURY_WALLET="0xdAE5DF4807274D7a115bB5078c94b023453A05F5"
 ```
 
 Set the adopter Merkle checkpoint if rewards should be gated by a published allowlist:
 
 ```powershell
 $env:ADOPTER_MERKLE_FILE="merkle/adopter-merkle.json"
-$env:ADOPTER_MERKLE_ROOT="0x..."
+$env:ADOPTER_MERKLE_ROOT="0x0000000000000000000000000000000000000000000000000000000000000000"
 $env:ADOPTER_MERKLE_GATE_REQUIRED="true"
 ```
 
@@ -57,13 +57,11 @@ The builder writes `merkle/adopter-merkle.json`. The deploy script auto-loads th
 npx hardhat run scripts/set-adopter-merkle-root.js --network synthos
 ```
 
-Set real asset pools as JSON:
+Set real asset pools as JSON only after the asset contracts are deployed and
+verified. Until then, deploy with no initial pools:
 
 ```powershell
-$env:DEX_POOLS_JSON='[
-  {"symbol":"B12","address":"0xAssetToken","syn":"10000000","asset":"50000","decimals":18},
-  {"symbol":"NGOT","address":"0xAssetToken","syn":"5000000","asset":"100000","decimals":18}
-]'
+$env:DEX_POOLS_JSON='[]'
 ```
 
 The deployment script will refuse to invent mock assets on production networks.

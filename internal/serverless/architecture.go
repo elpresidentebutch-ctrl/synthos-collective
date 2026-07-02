@@ -62,7 +62,7 @@ COMPONENTS:
 
 2. VALIDATOR DISCOVERY (DNS + Bootstrap)
    ├─ DNS TXT records list validator public keys
-   │  └─ synthos-mainnet-validators.example.com TXT "pk1=... pk2=..."
+   │  └─ validators.synthos.local TXT "pk1=ed25519-public-key-1 pk2=ed25519-public-key-2"
    ├─ Bootstrap list hardcoded in client config
    └─ Validators found in messages reference more validators
 
@@ -104,7 +104,7 @@ VALIDATOR DISCOVERY (Permission-less):
 
 Option 1: DNS-based
   └─ User creates DNS TXT record:
-     synthos-mainnet-validators.example.com TXT "pk=abc123def456..."
+     validators.synthos.local TXT "pk=ed25519-public-key"
      (Network automatically reads this via DNS lookup)
 
 Option 2: Bootstrap-based
@@ -161,7 +161,7 @@ EXAMPLE DEPLOYMENT:
      "Changes": [{
        "Action": "UPSERT",
        "ResourceRecordSet": {
-         "Name": "synthos-mainnet-validators.example.com",
+         "Name": "validators.synthos.local",
          "Type": "TXT",
          "TTL": 300,
          "ResourceRecords": [

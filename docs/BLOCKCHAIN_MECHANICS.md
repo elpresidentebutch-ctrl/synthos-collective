@@ -247,7 +247,7 @@ These define the chain identity:
 | Parameter | Value | Notes |
 |-----------|-------|-------|
 | ChainID | 1+ | Unique per network (testnet != mainnet) |
-| GenesisHash | 0x... | First block hash, immutable |
+| GenesisHash | 0x0000000000000000000000000000000000000000000000000000000000000000 | First block hash, immutable |
 | GenesisTime | 1970-01-01 | Deterministic, not wall-clock |
 | MaxBlockSize | 1MB | Max bytes per block |
 | BlockInterval | 5-12s | Target time between blocks |

@@ -22,7 +22,7 @@ This is the **next gate after incubator acceptance**: moving from “credible pr
 - [ ] From `contracts/`: `npm install` then `npm run compile` — all contracts compile.
 - [ ] `npx hardhat test` passes (includes deploy smoke in `contracts/test/smoke.test.js`).
 - [ ] **Ordered deploy** rehearsed: `npm run deploy:synthos:local` or  
-  `npx hardhat run scripts/deploy-synthos.js --network <your_testnet>`.
+  `npx hardhat run scripts/deploy-synthos.js --network synthos`.
 - [ ] **Address registry**: commit or securely store JSON emitted by the deploy script; keep **explorer links** and **ABI hashes** alongside.
 - [ ] **Block explorer verification** for every immutable contract (`hardhat verify` or explorer UI).
 

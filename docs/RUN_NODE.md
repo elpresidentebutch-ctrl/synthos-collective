@@ -18,7 +18,7 @@ By default this looks for:
 You can override the node config path with:
 
 ```bash
-SYNTHOS_CONFIG=path/to/your-node.json go run ./cmd/synthosd
+SYNTHOS_CONFIG=config/node.json go run ./cmd/synthosd
 ```
 
 ### 2. Configure a node
@@ -52,8 +52,8 @@ When `synthosd` is running, it exposes the same HTTP API as `cmd/rpcnode` on the
 
 - `GET /health` — lightweight liveness (`{"ok":true,"service":"synthos-rpc"}`)
 - `GET /status`
-- `GET /account?address=0x...` — account balance and next nonce
-- `GET /balance?address=0x...`
+- `GET /account?address=0x170D6650347ff4DaAC78B359e09C59a0e2D9758c` — account balance and next nonce
+- `GET /balance?address=0x170D6650347ff4DaAC78B359e09C59a0e2D9758c`
 - `GET /mempool`
 - `POST /submitTx` (JSON body)
 
@@ -64,7 +64,7 @@ Use the batch funding helper once you have a funded sender key and validator add
 ```bash
 go run ./cmd/fundvalidators \
   --rpc http://127.0.0.1:8080 \
-  --priv 0xYOUR_PRIVATE_KEY \
+  --priv "$SYNTHOS_FUNDER_PRIVATE_KEY" \
   --addresses-file validators.txt \
   --amount 1000 \
   --fee 1 \

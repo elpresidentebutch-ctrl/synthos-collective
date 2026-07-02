@@ -209,11 +209,11 @@ Round 1:
 │  └─ state_root = hash(account_states after TX1, TX2, TX3)
 │
 └─ All Agents Synchronize:
-   └─ Agent 0: chain_height = 1, state_root = 0x...
-   └─ Agent 1: chain_height = 1, state_root = 0x...
-   └─ Agent 2: chain_height = 1, state_root = 0x...
-   └─ Agent 3: chain_height = 1, state_root = 0x...
-   └─ Agent 4: chain_height = 1, state_root = 0x...
+   └─ Agent 0: chain_height = 1, state_root = 0x1111111111111111111111111111111111111111111111111111111111111111
+   └─ Agent 1: chain_height = 1, state_root = 0x1111111111111111111111111111111111111111111111111111111111111111
+   └─ Agent 2: chain_height = 1, state_root = 0x1111111111111111111111111111111111111111111111111111111111111111
+   └─ Agent 3: chain_height = 1, state_root = 0x1111111111111111111111111111111111111111111111111111111111111111
+   └─ Agent 4: chain_height = 1, state_root = 0x1111111111111111111111111111111111111111111111111111111111111111
       ✓ CONSENSUS: All agents agree on canonical chain
 ```
 
@@ -306,7 +306,7 @@ Block Stages:
 ChainState = {
     "chain_height": 42,                    # How many blocks
     "chain_tip": Block(...),              # Last block
-    "state_root": "0x1234...",            # Merkle of state
+    "state_root": "0x1234000000000000000000000000000000000000000000000000000000000000",            # Merkle of state
     "total_transactions": 1250,            # Total ever confirmed
     "pending_transactions": [TX, TX, ...], # Waiting for block
     "unconfirmed_blocks": [Block, ...],    # Voting in progress

@@ -9,5 +9,5 @@
   "timestamp": "2026-04-07T12:01:00Z",
   "state_root_before": "root-hash-xyz",
   "state_root_after": "root-hash-abc",
-  "signature": "sig-abcdef123456..."
+  "signature": "sig-abcdef123456abcdef123456abcdef123456abcdef123456abcdef123456abcd"
 }

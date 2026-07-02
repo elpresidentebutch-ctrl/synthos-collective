@@ -27,11 +27,11 @@ Free tier: 100K requests/day, built-in KV database, no Docker needed.
    | Variable | Value | Description |
    |----------|-------|-------------|
    | `WORKER_NAME` | `deno-validator-1` | Unique name for this validator (used in round-robin proposer selection) |
-   | `SELF_URL` | `https://<your-project>.deno.dev` | The public URL Deno assigns your project |
+   | `SELF_URL` | Deno Deploy assigned project URL | The public URL Deno assigns your project |
 
 6. Click **Deploy**.
 
-Your validator is live at `https://<your-project>.deno.dev`.
+Your validator is live at the project URL shown in the Deno Deploy dashboard.
 
 ---
 
@@ -57,7 +57,7 @@ deployctl deploy --project=synthos-validator deploy/deno/validator.ts \
 ## 4. Verify It's Running
 
 ```bash
-curl https://<your-project>.deno.dev/status
+curl $SELF_URL/status
 ```
 
 Expected response:
@@ -115,7 +115,7 @@ To integrate your Deno validator with existing nodes, add its URL to the `FALLBA
 const FALLBACK_PEERS = [
   "https://synthos-validator-11.jamesishamwilliams.workers.dev",
   // ... existing peers ...
-  "https://your-project.deno.dev",  // <-- add your Deno validator
+  process.env.SELF_URL,  // Deno validator URL from deployment environment
 ];
 ```
 
@@ -127,7 +127,7 @@ Also add it to the mobile validator's peer list (Peers tab → Add Peer) so phon
 
 1. Open the mobile validator PWA.  
 2. Go to the **Peers** tab.  
-3. Enter `https://<your-project>.deno.dev` and tap **Add Peer**.  
+3. Enter the Deno Deploy project URL and tap **Add Peer**.  
 4. Tap **Sync Now** on the Chain tab.
 
 Your phone will now pull blocks from the Deno validator in addition to any other peers.

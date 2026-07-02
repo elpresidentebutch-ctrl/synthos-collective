@@ -29,7 +29,7 @@ type submitResponse struct {
 
 func main() {
 	rpcURL := flag.String("rpc", "", "base RPC URL, e.g. http://127.0.0.1:8080")
-	privHex := flag.String("priv", "", "sender ed25519 private key hex (0x...)")
+	privHex := flag.String("priv", "", "sender ed25519 private key hex")
 	addresses := flag.String("addresses", "", "comma-separated validator addresses")
 	addressesFile := flag.String("addresses-file", "", "path to a newline-delimited address file")
 	amount := flag.Uint64("amount", 0, "amount to send to each validator")
@@ -42,7 +42,7 @@ func main() {
 	flag.Parse()
 
 	if *rpcURL == "" || *privHex == "" || *amount == 0 {
-		fmt.Fprintln(os.Stderr, "usage: fundvalidators --rpc http://host:8080 --priv 0x... --amount N [--addresses 0x...,0x...] [--addresses-file validators.txt]")
+		fmt.Fprintln(os.Stderr, "usage: fundvalidators --rpc http://127.0.0.1:8080 --priv $SYNTHOS_FUNDER_PRIVATE_KEY --amount N [--addresses-file validators.txt]")
 		os.Exit(2)
 	}
 

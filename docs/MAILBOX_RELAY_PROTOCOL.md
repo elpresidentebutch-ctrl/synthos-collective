@@ -51,8 +51,8 @@ Content-Type: application/json
   "cloud": "desktop-silent",
   "mode": "absolute_silence_outbound_only",
   "inbound_ports": 0,
-  "hardware_commitment": "0x...",
-  "heartbeat_proof": "0x..."
+  "hardware_commitment": "0x1111111111111111111111111111111111111111111111111111111111111111",
+  "heartbeat_proof": "0x2222222222222222222222222222222222222222222222222222222222222222"
 }
 ```
 

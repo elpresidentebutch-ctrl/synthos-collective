@@ -61,7 +61,7 @@ Backward-compatible single-relay variables are still accepted:
 
 ```powershell
 $env:SYNTHOS_REGISTRY_URL="https://synthos-peer-registry.jamesishamwilliams.workers.dev"
-$env:SYNTHOS_MAILBOX_URL="https://your-mailbox-relay.example"
+$env:SYNTHOS_MAILBOX_URL="https://synthos-peer-registry.jamesishamwilliams.workers.dev"
 ```
 
 The preferred variable is `SYNTHOS_RELAY_URLS`. The node sends heartbeats to every relay and polls every mailbox. If one relay disappears, the node keeps operating against the rest.

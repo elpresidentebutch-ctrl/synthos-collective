@@ -3,9 +3,12 @@ main = "src/index.js"
 compatibility_date = "2024-12-01"
 
 # KV namespace for persistent peer storage
-[[kv_namespaces]]
-binding = "PEERS"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+# Create and bind the namespace before deploy:
+# wrangler kv namespace create PEERS
+# Then uncomment this block with the generated id.
+# [[kv_namespaces]]
+# binding = "PEERS"
+# id = "generated-by-wrangler-kv-namespace-create-PEERS"
 
 # Environment variable: shared secret for validator registration
 # Set via: wrangler secret put REGISTRY_SECRET

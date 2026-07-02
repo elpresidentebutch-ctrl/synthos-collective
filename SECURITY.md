@@ -101,7 +101,7 @@ This document establishes the security model, threat framework, and controls for
 ### Format
 - ED25519 private: 32 bytes = 64 hex chars
 - Public key: derived from private
-- Example: `AGENT_PRIVATE_KEY=CHANGEME_USE_A_SECRET_STORE`
+- Example: `AGENT_PRIVATE_KEY=secret-store://synthos/agent/current`
 
 ---
 

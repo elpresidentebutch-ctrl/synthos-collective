@@ -11,15 +11,15 @@ import (
 )
 
 func main() {
-	priv := flag.String("priv", "", "ed25519 private key hex (0x...)")
-	to := flag.String("to", "", "recipient address (0x...)")
+	priv := flag.String("priv", "", "ed25519 private key hex")
+	to := flag.String("to", "", "recipient address")
 	amount := flag.Uint64("amount", 0, "amount")
 	fee := flag.Uint64("fee", 0, "fee")
 	nonce := flag.Uint64("nonce", 0, "nonce")
 	flag.Parse()
 
 	if *priv == "" || *to == "" || *amount == 0 {
-		fmt.Fprintln(os.Stderr, "usage: txgen --priv 0x.. --to 0x.. --amount N [--fee N] [--nonce N]")
+		fmt.Fprintln(os.Stderr, "usage: txgen --priv $SYNTHOS_PRIVATE_KEY --to 0x170D6650347ff4DaAC78B359e09C59a0e2D9758c --amount N [--fee N] [--nonce N]")
 		os.Exit(2)
 	}
 

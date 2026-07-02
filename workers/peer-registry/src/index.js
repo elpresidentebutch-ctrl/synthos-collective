@@ -80,7 +80,7 @@ export default {
 
       return json({
         service: "synthos-peer-registry",
-        endpoints: ["/health", "/register", "/register-identity", "/peers", "/peers/active", "/mailbox?name=YOUR_NODE", "/signal?id=YOUR_PEER_ID"],
+        endpoints: ["/health", "/register", "/register-identity", "/peers", "/peers/active", "/mailbox?name=synthos-validator-11", "/signal?id=synthos-peer-1"],
       });
     } catch (e) {
       return json({ error: e.message }, 500);

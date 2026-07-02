@@ -83,7 +83,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   return json({
     service: "synthos-signaling",
-    endpoints: ["/health", "/signal?id=YOUR_PEER_ID", "/register", "/peers", "/peers/active"],
+    endpoints: ["/health", "/signal?id=synthos-peer-1", "/register", "/peers", "/peers/active"],
   });
 });
 

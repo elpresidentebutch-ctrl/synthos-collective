@@ -35,19 +35,20 @@ Custody rules:
 
 ## 2. Environment
 
-Copy `.env.example` to `.env`, then fill in production values:
+Use the generated local env file for custody-controlled launch values:
 
 ```text
-PRIVATE_KEY=0x...
-SYNTHOS_RPC_URL=https://...
+# PRIVATE_KEY is intentionally stored only in .synthos/mainnet-secrets/2026-07-02/
+SYNTHOS_RPC_URL=http://localhost:8545
+SYNTHOS_CHAIN_ID=1234
 TIMELOCK_MIN_DELAY=172800
-MULTISIG_OWNERS=0xOwner1,0xOwner2,0xOwner3
+MULTISIG_OWNERS=0xa68A867aAdA7652eB3FeE14a5786B92317139B5c,0xD37fCaa767d425E11Ff7CC074B4e924cE60DcdB5,0x6DA0C1148c76b5bd77EF5455eE79A6859e865290
 MULTISIG_THRESHOLD=2
-TREASURY_WALLET=0xTreasuryOrMultisig
+TREASURY_WALLET=0xdAE5DF4807274D7a115bB5078c94b023453A05F5
 ```
 
-If `TREASURY_WALLET` is omitted, the deploy script uses the sovereign multisig
-as the Treasury Recycling Burn destination.
+The private key is stored only in `.synthos/mainnet-secrets/2026-07-02/`
+and `contracts/.env.mainnet.local`, both ignored by Git.
 
 ## 3. Required Local Checks
 

@@ -211,7 +211,7 @@ if not is_deterministic:
     )
 
 # Verify output against expected hash
-expected_hash = "sha256_abc123..."
+expected_hash = "sha256_abc123000000000000000000000000000000000000000000000000000000"
 await deterministic.verify_output_hash(outputs, expected_hash)
 ```
 

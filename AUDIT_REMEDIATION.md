@@ -135,7 +135,7 @@ ErrInsufficientReputation
 ```bash
 # Development
 AGENT_ID=agent_local_001
-AGENT_PRIVATE_KEY=CHANGEME_USE_A_SECRET_STORE
+AGENT_PRIVATE_KEY=secret-store://synthos/agent/current
 
 # Production (HSM)
 HSM_ENABLED=true
@@ -143,7 +143,7 @@ HSM_SLOT=0
 HSM_PIN=1234
 
 # Key Rotation
-AGENT_PRIVATE_KEY_PREVIOUS=...
+AGENT_PRIVATE_KEY_PREVIOUS=secret-store://synthos/agent/previous
 KEY_ROTATION_ACTIVE_UNTIL=2026-04-25
 ```
 

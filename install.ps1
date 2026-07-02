@@ -1,4 +1,4 @@
-# Usage: irm https://your-domain.com/install.ps1 | iex
+# Usage: .\install.ps1
 param($Relay = "http://127.0.0.1:8080")
 
 $ErrorActionPreference = 'Stop'

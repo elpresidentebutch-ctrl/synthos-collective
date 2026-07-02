@@ -50,7 +50,7 @@ npx serve workers/mobile-validator
 deno run --allow-net --allow-read https://deno.land/std/http/file_server.ts workers/mobile-validator
 ```
 
-Open `http://<your-ip>:8000` on your phone (must be on the same Wi-Fi).
+Open the desktop machine's LAN address on your phone, for example `http://192.168.1.10:8000` after confirming the address with `ipconfig` on Windows. The phone must be on the same Wi-Fi.
 
 ### Option C — Install as a home-screen app
 

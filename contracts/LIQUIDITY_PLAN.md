@@ -16,14 +16,21 @@ unseeded remainder is sent to `DEX_LIQUIDITY_WALLET` as the liquidity reserve.
 
 ## Production Pool Config
 
-Set `DEX_POOLS_JSON` in `.env`:
+Set `DEX_POOLS_JSON` in `.env`. Until real verified asset contracts exist,
+launch with no initial pools:
+
+```json
+[]
+```
+
+When a verified asset exists, use that real deployed contract address:
 
 ```json
 [
   {
     "symbol": "B12",
     "name": "B12 Asset",
-    "address": "0xAssetToken",
+    "address": "0x0000000000000000000000000000000000000000",
     "syn": "10000000",
     "asset": "50000",
     "decimals": 18
