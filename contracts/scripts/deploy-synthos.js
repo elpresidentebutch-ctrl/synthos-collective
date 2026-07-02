@@ -61,6 +61,15 @@ function parseAddressList(value) {
     .filter(Boolean);
 }
 
+function parsePaymentAssets(value) {
+  if (!value) return [];
+  const parsed = JSON.parse(value);
+  if (!Array.isArray(parsed)) {
+    throw new Error("EARLY_ADOPTER_PAYMENT_ASSETS_JSON must be an array");
+  }
+  return parsed;
+}
+
 function requireBytes32(value, label) {
   if (!/^0x[a-fA-F0-9]{64}$/.test(value || "")) {
     throw new Error(`${label} must be a bytes32 hex string`);
@@ -125,6 +134,18 @@ async function main() {
   const dexLiquidityWallet = process.env.DEX_LIQUIDITY_WALLET || deployer.address;
   const communityWallet = process.env.COMMUNITY_WALLET || deployer.address;
   const configuredTreasuryWallet = process.env.TREASURY_WALLET || null;
+  const earlyAdopterSaleAllocation = ethers.parseUnits(
+    process.env.EARLY_ADOPTER_SALE_ALLOCATION || "2000000000",
+    18
+  );
+  const earlyAdopterMinPurchase = ethers.parseUnits(
+    process.env.EARLY_ADOPTER_MIN_SYN_PURCHASE || "20",
+    18
+  );
+  const earlyAdopterMaxPerWallet = ethers.parseUnits(
+    process.env.EARLY_ADOPTER_MAX_SYN_PER_WALLET || "100000",
+    18
+  );
 
   const activationReward = ethers.parseUnits(process.env.ADOPTER_ACTIVATION_REWARD || "500", 18);
   const heartbeatReward = ethers.parseUnits(process.env.ADOPTER_HEARTBEAT_REWARD || "1000", 18);
@@ -197,6 +218,15 @@ async function main() {
 
   const complianceRegistry = await deployContract("SYNTHOSComplianceRegistry");
 
+  const earlyAdopterSale = await deployContract("SYNTHOSEarlyAdopterSale", [
+    syn.address,
+    complianceRegistry.address,
+    treasuryWallet,
+    earlyAdopterSaleAllocation,
+    earlyAdopterMinPurchase,
+    earlyAdopterMaxPerWallet,
+  ]);
+
   const adopterRewards = await deployContract("SYNTHOSAdopterRewards", [
     syn.address,
     activationReward,
@@ -232,7 +262,12 @@ async function main() {
     [founderOpsWallet, await token.FOUNDER_OPERATIONS_GRANT(), "FOUNDER_OPERATIONS_GRANT"],
     [immuneNodeRewardsRecipient, await token.IMMUNE_NODE_REWARDS_ALLOCATION(), "IMMUNE_NODE_REWARDS"],
     [validatorRewardsRecipient, await token.VALIDATOR_REWARDS_ALLOCATION(), "VALIDATOR_REWARDS"],
-    [communityWallet, await token.COMMUNITY_ALLOCATION(), "COMMUNITY"],
+    [earlyAdopterSale.address, earlyAdopterSaleAllocation, "COMMUNITY_EARLY_ADOPTER_SALE"],
+    [
+      communityWallet,
+      (await token.COMMUNITY_ALLOCATION()) - earlyAdopterSaleAllocation,
+      "COMMUNITY",
+    ],
     [treasuryWallet, await token.ECOSYSTEM_TREASURY_ALLOCATION(), "ECOSYSTEM_TREASURY"],
     [strategicReserveWallet, await token.STRATEGIC_RESERVE_ALLOCATION(), "STRATEGIC_RESERVE"],
   ];
@@ -241,6 +276,30 @@ async function main() {
     const tx = await token.allocateTokens(recipient, amount, label);
     await tx.wait();
     console.log(`${label}: ${ethers.formatUnits(amount, 18)} SYN -> ${recipient}`);
+  }
+
+  console.log("Configuring early adopter crypto sale");
+  const earlyAdopterPaymentAssets = parsePaymentAssets(process.env.EARLY_ADOPTER_PAYMENT_ASSETS_JSON);
+  for (const asset of earlyAdopterPaymentAssets) {
+    if (!asset.address || !asset.usdPrice) {
+      throw new Error("Each early adopter payment asset needs address and usdPrice");
+    }
+    tx = await earlyAdopterSale.contract.setPaymentAsset(
+      asset.address,
+      asset.enabled !== false,
+      ethers.parseUnits(String(asset.usdPrice), 18)
+    );
+    await tx.wait();
+    console.log(`EARLY_ADOPTER_PAYMENT_ASSET ${asset.symbol || asset.address}: ${asset.address} @ $${asset.usdPrice}`);
+  }
+  if (process.env.EARLY_ADOPTER_NATIVE_PAYMENTS_ENABLED === "true") {
+    const nativeUsdPrice = ethers.parseUnits(
+      process.env.EARLY_ADOPTER_NATIVE_USD_PRICE || "0",
+      18
+    );
+    tx = await earlyAdopterSale.contract.setNativePaymentConfig(true, nativeUsdPrice);
+    await tx.wait();
+    console.log(`EARLY_ADOPTER_NATIVE_PAYMENTS: enabled @ $${process.env.EARLY_ADOPTER_NATIVE_USD_PRICE || "0"}`);
   }
 
   console.log("Configuring DEX pools");
@@ -304,6 +363,7 @@ async function main() {
   const ownableTransfers = [
     ["SynCoin", token],
     ["SYNTHOSAdopterRewards", adopterRewards.contract],
+    ["SYNTHOSEarlyAdopterSale", earlyAdopterSale.contract],
     ["SYNTHOSDex", dex.contract],
     ["SYNTHOSComplianceRegistry", complianceRegistry.contract],
   ];
@@ -363,6 +423,7 @@ async function main() {
       staking: staking.address,
       rewardDistributor: rewardDistributor.address,
       complianceRegistry: complianceRegistry.address,
+      earlyAdopterSale: earlyAdopterSale.address,
       adopterRewards: adopterRewards.address,
       dex: dex.address,
       founderVesting: founderVesting.address,
@@ -377,6 +438,16 @@ async function main() {
       merkleGateRequired: merkle.gateRequired,
       merkleSource: merkle.source,
       merkleLeafCount: merkle.count,
+    },
+    earlyAdopterSale: {
+      tokenPriceUsd: "0.05",
+      allocation: ethers.formatUnits(earlyAdopterSaleAllocation, 18),
+      minSynPurchase: ethers.formatUnits(earlyAdopterMinPurchase, 18),
+      maxSynPerWallet: ethers.formatUnits(earlyAdopterMaxPerWallet, 18),
+      treasuryWallet,
+      paymentAssets: earlyAdopterPaymentAssets,
+      nativePaymentsEnabled: process.env.EARLY_ADOPTER_NATIVE_PAYMENTS_ENABLED === "true",
+      nativeUsdPrice: process.env.EARLY_ADOPTER_NATIVE_USD_PRICE || "0",
     },
     custody: {
       timelockAdmin: launchMultisig.address,
