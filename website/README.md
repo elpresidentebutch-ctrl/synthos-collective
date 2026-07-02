@@ -14,6 +14,9 @@ https://rpc.ishamwilliamsblockchains.com
 Set `window.SYNTHOS_RPC_URL` before loading `assets/explorer.js` to point the
 explorer at a different SYNTHOS RPC endpoint.
 
+`assets/early-access-sale.js` is the Lovable drop-in widget for the automatic
+SYN early adopter sale page. See `LOVABLE_EARLY_ACCESS_WIRING.md`.
+
 ## Local Preview
 
 From the repository root:
