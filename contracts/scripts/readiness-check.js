@@ -44,6 +44,7 @@ async function main() {
   const SynCoin = await ethers.getContractFactory("SynCoin");
   const token = await SynCoin.deploy();
   await token.waitForDeployment();
+  const [deployer] = await ethers.getSigners();
 
   assertEq(await token.INITIAL_SUPPLY(), units(expected.totalSupply), "total supply");
   assertEq(await token.IMMUNE_NODE_REWARDS_ALLOCATION(), units(expected.immuneNodeRewards), "immune node rewards bucket");
@@ -60,6 +61,23 @@ async function main() {
   assertEq(await token.immuneRewardsBreakdownTotal(), await token.IMMUNE_NODE_REWARDS_ALLOCATION(), "immune sub-buckets total");
   assertEq(await token.validatorRewardsBreakdownTotal(), await token.VALIDATOR_REWARDS_ALLOCATION(), "validator sub-buckets total");
   assertEq(await token.communityRewardsBreakdownTotal(), await token.COMMUNITY_ALLOCATION(), "community sub-buckets total");
+  if ((await token.treasury()) !== deployer.address) {
+    throw new Error("treasury recycling burn treasury mismatch");
+  }
+  console.log("ok treasury recycling burn treasury");
+  const approvedSpendTypes = [
+    ["protocol spend", await token.SPEND_PROTOCOL()],
+    ["node registration spend", await token.SPEND_NODE_REGISTRATION()],
+    ["service fee spend", await token.SPEND_SERVICE_FEE()],
+    ["marketplace spend", await token.SPEND_MARKETPLACE()],
+  ];
+  for (const [label, spendType] of approvedSpendTypes) {
+    assertEq(
+      await token.approvedTreasuryRecyclingSpendTypes(spendType),
+      true,
+      label
+    );
+  }
 
   const AdopterRewards = await ethers.getContractFactory("SYNTHOSAdopterRewards");
   const adopterRewards = await AdopterRewards.deploy(
@@ -77,7 +95,6 @@ async function main() {
   assertEq(await adopterRewards.TEN_YEAR_HEARTBEAT_PERIODS(), expected.immuneHeartbeatPeriods, "immune heartbeat period count");
   assertEq(await adopterRewards.TEN_YEAR_MAX_REWARD_PER_OPERATOR(), units(expected.immuneTenYearMaxPerOperator), "immune ten-year max per operator");
 
-  const [deployer] = await ethers.getSigners();
   const Staking = await ethers.getContractFactory("SYNTHOSStaking");
   const staking = await Staking.deploy(await token.getAddress(), deployer.address);
   await staking.waitForDeployment();

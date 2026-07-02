@@ -1,5 +1,7 @@
 # SYNTHOS Collective - Agent-Native L1 (Go)
 
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
+
 > **Security status:** active research and hardening. This repository is not
 > approved for mainnet or custody of valuable assets. Previously committed
 > founder, community, wallet, and validator keys are compromised and must never
@@ -603,6 +605,6 @@ SYNTHOS Collective - 2026
 
 ## Legal notice
 
-SYNTHOS Collective, SYNTHOS, and related names, marks, documentation, and technical materials in this document are the **exclusive property of James G. Isham Williams, Sr.** Unauthorized reproduction, distribution, or commercial use without express written permission is prohibited except as allowed under applicable open-source licenses for identified files. No rights are waived.
+SYNTHOS Collective source code and repository materials covered by the root `LICENSE` file are licensed under the **Apache License, Version 2.0**. SYNTHOS Collective, SYNTHOS, and related names, marks, and logos remain reserved except as permitted by that license for describing the origin of the work.
 
 This document is informational only and is not legal, financial, or investment advice. The canonical legal notice is in **docs/LEGAL_NOTICE.md** in the SYNTHOS Collective repository.

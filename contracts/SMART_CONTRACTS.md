@@ -8,6 +8,48 @@ This document covers the complete smart contract suite for SYNTHOS. The contract
 
 ## SYNTHOS Smart Contracts
 
+### 0. SYNTHOSMultisig (Sovereign Admin)
+
+**File**: `contracts/synthos/SYNTHOSMultisig.sol`  
+**Purpose**: Launch custody for timelock administration, treasury control, and emergency admin actions.
+
+#### Features
+
+- **Fixed Owner Set**: Owners are declared at deployment for a small, auditable launch surface
+- **Threshold Execution**: Transactions require `M-of-N` owner confirmations
+- **Revocable Confirmations**: Owners can revoke before execution
+- **Arbitrary Calls**: Can administer timelock, treasury, and ownable contracts
+- **Open Execution**: Once threshold is met, any account can execute the approved transaction
+
+#### Key Functions
+
+```solidity
+function submitTransaction(address target, uint256 value, bytes calldata data)
+function confirmTransaction(uint256 transactionId)
+function revokeConfirmation(uint256 transactionId)
+function executeTransaction(uint256 transactionId)
+function getTransaction(uint256 transactionId)
+function owners()
+```
+
+#### Launch Custody Model
+
+The deployment flow uses the sovereign multisig as the admin for
+`SYNTHOSTimelock`. Governance is granted proposer/canceller rights on the
+timelock, and execution is open once a queued operation matures. After bootstrap
+configuration and genesis allocations, owner-controlled launch contracts are
+transferred to the timelock:
+
+- `SynCoin`
+- `SYNTHOSAdopterRewards`
+- `SYNTHOSDex`
+- `SYNTHOSComplianceRegistry`
+
+This leaves the deployer as a bootstrap actor only, not the continuing launch
+administrator.
+
+---
+
 ### 1. SynCoin (AI-native)
 
 **File**: `contracts/synthos/SynCoin.sol`  
@@ -17,7 +59,7 @@ This document covers the complete smart contract suite for SYNTHOS. The contract
 #### Features
 
 - **Standard ERC-20**: Full compliance with ERC20 interface
-- **Burnable**: Token burning for deflationary mechanisms
+- **Treasury Recycling Burn**: Protocol spending burns half and recycles half to treasury
 - **Snapshots**: Point-in-time balance snapshots for governance voting
 - **Pausable**: Emergency pause functionality
 - **Allocation System**: Structured token distribution
@@ -43,8 +85,14 @@ function balanceOfAtSnapshot(address account, uint256 snapshotId) public view re
 // Allocate tokens to ecosystem participants
 function allocateTokens(address recipient, uint256 amount, string memory allocationType)
 
-// Burn tokens (deflationary mechanism)
-function burn(uint256 amount)
+// Protocol spend sink: burns half, recycles half to treasury
+function treasuryRecyclingBurn(uint256 amount, bytes32 spendType)
+
+// Update the treasury destination for recycled spend
+function setTreasury(address newTreasury)
+
+// Approve or revoke a protocol spend category
+function setTreasuryRecyclingSpendType(bytes32 spendType, bool approved)
 
 // Emergency pause mechanism
 function pause() / unpause()
@@ -65,7 +113,21 @@ synCoin.allocateTokens(
     1_000_000 * 10**18,
     "ECOSYSTEM"
 );
+
+// Spend SYN into the protocol sink
+// 500 SYN is burned, 500 SYN returns to treasury
+synCoin.treasuryRecyclingBurn(
+    1_000 * 10**18,
+    synCoin.SPEND_PROTOCOL()
+);
 ```
+
+Default approved Treasury Recycling Burn spend categories are:
+
+- `SPEND_PROTOCOL`
+- `SPEND_NODE_REGISTRATION`
+- `SPEND_SERVICE_FEE`
+- `SPEND_MARKETPLACE`
 
 ---
 

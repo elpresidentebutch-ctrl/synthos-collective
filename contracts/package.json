@@ -2,10 +2,12 @@
   "name": "@synthos-collective/contracts",
   "version": "0.1.0",
   "private": true,
+  "license": "Apache-2.0",
   "scripts": {
     "compile": "hardhat compile",
     "test": "hardhat test",
     "deploy:synthos:local": "hardhat run scripts/deploy-synthos.js --network hardhat",
+    "postdeploy:check": "hardhat run scripts/post-deploy-check.js",
     "readiness:contracts": "hardhat compile && hardhat test && hardhat run scripts/readiness-check.js --network hardhat",
     "merkle:adopters": "node scripts/build-adopter-merkle.js",
     "merkle:adopters:example": "node scripts/build-adopter-merkle.js merkle/adopters.example.json merkle/adopter-merkle.example.json",

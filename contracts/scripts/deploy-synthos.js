@@ -54,6 +54,13 @@ function envBool(name, fallback) {
   return process.env[name] === "true";
 }
 
+function parseAddressList(value) {
+  return (value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function requireBytes32(value, label) {
   if (!/^0x[a-fA-F0-9]{64}$/.test(value || "")) {
     throw new Error(`${label} must be a bytes32 hex string`);
@@ -106,7 +113,8 @@ async function main() {
   console.log("Deploying SYNTHOS contracts");
   console.log(`Network: ${network.name}`);
 
-  const [deployer] = await ethers.getSigners();
+  const signers = await ethers.getSigners();
+  const [deployer] = signers;
   console.log(`Deployer: ${deployer.address}`);
 
   const founderWallet = process.env.FOUNDER_WALLET || deployer.address;
@@ -116,8 +124,7 @@ async function main() {
   const validatorRewardsWallet = process.env.VALIDATOR_REWARDS_WALLET || null;
   const dexLiquidityWallet = process.env.DEX_LIQUIDITY_WALLET || deployer.address;
   const communityWallet = process.env.COMMUNITY_WALLET || deployer.address;
-  const treasuryWallet = process.env.TREASURY_WALLET || deployer.address;
-  const strategicReserveWallet = process.env.STRATEGIC_RESERVE_WALLET || treasuryWallet;
+  const configuredTreasuryWallet = process.env.TREASURY_WALLET || null;
 
   const activationReward = ethers.parseUnits(process.env.ADOPTER_ACTIVATION_REWARD || "500", 18);
   const heartbeatReward = ethers.parseUnits(process.env.ADOPTER_HEARTBEAT_REWARD || "1000", 18);
@@ -125,8 +132,29 @@ async function main() {
   const maxHeartbeatClaims = BigInt(process.env.ADOPTER_MAX_HEARTBEAT_CLAIMS_PER_OPERATOR || process.env.ADOPTER_MAX_HEARTBEAT_CLAIMS || "120");
   const merkle = adopterMerkleConfig();
 
+  const defaultMultisigOwners = signers.slice(0, Math.min(signers.length, 3)).map((signer) => signer.address);
+  const multisigOwners = parseAddressList(process.env.MULTISIG_OWNERS);
+  const launchMultisigOwners = multisigOwners.length > 0 ? multisigOwners : defaultMultisigOwners;
+  const launchMultisigThreshold = BigInt(
+    process.env.MULTISIG_THRESHOLD || (launchMultisigOwners.length >= 2 ? "2" : "1")
+  );
+  const launchMultisig = await deployContract("SYNTHOSMultisig", [
+    launchMultisigOwners,
+    launchMultisigThreshold,
+  ]);
+  console.log(`MULTISIG_OWNERS: ${launchMultisigOwners.join(",")}`);
+  console.log(`MULTISIG_THRESHOLD: ${launchMultisigThreshold.toString()}`);
+
+  const treasuryWallet = configuredTreasuryWallet || launchMultisig.address;
+  const strategicReserveWallet = process.env.STRATEGIC_RESERVE_WALLET || treasuryWallet;
+
   const syn = await deployContract("SynCoin");
   const token = syn.contract;
+  if ((await token.treasury()) !== treasuryWallet) {
+    const tx = await token.setTreasury(treasuryWallet);
+    await tx.wait();
+    console.log(`TREASURY_RECYCLING_BURN_TREASURY: ${treasuryWallet}`);
+  }
 
   const timelockMinDelay = BigInt(
     process.env.TIMELOCK_MIN_DELAY || (network.name === "hardhat" ? "60" : "172800")
@@ -134,7 +162,7 @@ async function main() {
   const timelock = await deployContract("SYNTHOSTimelock", [
     timelockMinDelay,
     [deployer.address],
-    [deployer.address],
+    [ethers.ZeroAddress],
     deployer.address,
   ]);
 
@@ -142,6 +170,21 @@ async function main() {
     syn.address,
     timelock.address,
   ]);
+
+  console.log("Configuring timelock custody");
+  const proposerRole = await timelock.contract.PROPOSER_ROLE();
+  const adminRole = await timelock.contract.TIMELOCK_ADMIN_ROLE();
+  let tx = await timelock.contract.grantRole(proposerRole, governance.address);
+  await tx.wait();
+  tx = await timelock.contract.revokeRole(proposerRole, deployer.address);
+  await tx.wait();
+  tx = await timelock.contract.grantRole(adminRole, launchMultisig.address);
+  await tx.wait();
+  tx = await timelock.contract.renounceRole(adminRole, deployer.address);
+  await tx.wait();
+  console.log(`TIMELOCK_ADMIN: ${launchMultisig.address}`);
+  console.log(`TIMELOCK_PROPOSER: ${governance.address}`);
+  console.log("TIMELOCK_EXECUTOR: open");
 
   const staking = await deployContract("SYNTHOSStaking", [
     syn.address,
@@ -165,7 +208,7 @@ async function main() {
   const dex = await deployContract("SYNTHOSDex", [syn.address]);
 
   if (merkle.root !== ethers.ZeroHash || merkle.gateRequired) {
-    const tx = await adopterRewards.contract.setAdopterMerkleRoot(
+    tx = await adopterRewards.contract.setAdopterMerkleRoot(
       merkle.root,
       merkle.gateRequired
     );
@@ -225,7 +268,7 @@ async function main() {
     const assetAmount = ethers.parseUnits(pool.asset, pool.decimals || 18);
     seededSynLiquidity += synAmount;
 
-    let tx = await token.allocateTokens(deployer.address, synAmount, "LOCKED_DEX_LIQUIDITY");
+    tx = await token.allocateTokens(deployer.address, synAmount, "LOCKED_DEX_LIQUIDITY");
     await tx.wait();
     tx = await dex.contract.createPool(assetAddress);
     await tx.wait();
@@ -252,9 +295,24 @@ async function main() {
 
   const remainingDexLiquidity = (await token.LOCKED_DEX_LIQUIDITY_ALLOCATION()) - seededSynLiquidity;
   if (remainingDexLiquidity > 0n) {
-    const tx = await token.allocateTokens(dexLiquidityWallet, remainingDexLiquidity, "LOCKED_DEX_LIQUIDITY_RESERVE");
+    tx = await token.allocateTokens(dexLiquidityWallet, remainingDexLiquidity, "LOCKED_DEX_LIQUIDITY_RESERVE");
     await tx.wait();
     console.log(`LOCKED_DEX_LIQUIDITY_RESERVE: ${ethers.formatUnits(remainingDexLiquidity, 18)} SYN -> ${dexLiquidityWallet}`);
+  }
+
+  console.log("Transferring launch contract ownership to timelock");
+  const ownableTransfers = [
+    ["SynCoin", token],
+    ["SYNTHOSAdopterRewards", adopterRewards.contract],
+    ["SYNTHOSDex", dex.contract],
+    ["SYNTHOSComplianceRegistry", complianceRegistry.contract],
+  ];
+  for (const [label, contract] of ownableTransfers) {
+    if ((await contract.owner()) !== timelock.address) {
+      tx = await contract.transferOwnership(timelock.address);
+      await tx.wait();
+    }
+    console.log(`${label}_OWNER: ${timelock.address}`);
   }
 
   const deployment = {
@@ -272,8 +330,21 @@ async function main() {
       cmoLaunchGrant: "3000000000",
       strategicReserve: "3000000000",
       founderLaunchAllocation: "500000000",
+      treasuryRecyclingBurn: {
+        protocolSpendBurnShare: "50%",
+        protocolSpendTreasuryShare: "50%",
+        treasury: treasuryWallet,
+        approvedSpendTypes: [
+          "PROTOCOL_SPEND",
+          "NODE_REGISTRATION",
+          "SERVICE_FEE",
+          "MARKETPLACE",
+        ],
+      },
     },
     wallets: {
+      multisigOwners: launchMultisigOwners,
+      multisigThreshold: launchMultisigThreshold.toString(),
       founderWallet,
       founderOpsWallet,
       cmoWallet,
@@ -285,6 +356,7 @@ async function main() {
       strategicReserveWallet,
     },
     contracts: {
+      multisig: launchMultisig.address,
       synCoin: syn.address,
       timelock: timelock.address,
       governance: governance.address,
@@ -305,6 +377,12 @@ async function main() {
       merkleGateRequired: merkle.gateRequired,
       merkleSource: merkle.source,
       merkleLeafCount: merkle.count,
+    },
+    custody: {
+      timelockAdmin: launchMultisig.address,
+      timelockProposer: governance.address,
+      timelockExecutor: "open",
+      ownableContractOwner: timelock.address,
     },
     founderReleaseTimestamps: FOUNDER_RELEASE_TIMESTAMPS,
   };

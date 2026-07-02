@@ -1,6 +1,7 @@
 {
   "name": "synthos-peer-registry",
   "private": true,
+  "license": "Apache-2.0",
   "dependencies": {
     "wrangler": "^4.79.0"
   }

@@ -1,9 +1,8 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Pausable.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Snapshot.sol";
 
@@ -16,7 +15,7 @@ import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Snapshot.sol";
  * Production ownership should be transferred to governance, a timelock, or
  * a multisig before any public launch.
  */
-contract SynCoin is ERC20, ERC20Burnable, ERC20Pausable, ERC20Snapshot, Ownable {
+contract SynCoin is ERC20, ERC20Pausable, ERC20Snapshot, Ownable {
     uint256 public constant INITIAL_SUPPLY = 100_000_000_000 * 10 ** 18;
 
     uint256 public constant IMMUNE_NODE_REWARDS_ALLOCATION = 22_000_000_000 * 10 ** 18;
@@ -55,12 +54,37 @@ contract SynCoin is ERC20, ERC20Burnable, ERC20Pausable, ERC20Snapshot, Ownable 
     uint256 public constant FOUNDER_FIRST_RELEASE_MONTH = 5;
     uint256 public constant FOUNDER_FIRST_RELEASE_DAY = 29;
 
+    bytes32 public constant SPEND_PROTOCOL = keccak256("PROTOCOL_SPEND");
+    bytes32 public constant SPEND_NODE_REGISTRATION = keccak256("NODE_REGISTRATION");
+    bytes32 public constant SPEND_SERVICE_FEE = keccak256("SERVICE_FEE");
+    bytes32 public constant SPEND_MARKETPLACE = keccak256("MARKETPLACE");
+
+    address public treasury;
+
+    uint256 public totalTreasuryRecyclingBurned;
+    uint256 public totalTreasuryRecycled;
+
     mapping(string => uint256) public allocatedByType;
+    mapping(bytes32 => bool) public approvedTreasuryRecyclingSpendTypes;
+    mapping(bytes32 => uint256) public treasuryRecyclingBurnedByType;
+    mapping(bytes32 => uint256) public treasuryRecycledByType;
 
     event TokensAllocated(
         address indexed recipient,
         uint256 amount,
         string allocationType
+    );
+
+    event TreasuryUpdated(address indexed previousTreasury, address indexed newTreasury);
+    event TreasuryRecyclingSpendTypeUpdated(bytes32 indexed spendType, bool approved);
+
+    event TreasuryRecyclingBurn(
+        address indexed spender,
+        address indexed treasury,
+        uint256 amount,
+        uint256 burnedAmount,
+        uint256 recycledAmount,
+        bytes32 indexed spendType
     );
 
     event GenesisAllocationDeclared(string allocationType, uint256 amount);
@@ -80,6 +104,11 @@ contract SynCoin is ERC20, ERC20Burnable, ERC20Pausable, ERC20Snapshot, Ownable 
         require(validatorRewardsBreakdownTotal() == VALIDATOR_REWARDS_ALLOCATION, "validator breakdown mismatch");
         require(communityRewardsBreakdownTotal() == COMMUNITY_ALLOCATION, "community breakdown mismatch");
 
+        treasury = _msgSender();
+        _setTreasuryRecyclingSpendType(SPEND_PROTOCOL, true);
+        _setTreasuryRecyclingSpendType(SPEND_NODE_REGISTRATION, true);
+        _setTreasuryRecyclingSpendType(SPEND_SERVICE_FEE, true);
+        _setTreasuryRecyclingSpendType(SPEND_MARKETPLACE, true);
         _mint(address(this), INITIAL_SUPPLY);
 
         emit GenesisAllocationDeclared("IMMUNE_NODE_REWARDS", IMMUNE_NODE_REWARDS_ALLOCATION);
@@ -106,6 +135,61 @@ contract SynCoin is ERC20, ERC20Burnable, ERC20Pausable, ERC20Snapshot, Ownable 
         _transfer(address(this), recipient, amount);
 
         emit TokensAllocated(recipient, amount, allocationType);
+    }
+
+    function setTreasury(address newTreasury) external onlyOwner {
+        require(newTreasury != address(0), "invalid treasury");
+
+        address previousTreasury = treasury;
+        treasury = newTreasury;
+
+        emit TreasuryUpdated(previousTreasury, newTreasury);
+    }
+
+    function setTreasuryRecyclingSpendType(
+        bytes32 spendType,
+        bool approved
+    ) external onlyOwner {
+        require(spendType != bytes32(0), "invalid spend type");
+
+        _setTreasuryRecyclingSpendType(spendType, approved);
+    }
+
+    function treasuryRecyclingBurn(
+        uint256 amount,
+        bytes32 spendType
+    ) external {
+        require(amount > 1, "amount too small");
+        require(treasury != address(0), "treasury not set");
+        require(balanceOf(_msgSender()) >= amount, "insufficient balance");
+        require(approvedTreasuryRecyclingSpendTypes[spendType], "spend type not approved");
+
+        uint256 burnedAmount = amount / 2;
+        uint256 recycledAmount = amount - burnedAmount;
+
+        totalTreasuryRecyclingBurned += burnedAmount;
+        totalTreasuryRecycled += recycledAmount;
+        treasuryRecyclingBurnedByType[spendType] += burnedAmount;
+        treasuryRecycledByType[spendType] += recycledAmount;
+        _burn(_msgSender(), burnedAmount);
+        _transfer(_msgSender(), treasury, recycledAmount);
+
+        emit TreasuryRecyclingBurn(
+            _msgSender(),
+            treasury,
+            amount,
+            burnedAmount,
+            recycledAmount,
+            spendType
+        );
+    }
+
+    function _setTreasuryRecyclingSpendType(
+        bytes32 spendType,
+        bool approved
+    ) internal {
+        approvedTreasuryRecyclingSpendTypes[spendType] = approved;
+        emit TreasuryRecyclingSpendTypeUpdated(spendType, approved);
     }
 
     function pause() external onlyOwner {

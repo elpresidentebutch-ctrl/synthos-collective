@@ -6,9 +6,9 @@
 
 ## Ownership
 
-**SYNTHOS Collective**, **SYNTHOS**, associated logos, names, documentation, specifications, source code, white papers, and related technical and creative materials are the **exclusive property of James G. Isham Williams, Sr.**
+**SYNTHOS Collective**, **SYNTHOS**, associated logos, names, documentation, specifications, source code, white papers, and related technical and creative materials are the property of James G. Isham Williams, Sr.
 
-No license to use, reproduce, distribute, modify, or create derivative works is granted by the mere publication of materials in a repository or document, except to the extent expressly stated under an applicable **open-source license** attached to specific files (for example, SPDX or `LICENSE` terms for code). Rights not expressly granted are reserved.
+Source code and repository materials covered by the root `LICENSE` file are made available under the **Apache License, Version 2.0**. No license to use SYNTHOS Collective names, logos, trademarks, service marks, or product names is granted except as permitted by that license for describing the origin of the work. Rights not expressly granted are reserved.
 
 ## Unauthorized use
 
@@ -41,7 +41,7 @@ Use this block at the end of README files, `docs/*.md`, and internal white paper
 
 ## Legal notice
 
-SYNTHOS Collective, SYNTHOS, and related names, marks, documentation, and technical materials in this document are the **exclusive property of James G. Isham Williams, Sr.** Unauthorized reproduction, distribution, or commercial use without express written permission is prohibited except as allowed under applicable open-source licenses for identified files. No rights are waived.
+SYNTHOS Collective source code and repository materials covered by the root `LICENSE` file are licensed under the **Apache License, Version 2.0**. SYNTHOS Collective, SYNTHOS, and related names, marks, and logos remain reserved except as permitted by that license for describing the origin of the work.
 
 This document is informational only and is not legal, financial, or investment advice. The canonical legal notice is in **docs/LEGAL_NOTICE.md** in the SYNTHOS Collective repository.
 ```
