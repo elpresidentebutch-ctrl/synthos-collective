@@ -5,6 +5,15 @@ This folder is the replacement public website surface for SYNTHOS Collective.
 It is a static site that connects directly to self-hosted SYNTHOS RPC
 validator endpoints listed in `assets/app.js`.
 
+`explorer.html` is the public block explorer. By default it reads:
+
+```text
+https://rpc.ishamwilliamsblockchains.com
+```
+
+Set `window.SYNTHOS_RPC_URL` before loading `assets/explorer.js` to point the
+explorer at a different SYNTHOS RPC endpoint.
+
 ## Local Preview
 
 From the repository root:
@@ -39,6 +48,7 @@ The site reports the validator network honestly:
 - state root
 - next proposer
 - heartbeat freshness
+- blocks, transactions, and mempool activity through the block explorer
 
 If validators are reachable but heartbeats are stale, the site says so instead
 of claiming the network is fully healthy.

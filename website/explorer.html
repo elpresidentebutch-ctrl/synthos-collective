@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SYNTHOS Block Explorer</title>
+  <meta name="description" content="SYNTHOS Collective block explorer for chain status, blocks, transactions, and mempool activity." />
+  <link rel="stylesheet" href="./assets/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./index.html" aria-label="SYNTHOS Collective">
+      <span class="brand-mark"></span>
+      <span>SYNTHOS Collective</span>
+    </a>
+    <nav aria-label="Primary">
+      <a href="./index.html#network">Network</a>
+      <a href="./chain.html">Chain</a>
+      <a href="./dex.html">DEX</a>
+      <a href="./api.html">API</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="band explorer-shell">
+      <div class="section-head">
+        <p class="eyebrow">Block Explorer</p>
+        <h1>SYNTHOS ledger</h1>
+        <p class="lede">Browse the live SYNTHOS chain from the public RPC endpoint.</p>
+      </div>
+
+      <div class="explorer-controls" aria-label="Explorer controls">
+        <label>
+          <span>RPC URL</span>
+          <input id="rpcUrl" type="url" autocomplete="off" spellcheck="false" />
+        </label>
+        <label>
+          <span>From Height</span>
+          <input id="fromHeight" type="number" min="0" step="1" value="0" />
+        </label>
+        <button id="explorerRefresh" class="button primary" type="button">Refresh</button>
+      </div>
+
+      <div class="metrics explorer-metrics" aria-label="Chain facts">
+        <div><span id="explorerChainId">-</span><small>Chain ID</small></div>
+        <div><span id="explorerHeight">-</span><small>Height</small></div>
+        <div><span id="explorerMempool">-</span><small>Mempool</small></div>
+        <div><span id="explorerFinalized">-</span><small>Finalized</small></div>
+      </div>
+
+      <div class="explorer-grid">
+        <section class="network-board explorer-panel" aria-labelledby="blocksTitle">
+          <div class="board-head">
+            <div>
+              <p class="label">Latest Blocks</p>
+              <h2 id="blocksTitle">Waiting for RPC</h2>
+            </div>
+            <input id="explorerSearch" class="search-input" type="search" aria-label="Search hash, transaction, or address" />
+          </div>
+          <div id="blockList" class="block-list"></div>
+        </section>
+
+        <aside class="operator-panel explorer-detail" aria-labelledby="detailTitle">
+          <p class="label">Selected Block</p>
+          <h2 id="detailTitle">No block selected</h2>
+          <dl class="chain-facts compact-facts">
+            <div><dt>Hash</dt><dd id="detailHash">-</dd></div>
+            <div><dt>Parent</dt><dd id="detailParent">-</dd></div>
+            <div><dt>Timestamp</dt><dd id="detailTime">-</dd></div>
+            <div><dt>Proposer</dt><dd id="detailProposer">-</dd></div>
+            <div><dt>State Root</dt><dd id="detailState">-</dd></div>
+          </dl>
+          <h3>Transactions</h3>
+          <div id="txList" class="tx-list"></div>
+        </aside>
+      </div>
+
+      <section class="band mempool-band" aria-labelledby="mempoolTitle">
+        <div class="section-head">
+          <p class="eyebrow">Pending Activity</p>
+          <h2 id="mempoolTitle">Mempool</h2>
+        </div>
+        <div id="mempoolList" class="tx-list wide"></div>
+      </section>
+    </section>
+  </main>
+
+  <footer>
+    <span>SYNTHOS Collective</span>
+    <span id="explorerUpdated">Waiting for live status</span>
+  </footer>
+
+  <script src="./assets/explorer.js"></script>
+</body>
+</html>

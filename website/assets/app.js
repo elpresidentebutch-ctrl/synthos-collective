@@ -1,10 +1,6 @@
-const validators = [
-  { name: "synthos-validator-10", url: "http://127.0.0.1:8080" },
-  { name: "synthos-validator-11", url: "http://127.0.0.1:8080" },
-  { name: "synthos-validator-12", url: "http://127.0.0.1:8081" },
-  { name: "synthos-validator-13", url: "http://127.0.0.1:8082" },
-  { name: "synthos-validator-14", url: "http://127.0.0.1:8083" },
-  { name: "synthos-validator-15", url: "http://127.0.0.1:8083" },
+const publicRpcUrl = window.SYNTHOS_RPC_URL || "https://rpc.ishamwilliamsblockchains.com";
+const validators = window.SYNTHOS_VALIDATORS || [
+  { name: "synthos-public-rpc", url: publicRpcUrl },
 ];
 
 const heartbeatMaxAgeMs = 60 * 60 * 1000;
@@ -33,12 +29,13 @@ async function checkValidator(validator) {
     latency: 0,
   };
   try {
-    const [health, status, heartbeat, peers, blocks] = await Promise.all([
+    const [health, status, heartbeat, peers, blocks, mempool] = await Promise.all([
       fetchJSON(`${validator.url}/health`),
       fetchJSON(`${validator.url}/status`),
       fetchJSON(`${validator.url}/heartbeat`).catch(() => null),
       fetchJSON(`${validator.url}/peers`).catch(() => null),
       fetchJSON(`${validator.url}/blocks?from=0`).catch(() => null),
+      fetchJSON(`${validator.url}/mempool`).catch(() => null),
     ]);
     proof.reachable = true;
     proof.health = health;
@@ -46,6 +43,7 @@ async function checkValidator(validator) {
     proof.heartbeat = heartbeat;
     proof.peers = peers;
     proof.blockCount = blocks?.count || 0;
+    proof.mempoolSize = mempool?.size ?? mempool?.tx?.length ?? status?.mempool ?? 0;
     if (heartbeat?.last_check) {
       const age = Date.now() - Date.parse(heartbeat.last_check);
       proof.heartbeatAge = Number.isFinite(age) ? age : null;
@@ -61,6 +59,16 @@ async function checkValidator(validator) {
 function shortHash(value) {
   if (!value || value === "-") return "-";
   return value.length > 20 ? `${value.slice(0, 18)}...` : value;
+}
+
+function html(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;",
+  })[char]);
 }
 
 function ageLabel(ms) {
@@ -81,9 +89,9 @@ function nodeClass(proof) {
 function renderTopology(proofs) {
   el("topology").innerHTML = proofs.map((proof) => `
     <div class="node-dot ${nodeClass(proof)}">
-      <strong>${proof.name}</strong>
-      <span>${proof.reachable ? `h${proof.status.height} | ${proof.latency}ms` : proof.error}</span>
-      <span>${proof.fresh ? "fresh heartbeat" : "heartbeat stale"}</span>
+      <strong>${html(proof.name)}</strong>
+      <span>${proof.reachable ? `h${html(proof.status.height)} | ${html(proof.latency)}ms` : html(proof.error)}</span>
+      <span>${proof.heartbeat ? (proof.fresh ? "fresh heartbeat" : "heartbeat stale") : "RPC status source"}</span>
     </div>
   `).join("");
 }
@@ -91,12 +99,12 @@ function renderTopology(proofs) {
 function renderValidators(proofs) {
   el("validatorList").innerHTML = proofs.map((proof) => `
     <article class="validator-card">
-      <strong>${proof.name}</strong>
+      <strong>${html(proof.name)}</strong>
       <dl>
         <div><dt>Status</dt><dd>${proof.reachable ? "online" : "offline"}</dd></div>
-        <div><dt>Height</dt><dd>${proof.status?.height ?? "-"}</dd></div>
-        <div><dt>Tip</dt><dd>${shortHash(proof.status?.tip)}</dd></div>
-        <div><dt>Heartbeat</dt><dd>${proof.fresh ? "fresh" : ageLabel(proof.heartbeatAge)}</dd></div>
+        <div><dt>Height</dt><dd>${html(proof.status?.height ?? "-")}</dd></div>
+        <div><dt>Tip</dt><dd>${html(shortHash(proof.status?.tip))}</dd></div>
+        <div><dt>Mempool</dt><dd>${html(proof.mempoolSize ?? "-")}</dd></div>
       </dl>
     </article>
   `).join("");
@@ -113,12 +121,12 @@ function renderSummary(proofs) {
   );
   const required = Math.ceil((validators.length * 2) / 3);
   const majority = reachable.length >= required;
-  const allLive = reachable.length === validators.length && fresh.length === validators.length && converged;
+  const allLive = reachable.length === validators.length && converged;
 
   el("networkVerdict").textContent = allLive
-    ? "Live testnet healthy"
+    ? "Live RPC healthy"
     : majority && converged
-      ? "Converged, needs heartbeat repair"
+      ? "RPC reachable"
       : "Network attention needed";
   el("reachableCount").textContent = `${reachable.length}/${validators.length}`;
   el("chainHeight").textContent = first?.height ?? "-";
