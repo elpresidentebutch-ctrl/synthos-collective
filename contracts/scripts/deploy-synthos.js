@@ -135,7 +135,7 @@ async function main() {
   const communityWallet = process.env.COMMUNITY_WALLET || deployer.address;
   const configuredTreasuryWallet = process.env.TREASURY_WALLET || null;
   const earlyAdopterSaleAllocation = ethers.parseUnits(
-    process.env.EARLY_ADOPTER_SALE_ALLOCATION || "2000000000",
+    process.env.EARLY_ADOPTER_SALE_ALLOCATION || "250000000",
     18
   );
   const earlyAdopterMinPurchase = ethers.parseUnits(
@@ -171,6 +171,13 @@ async function main() {
 
   const syn = await deployContract("SynCoin");
   const token = syn.contract;
+  const earlyAdopterCampaignBudget = await token.COMMUNITY_EARLY_ADOPTER_CAMPAIGNS();
+  if (earlyAdopterSaleAllocation > earlyAdopterCampaignBudget) {
+    throw new Error("EARLY_ADOPTER_SALE_ALLOCATION exceeds COMMUNITY_EARLY_ADOPTER_CAMPAIGNS");
+  }
+  const earlyAdopterCampaignReserve = earlyAdopterCampaignBudget - earlyAdopterSaleAllocation;
+  const communityOperatingAllocation = (await token.COMMUNITY_ALLOCATION()) - earlyAdopterCampaignBudget;
+
   if ((await token.treasury()) !== treasuryWallet) {
     const tx = await token.setTreasury(treasuryWallet);
     await tx.wait();
@@ -262,12 +269,9 @@ async function main() {
     [founderOpsWallet, await token.FOUNDER_OPERATIONS_GRANT(), "FOUNDER_OPERATIONS_GRANT"],
     [immuneNodeRewardsRecipient, await token.IMMUNE_NODE_REWARDS_ALLOCATION(), "IMMUNE_NODE_REWARDS"],
     [validatorRewardsRecipient, await token.VALIDATOR_REWARDS_ALLOCATION(), "VALIDATOR_REWARDS"],
-    [earlyAdopterSale.address, earlyAdopterSaleAllocation, "COMMUNITY_EARLY_ADOPTER_SALE"],
-    [
-      communityWallet,
-      (await token.COMMUNITY_ALLOCATION()) - earlyAdopterSaleAllocation,
-      "COMMUNITY",
-    ],
+    [earlyAdopterSale.address, earlyAdopterSaleAllocation, "COMMUNITY_EARLY_ADOPTER_SALE_TRANCHE_1"],
+    [communityWallet, earlyAdopterCampaignReserve, "COMMUNITY_EARLY_ADOPTER_CAMPAIGN_RESERVE"],
+    [communityWallet, communityOperatingAllocation, "COMMUNITY"],
     [treasuryWallet, await token.ECOSYSTEM_TREASURY_ALLOCATION(), "ECOSYSTEM_TREASURY"],
     [strategicReserveWallet, await token.STRATEGIC_RESERVE_ALLOCATION(), "STRATEGIC_RESERVE"],
   ];
@@ -441,7 +445,10 @@ async function main() {
     },
     earlyAdopterSale: {
       tokenPriceUsd: "0.05",
+      maxTrancheValueUsd: "12500000",
+      sourceBucket: "COMMUNITY_EARLY_ADOPTER_CAMPAIGNS",
       allocation: ethers.formatUnits(earlyAdopterSaleAllocation, 18),
+      campaignReserve: ethers.formatUnits(earlyAdopterCampaignReserve, 18),
       minSynPurchase: ethers.formatUnits(earlyAdopterMinPurchase, 18),
       maxSynPerWallet: ethers.formatUnits(earlyAdopterMaxPerWallet, 18),
       treasuryWallet,

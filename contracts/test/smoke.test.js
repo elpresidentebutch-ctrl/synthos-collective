@@ -578,7 +578,7 @@ describe("post-incubation compile / deploy smoke", function () {
       await syn.getAddress(),
       await compliance.getAddress(),
       treasury.address,
-      ethers.parseUnits("2000000000", 18),
+      ethers.parseUnits("250000000", 18),
       ethers.parseUnits("20", 18),
       ethers.parseUnits("100000", 18)
     );
@@ -693,7 +693,7 @@ describe("post-incubation compile / deploy smoke", function () {
       await syn.getAddress(),
       await compliance.getAddress(),
       treasury.address,
-      ethers.parseUnits("2000000000", 18),
+      ethers.parseUnits("250000000", 18),
       ethers.parseUnits("20", 18),
       0
     );
