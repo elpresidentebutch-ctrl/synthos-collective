@@ -1,6 +1,8 @@
 require("@nomicfoundation/hardhat-toolbox");
 require("dotenv").config();
 
+const envChainId = (name, fallback) => Number(process.env[name] || fallback);
+
 module.exports = {
   solidity: {
     version: "0.8.20",
@@ -17,14 +19,14 @@ module.exports = {
     synthos: {
       url: process.env.SYNTHOS_RPC_URL || "http://localhost:8545",
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
-      chainId: 1234,
+      chainId: envChainId("SYNTHOS_CHAIN_ID", 1234),
       gasPrice: "auto",
     },
 
     gemini: {
       url: process.env.GEMINI_RPC_URL || "http://localhost:8546",
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
-      chainId: 2048,
+      chainId: envChainId("GEMINI_CHAIN_ID", 2048),
       gasPrice: "auto",
     },
 

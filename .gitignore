@@ -48,6 +48,9 @@ dist/
 .wrangler/
 .dev.vars
 wrangler.toml.bak
+.synthos/mainnet-secrets/
+contracts/.env.mainnet.local
+contracts/.env.mainnet.generated
 
 # Sovereign identity material (never commit)
 *_KEYS*.txt
