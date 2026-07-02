@@ -1,13 +1,13 @@
 """
 Synthos Relay Transport — HTTP-based peer protocol for Python agents.
 
-Connects Python agents to the same network as Cloudflare Workers validators,
+Connects Python agents to the same network as self-hosted SYNTHOS validators,
 Go nodes, and mobile PWA validators. Uses the shared peer registry for
 discovery and HTTP gossip for message delivery.
 
 Usage:
     transport = RelayTransport(
-        registry_url="https://synthos-peer-registry.jamesishamwilliams.workers.dev",
+        registry_url="http://127.0.0.1:8090",
         self_name="synthos-py-agent-1",
         self_url="",
     )

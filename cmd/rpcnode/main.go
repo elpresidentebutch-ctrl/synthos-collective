@@ -51,7 +51,7 @@ func main() {
 
 	// Wire up relay transport if registry URL is configured.
 	// This lets the Go node participate in the same network as
-	// Cloudflare Workers validators and mobile PWA validators.
+	// Self-hosted SYNTHOS validators and mobile PWA validators.
 	var relay *network.RelayTransport
 	registryURL := os.Getenv("REGISTRY_URL")
 	registryURLs := os.Getenv("REGISTRY_URLS")

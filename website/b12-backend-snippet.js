@@ -1,5 +1,5 @@
 (function () {
-  const API = window.SYNTHOS_API_URL || "https://synthos-site-backend.jamesishamwilliams.workers.dev";
+  const API = window.SYNTHOS_API_URL || "http://127.0.0.1:8090";
   const selectors = {
     verdict: "[data-synthos='network-verdict']",
     reachable: "[data-synthos='validators-reachable']",

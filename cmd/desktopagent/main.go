@@ -25,7 +25,7 @@ import (
 const (
 	defaultAgentAddr = "127.0.0.1:8788"
 	defaultRPCAddr   = "127.0.0.1:8080"
-	registryURL      = "https://synthos-peer-registry.jamesishamwilliams.workers.dev"
+	registryURL      = "http://127.0.0.1:8090"
 )
 
 type desktopAgent struct {

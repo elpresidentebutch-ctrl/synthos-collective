@@ -16,13 +16,13 @@ import (
 // RelayTransport is a fully outbound-only Transport that connects to the
 // Synthos peer registry over HTTP. It discovers peers dynamically, registers
 // itself for discovery by others, and sends messages by POSTing JSON to
-// peer HTTP endpoints — the same protocol the Cloudflare Workers validators
+// peer HTTP endpoints — the same protocol the self-hosted validators
 // and mobile PWA validators already speak.
 //
 // No inbound listener is required. Silent nodes register with an empty URL
 // and receive messages by polling /mailbox.
 type RelayTransport struct {
-	// RegistryURL is the peer registry (e.g. https://synthos-peer-registry.example.workers.dev).
+	// RegistryURL is the peer registry, for example http://127.0.0.1:8090.
 	RegistryURL string
 	// RegistryURLs is the decentralized relay set. Relays are transport only:
 	// messages must still be verified by signature and chain state.

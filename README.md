@@ -8,150 +8,60 @@ Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
 > be reused. The serverless validator proposal path and direct RPC DEX mutation
 > are disabled until they share the canonical authenticated state machine.
 
-## Overview
+## Cloudless Mainnet Path
 
-SYNTHOS Collective is an agent-native Layer-1 blockchain written in Go. The system treats agents as first-class network participants: agents propose/validate blocks, relay consensus messages, and maintain ledger state.
+SYNTHOS does not require a managed edge platform for launch. The canonical launch path is self-hosted:
 
-This repository contains a minimal L1 ledger (`internal/chain`), a 2/3+ vote finality engine (`internal/consensus`), agent identity/envelope signing (`internal/agent`, `internal/crypto`), and transports for message passing (`internal/network`), wired together as a node (`internal/node`).
-
-## 🚀 Revolutionary Serverless Decentralization
-
-**The Innovation: Run immune nodes as cloud functions. No ports. No permission. No firewalls.**
-
-SYNTHOS introduces a completely novel approach to blockchain decentralization: **immune nodes are serverless functions** that poll shared object storage instead of listening on ports.
+1. Run a self-hosted peer registry with `go run ./cmd/cloudless-registry -listen :8090`.
+2. Run validator nodes with `go run ./cmd/synthosd` using shared genesis and peer config.
+3. Expose RPC/status endpoints from operator-controlled infrastructure.
+4. Point websites, dashboards, and mobile clients at those self-hosted RPC and registry URLs.
 
 ### Why This Matters
 
-Traditional blockchains require:
-- ❌ Listening ports (blocked by firewalls)
-- ❌ Static IPs (NAT traversal headaches)
-- ❌ Central infrastructure (not truly decentralized)
-- ❌ High cost ($100-500/month per validator)
-- ❌ Constant uptime requirement
+Traditional chains often require centralized hosting assumptions, expensive validator infrastructure, or managed relay services. SYNTHOS keeps the launch path plain:
 
-SYNTHOS serverless immune nodes:
-- ✅ No listening ports (outbound-only polling)
-- ✅ Works behind ANY firewall (NAT, corporate, residential)
-- ✅ Real decentralization (no central relays/RPC needed)
-- ✅ **Cloudless operation path** (self-hosted registry plus SYNTHOS nodes; legacy Cloudflare adapters remain optional)
-- ✅ No uptime penalties (Byzantine tolerant)
+- No managed edge dependency.
+- No external serverless runtime dependency.
+- No vendor-owned message bucket.
+- No required managed Worker runtime.
+- Operators can run nodes on their own machines or servers.
+- The registry is a simple self-hosted compatibility API.
 
-### Complete Benefits Breakdown
+### Quick Proof Network
 
-| Feature | Benefit | Impact |
-|---------|---------|--------|
-| **Serverless Architecture** | No infrastructure to manage | Deploy in minutes, not days |
-| **Outbound-Only Communication** | Works behind any firewall | Anyone can run a validator (home, office, NAT) |
-| **Object Storage Backend** | Shared bulletin board model | Simple, proven design (like email/DNS) |
-| **Ed25519 Signatures** | Cryptographic identity | Cannot forge messages, tamper-proof |
-| **Byzantine Fault Tolerance** | 2/3+ quorum ensures safety | Network survives 1/3 malicious validators |
-| **Automatic Slashing** | Penalties for misbehavior | Validators have "skin in the game" |
-| **Free Tier Support** | 35+ validators cost $0 | Democratizes blockchain participation |
-| **Cloudflare/R2 Integration** | Globally distributed edge network | Sub-second latency worldwide |
-| **Permission-less Deployment** | No approval needed | True decentralization, no gatekeeping |
-| **Automatic Scaling** | Handles load spikes | No manual infrastructure tweaking |
-
-### How It Works
-
-```
-Every 5 seconds:
-Cloudflare Worker #1 ──┐
-Cloudflare Worker #2 ──┤
-... (up to 35+) ───────┼──→ Cloudflare R2 Bucket (Shared Bulletin Board)
-Cloudflare Worker #35 ─┘
-                          ↓
-     Immune Nodes poll, read blocks from other nodes
-     Verify signatures → Publish votes → Consensus reached
-     No listening ports. No firewall rules. Permission-less.
-```
-
-**Key advantage:** Anyone can add themselves to the network by publishing their public key. No central authority needed.
-
-### SYNTHOS vs Every Other Blockchain
-
-**This is the first and only blockchain of its kind.**
-
-| Feature | SYNTHOS Serverless | Ethereum | Solana | Cosmos |
-|---------|-------------------|----------|--------|--------|
-| **Cost per immune node** | **$0/month** | $100-500/month | $50-200/month | $50-500/month |
-| **Needs listening port** | ❌ No | ✅ Yes | ✅ Yes | ✅ Yes |
-| **Works behind firewall** | ✅ Always | ⚠️ Needs config | ⚠️ Needs config | ⚠️ Needs config |
-| **Works from corporate network** | ✅ Yes | ❌ Usually blocked | ❌ Usually blocked | ❌ Usually blocked |
-| **Works from residential NAT** | ✅ Yes | ⚠️ Difficult | ⚠️ Difficult | ⚠️ Difficult |
-| **Uptime penalty** | ❌ None | ✅ Slashing | ✅ Slashing | ✅ Slashing |
-| **Free tier support** | ✅ 35+ validators | ❌ $0 cost | ❌ $0 cost | ❌ $0 cost |
-| **Admin overhead** | Minimal | High | High | High |
-| **Decentralization** | Real (no relays) | Relay-dependent | Relay-dependent | Hub-spoke model |
-| **Horizontal scaling** | ✅ Automatic | Manual | Manual | Manual |
-| **Single vendor lock-in** | ❌ No (Cloudflare interchangeable) | Node software lock-in | Node software lock-in | Node software lock-in |
-
-### Key Advantages Over Current L1s
-
-**1. True Permission-less Participation**
-- Other blockchains: Need stable internet, firewall access, static IP
-- SYNTHOS: Works anywhere (cafes, cars, corporate networks, home WiFi)
-
-**2. Radical Cost Reduction**
-- Other blockchains: $100-500/month per node
-- SYNTHOS: $0 for 35+ immune nodes (free tier)
-- 1000 immune nodes: $2,100/month (vs $100k+ for Ethereum)
-
-**3. No Centralization Trade-off**
-- Other blockchains: Run fewer validators to control costs
-- SYNTHOS: Run 100+ validators for the same $0 cost
-- Result: Better decentralization at lower cost
-
-**4. Firewall-Proof Design**
-- Solves the "I can't run a node at my company" problem
-- Corporate networks can now participate directly
-- Home validators work instantly (no port forwarding needed)
-
-**5. Byzantine Tolerant by Default**
-- 1/3 of validators can fail/misbehave
-- Network keeps running
-- Slashing module penalizes attacks automatically
-
-**6. Zero Infrastructure Lock-in**
-- Use Cloudflare Workers, AWS Lambda, Google Cloud Functions, Azure, or any cloud provider
-- Can migrate providers without code changes
-- Not dependent on any single vendor
-
-### Activate 15 Immune Nodes for FREE
+Run the in-repo proof network:
 
 ```bash
-cd validator-deployment
-npm install && npm run generate-keys
-npm run deploy
-npm run logs:validator1
+go run ./cmd/l1netcheck
 ```
 
-That's it. 15 globally-distributed immune nodes reaching Byzantine consensus for **$0/month**.
+This launches validator processes, connects them over TCP, submits a signed transaction, finalizes a block, restarts one validator, and verifies convergence.
+
+### Start The Registry
+
+```bash
+go run ./cmd/cloudless-registry -listen :8090
+curl http://127.0.0.1:8090/health
+```
+
+Register a local RPC node:
+
+```bash
+curl -X POST http://127.0.0.1:8090/register \
+  -H "Content-Type: application/json" \
+  -d '{"name":"synthos-local-validator-1","url":"http://127.0.0.1:8080","cloud":"cloudless","mode":"reachable","inbound_ports":1}'
+```
 
 ### Architecture
 
-- **Immune Nodes:** Cloudflare Workers (serverless functions on free tier)
-- **Storage:** Cloudflare R2 (object storage, free first 10GB)
-- **Messages:** Read/write JSON to R2 with Ed25519 signatures
-- **Discovery:** Bootstrap list + DNS TXT records
-- **Consensus:** 2/3+ Byzantine Fault Tolerant (slashing for misbehavior)
-- **Latency:** 5-10 seconds per block (eventual consistency)
-- **Finality:** ~30 seconds (6 confirmed blocks)
+- **Validator nodes:** `cmd/synthosd` or built `synthosd` binaries.
+- **Peer discovery:** `cmd/cloudless-registry`.
+- **RPC/status:** self-hosted SYNTHOS node endpoints.
+- **Persistence:** node disk state and deployment JSON backups.
+- **Contracts:** deployed through the Hardhat contract stack in `contracts/`.
 
-See [validator-deployment/DEPLOYMENT_GUIDE.md](validator-deployment/DEPLOYMENT_GUIDE.md) for complete instructions.
-
-### Why This Is Revolutionary
-
-**SYNTHOS is the first and only blockchain that:**
-1. ✅ Requires zero listening ports (true firewall-proof)
-2. ✅ Works behind corporate/residential NAT (no config needed)
-3. ✅ Costs $0 to run 35+ validators (unbeatable price)
-4. ✅ Has zero infrastructure lock-in (any cloud provider)
-5. ✅ Achieves real decentralization without relay networks
-6. ✅ Doesn't penalize honest validators for uptime
-7. ✅ Works from internet cafes, corporate networks, home WiFi
-
-Every other L1 blockchain requires infrastructure setup, constant uptime, firewall rules, or expensive hardware. SYNTHOS works everywhere for free.
-
+See [docs/CLOUDLESS_NETWORK.md](docs/CLOUDLESS_NETWORK.md) and [docs/RUN_NODE.md](docs/RUN_NODE.md) for the operational path.
 ## Core Concept
 
 A SYNTHOS Operator utilizes a sovereign computational Agent with seven integrated roles:
@@ -175,18 +85,12 @@ THE COLLECTIVE/
 │   ├── agent/                    # Agent tool (work-in-progress)
 │   ├── wallet/                   # Wallet tool (work-in-progress)
 │   └── txgen/                    # Tx generator (work-in-progress)
-├── validator-deployment/         # 🚀 DEPLOY 15 VALIDATORS FOR FREE
-│   ├── src/index.js              # Cloudflare Worker validator
-│   ├── wrangler.toml             # 15 validator configs
-│   ├── scripts/                  # Key generation + testing
-│   └── DEPLOYMENT_GUIDE.md       # Complete setup instructions
 ├── internal/                     # Go implementation (L1 + agents + transport)
 │   ├── agent/
 │   ├── chain/
 │   ├── consensus/                # Slashing module (Byzantine detection)
 │   ├── crypto/
 │   ├── network/                  # Peer auth + TLS encryption
-│   ├── serverless/               # Serverless validator logic
 │   ├── node/
 │   ├── rpc/
 │   └── storage/
@@ -283,13 +187,7 @@ go run ./cmd/rpcnode
 
 ## Quick Start (Serverless - Recommended)
 
-Activate 15 immune nodes to Cloudflare in 3 commands:
-
-```bash
-cd validator-deployment
-npm install && npm run generate-keys
-npm run deploy
-```
+Run a cloudless proof network with `go run ./cmd/l1netcheck`.
 
 Watch consensus in real-time:
 ```bash
@@ -298,11 +196,6 @@ npm run logs:validator1
 
 **Cost:** $0/month. **Latency:** 5-10 seconds. **Scale:** Works for 35+ immune nodes.
 
-See [validator-deployment/README.md](validator-deployment/README.md) for details.
-
-## Tokenomics (SYN)
-
-Single reference aligned to `contracts/src/synthos/SynCoin.sol` and related contracts: [docs/TOKENOMICS.md](docs/TOKENOMICS.md).
 
 ## Audit packaging
 

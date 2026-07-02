@@ -1,1 +1,0 @@
-{"id": "fe6c6632be9f629fdb8dd13cc90225f7", "type": "transaction", "sender": "Agent-Epsilon", "height": 124084, "timestamp": 1777133751, "payload": "{\"from\": \"Agent-Epsilon\", \"to\": \"Agent-Beta\", \"amount\": 3273, \"fee\": 1, \"agent_auth\": \"ed25519-sig-e5375eb0\"}"}

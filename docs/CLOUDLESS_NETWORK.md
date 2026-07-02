@@ -1,23 +1,23 @@
 # SYNTHOS Cloudless Network
 
-SYNTHOS does not need Cloudflare to run. The preferred network path is now:
+SYNTHOS runs through the self-hosted network path:
 
 1. Self-hosted SYNTHOS registry for peer discovery.
 2. `synthosd` validator nodes connected over TCP.
 3. Optional HTTP relay compatibility for outbound-only nodes.
 4. Public websites and dashboards pointed at self-hosted RPC endpoints.
 
-Cloudflare Worker code remains in the repository only as a legacy adapter until the public pages are fully moved.
+Managed edge adapters have been removed from the launch path.
 
-## What replaces Cloudflare
+## Self-hosted components
 
-| Cloudflare-era component | Cloudless replacement |
+| Component | Self-hosted implementation |
 | --- | --- |
 | Worker peer registry | `go run ./cmd/cloudless-registry` |
 | Worker validator endpoints | `go run ./cmd/synthosd` or built `synthosd` binaries |
-| Workers block relay | Self-hosted RPC `/status`, `/blocks`, and peer registry |
-| Cloudflare Pages backend | Static site pointed at self-hosted RPC URLs |
-| R2/KV bulletin board | Local registry JSON state plus node disk state |
+| Block relay | Self-hosted RPC `/status`, `/blocks`, and peer registry |
+| Public site backend | Static site pointed at self-hosted RPC URLs |
+| Message/state storage | Local registry JSON state plus node disk state |
 
 ## Start a self-hosted registry
 
@@ -55,7 +55,7 @@ The current proof command launches four real validator processes, connects them 
 go run ./cmd/l1netcheck
 ```
 
-That is the fastest evidence that the network can operate without Cloudflare.
+That is the fastest evidence that the network can operate through the self-hosted path.
 
 ## Run a long-lived node
 

@@ -99,7 +99,7 @@ Polling drains the mailbox. Messages expire after one hour if not collected.
 
 ## Current Implementations
 
-- Cloudflare Worker: `workers/peer-registry/src/index.js`
+- Self-hosted registry: `cmd/cloudless-registry`
 - Go relay transport: `internal/network/relay_transport.go`
 - Desktop silent node: `cmd/silentnode/main.go`
 - Mobile PWA polling: `workers/mobile-validator/index.html`

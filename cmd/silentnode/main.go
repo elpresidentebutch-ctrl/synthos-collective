@@ -18,7 +18,7 @@ import (
 	"time"
 )
 
-const defaultRelayURLs = "https://synthos-peer-registry.jamesishamwilliams.workers.dev"
+const defaultRelayURLs = "http://127.0.0.1:8090"
 
 type silentNode struct {
 	NodeID             string   `json:"node_id"`

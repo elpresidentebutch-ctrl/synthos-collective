@@ -54,14 +54,14 @@ This starts `cmd/silentnode`, which does not bind a socket. It only sends outbou
 Environment:
 
 ```powershell
-$env:SYNTHOS_RELAY_URLS="https://synthos-peer-registry.jamesishamwilliams.workers.dev,https://relay-2.example,https://community-relay.example"
+$env:SYNTHOS_RELAY_URLS="http://127.0.0.1:8090,https://relay-2.example,https://community-relay.example"
 ```
 
 Backward-compatible single-relay variables are still accepted:
 
 ```powershell
-$env:SYNTHOS_REGISTRY_URL="https://synthos-peer-registry.jamesishamwilliams.workers.dev"
-$env:SYNTHOS_MAILBOX_URL="https://synthos-peer-registry.jamesishamwilliams.workers.dev"
+$env:SYNTHOS_REGISTRY_URL="http://127.0.0.1:8090"
+$env:SYNTHOS_MAILBOX_URL="http://127.0.0.1:8090"
 ```
 
 The preferred variable is `SYNTHOS_RELAY_URLS`. The node sends heartbeats to every relay and polls every mailbox. If one relay disappears, the node keeps operating against the rest.

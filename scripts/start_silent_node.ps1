@@ -11,7 +11,7 @@ if (!(Test-Path $exe)) {
 }
 
 if (!$env:SYNTHOS_RELAY_URLS -and !$env:SYNTHOS_REGISTRY_URL) {
-  $env:SYNTHOS_RELAY_URLS = "https://synthos-peer-registry.jamesishamwilliams.workers.dev"
+  $env:SYNTHOS_RELAY_URLS = "http://127.0.0.1:8090"
 }
 
 Write-Host "Starting SYNTHOS silent node. No ports will be opened."

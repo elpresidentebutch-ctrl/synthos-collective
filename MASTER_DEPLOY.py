@@ -7,7 +7,7 @@ import time
 
 def deploy_sovereign_mesh():
     print("[START] Initializing Sovereign Mesh Deployment...")
-    print("[INFO] Status: CLOUDLESS MODE (No Cloudflare/Deno required)")
+    print("[INFO] Status: CLOUDLESS MODE (self-hosted launch path)")
     
     # 1. Build the Go Agentic Core
     print("[BUILD] Building Agentic Core...")

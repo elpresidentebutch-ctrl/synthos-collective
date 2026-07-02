@@ -2,7 +2,7 @@
  * Synthos Mobile Validator — Automated Tests
  *
  * Tests the core chain logic (genesis, state root, block hash, validation)
- * to ensure the PWA's in-browser validator matches the Cloudflare Worker implementation.
+ * to ensure the PWA's in-browser validator matches the self-hosted validator implementation.
  *
  * Run: node tests/test_mobile_validator.mjs
  */

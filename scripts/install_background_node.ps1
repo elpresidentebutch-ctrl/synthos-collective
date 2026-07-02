@@ -15,7 +15,7 @@ if ($InstallDir -eq "") {
   $InstallDir = Join-Path $env:LOCALAPPDATA "SynthosCollective\BackgroundNode"
 }
 if ($RelayUrls -eq "") {
-  $RelayUrls = if ($env:SYNTHOS_RELAY_URLS) { $env:SYNTHOS_RELAY_URLS } else { "https://synthos-peer-registry.jamesishamwilliams.workers.dev" }
+  $RelayUrls = if ($env:SYNTHOS_RELAY_URLS) { $env:SYNTHOS_RELAY_URLS } else { "http://127.0.0.1:8090" }
 }
 
 $exeName = "synthos-silent-node.exe"

@@ -1,10 +1,10 @@
 const validators = [
-  { name: "synthos-validator-10", url: "https://synthos-validator-10.jamesishamwilliams.workers.dev" },
-  { name: "synthos-validator-11", url: "https://synthos-validator-11.jamesishamwilliams.workers.dev" },
-  { name: "synthos-validator-12", url: "https://synthos-validator-12.jamesishamwilliams.workers.dev" },
-  { name: "synthos-validator-13", url: "https://synthos-validator-13.jamesishamwilliams.workers.dev" },
-  { name: "synthos-validator-14", url: "https://synthos-validator-14.jamesishamwilliams.workers.dev" },
-  { name: "synthos-validator-15", url: "https://synthos-validator-15.jamesishamwilliams.workers.dev" },
+  { name: "synthos-validator-10", url: "http://127.0.0.1:8080" },
+  { name: "synthos-validator-11", url: "http://127.0.0.1:8080" },
+  { name: "synthos-validator-12", url: "http://127.0.0.1:8081" },
+  { name: "synthos-validator-13", url: "http://127.0.0.1:8082" },
+  { name: "synthos-validator-14", url: "http://127.0.0.1:8083" },
+  { name: "synthos-validator-15", url: "http://127.0.0.1:8083" },
 ];
 
 const heartbeatMaxAgeMs = 60 * 60 * 1000;

@@ -286,10 +286,10 @@
             log("Local Storage & Cookies saturated with cryptographic noise.", "success");
 
             // Step 3: Network Sync
-            log("Scanning for Cloudflare Edge Validators...", "info");
+            log("Scanning for self-hosted validators...", "info");
             await sleep(1500);
-            log("Connected to: synthos-validator1.jamesishamwilliams.workers.dev", "success");
-            log("Connected to: synthos-validator2.jamesishamwilliams.workers.dev", "success");
+            log("Connected to: http://127.0.0.1:8080", "success");
+            log("Connected to: http://127.0.0.1:8081", "success");
             
             log("Syncing Merkle State Root...", "info");
             await sleep(2000);

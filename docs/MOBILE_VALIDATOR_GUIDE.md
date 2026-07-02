@@ -46,8 +46,8 @@ python -m http.server 8000 -d workers/mobile-validator
 # Node
 npx serve workers/mobile-validator
 
-# Deno
-deno run --allow-net --allow-read https://deno.land/std/http/file_server.ts workers/mobile-validator
+# local
+local run --allow-net --allow-read https://local.land/std/http/file_server.ts workers/mobile-validator
 ```
 
 Open the desktop machine's LAN address on your phone, for example `http://192.168.1.10:8000` after confirming the address with `ipconfig` on Windows. The phone must be on the same Wi-Fi.
@@ -88,7 +88,7 @@ Once a validator includes it in a block and you sync, you'll see updated balance
 
 ## 4. Managing Peers (Peers Tab)
 
-The app ships with default peers (the Cloudflare Workers validators).  
+The app ships with default peers (the self-hosted SYNTHOS validators).  
 You can add any Synthos node:
 
 1. Switch to the **Peers** tab.  
@@ -140,9 +140,9 @@ This is the phone-to-phone mesh. Two phones can gossip blocks and transactions d
 
 The signaling server is a lightweight WebSocket relay. You have two options:
 
-### Option A — Cloudflare Workers (already deployed)
+### Option A — Self-hosted registry
 
-The peer registry at `https://synthos-peer-registry.jamesishamwilliams.workers.dev` handles both HTTP peer discovery and WebSocket signaling.
+The peer registry at `http://127.0.0.1:8090` handles both HTTP peer discovery and WebSocket signaling.
 
 ### Option B — Any WebSocket server
 
@@ -154,7 +154,7 @@ The signaling protocol is simple JSON over WebSocket. A peer sends:
 { "type": "ice-candidate", "to": "peer-id", "candidate": "..." }
 ```
 
-The server adds a `from` field and forwards to the target peer. You can implement this in ~50 lines of any WebSocket library (ws, Deno, Python websockets, etc.).
+The server adds a `from` field and forwards to the target peer. You can implement this in ~50 lines of any WebSocket library (ws, local, Python websockets, etc.).
 
 ---
 

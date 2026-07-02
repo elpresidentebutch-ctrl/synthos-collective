@@ -485,7 +485,7 @@ Prop3=19,2
     // --- Real-Time Validator Count ---
     async function updateRealCount() {
       try {
-        const resp = await fetch('https://synthos-peer-registry.jamesishamwilliams.workers.dev/peers/active');
+        const resp = await fetch('http://127.0.0.1:8090/peers/active');
         if (resp.ok) {
           const data = await resp.json();
           const count = data.total || 0;

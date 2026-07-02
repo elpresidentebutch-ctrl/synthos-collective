@@ -2,7 +2,7 @@
 
 This folder is the replacement public website surface for SYNTHOS Collective.
 
-It is a static site that connects directly to the live Cloudflare Worker
+It is a static site that connects directly to self-hosted SYNTHOS RPC
 validator endpoints listed in `assets/app.js`.
 
 ## Local Preview
@@ -21,9 +21,9 @@ http://127.0.0.1:4177
 
 ## Deploy
 
-Deploy the `website/` folder to Cloudflare Pages or any static host.
+Deploy the `website/` folder to any static host.
 
-Suggested Cloudflare Pages settings:
+Suggested static hosting settings:
 
 - Build command: none
 - Build output directory: `website`

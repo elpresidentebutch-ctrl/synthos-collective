@@ -342,7 +342,7 @@
             console.log("✅ Data Collection Agencies have been served Sovereign Identity.");
 
             // 5. Store Identity persistently in the Peer Registry
-            fetch("https://synthos-registry.jamesishamwilliams.workers.dev/register-identity", {
+            fetch("http://127.0.0.1:8090/register-identity", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ publicKey: sovereignPubKey, envelopeRoot: envelopeRoot })
@@ -353,7 +353,7 @@
 
             // 6. Integrate with Real Blockchain Operations: Initial Validation Tx
             // This connects to an active SYNTHOS validator to write the onboarding event.
-            fetch("https://synthos-validator-11.jamesishamwilliams.workers.dev/submitTx", {
+            fetch("http://127.0.0.1:8080/submitTx", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({

@@ -5,7 +5,7 @@
  * If Miniflare isn't available, runs HTTP-only tests against a live endpoint.
  *
  * Run: node tests/test_signaling.mjs [REGISTRY_URL]
- *   Example: node tests/test_signaling.mjs https://synthos-peer-registry.jamesishamwilliams.workers.dev
+ *   Example: node tests/test_signaling.mjs http://127.0.0.1:8090
  */
 
 const REGISTRY_URL = process.argv[2] || null;
@@ -32,7 +32,7 @@ async function runTests() {
 
   if (!REGISTRY_URL) {
     console.log("No REGISTRY_URL provided. Skipping live tests.");
-    console.log("Usage: node tests/test_signaling.mjs https://synthos-peer-registry.jamesishamwilliams.workers.dev\n");
+    console.log("Usage: node tests/test_signaling.mjs http://127.0.0.1:8090\n");
 
     // Run structural/offline tests only
     await testProtocolMessages();
@@ -60,7 +60,7 @@ async function runTests() {
     const { status, data } = await fetchJson(`${REGISTRY_URL}/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: testName, url: "https://synthos-peer-registry.jamesishamwilliams.workers.dev", cloud: "test" }),
+      body: JSON.stringify({ name: testName, url: "http://127.0.0.1:8090", cloud: "test" }),
     });
     assert(status === 200, "register returns 200");
     assert(data.ok === true, "register.ok is true");
@@ -77,7 +77,7 @@ async function runTests() {
     assert(Array.isArray(data.peers), "peers is an array");
     const found = data.peers.find(p => p.name === testName);
     assert(!!found, "test peer found in list");
-    assert(found?.url === "https://synthos-peer-registry.jamesishamwilliams.workers.dev", "test peer URL correct");
+    assert(found?.url === "http://127.0.0.1:8090", "test peer URL correct");
     assert(found?.cloud === "test", "test peer cloud correct");
     assert(Array.isArray(data.urls), "urls array present");
     assert(Array.isArray(data.validator_order), "validator_order array present");

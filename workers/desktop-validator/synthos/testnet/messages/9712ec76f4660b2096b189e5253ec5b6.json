@@ -1,1 +1,0 @@
-{"id": "9712ec76f4660b2096b189e5253ec5b6", "type": "transaction", "sender": "Agent-Beta", "height": 124084, "timestamp": 1777133751, "payload": "{\"from\": \"Agent-Beta\", \"to\": \"Agent-Gamma\", \"amount\": 2596, \"fee\": 1, \"agent_auth\": \"ed25519-sig-4b2115b8\"}"}
