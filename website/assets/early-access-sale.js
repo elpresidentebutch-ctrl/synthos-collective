@@ -26,6 +26,8 @@
 
   const COMPLIANCE_ABI = [
     "function eligibleToReceive(address account,uint8 expectedCategory) view returns (bool)",
+    "function communitySelfRegistrationOpen() view returns (bool)",
+    "function selfRegisterCommunity(bytes32 disclosureHash,bytes32 jurisdictionHash)",
   ];
 
   const defaultConfig = {
@@ -39,6 +41,8 @@
     activeTrancheSyn: "250,000,000",
     maxTrancheUsd: "$12,500,000",
     communitySourceBucket: "COMMUNITY_EARLY_ADOPTER_CAMPAIGNS",
+    disclosureText: "SYNTHOS early access disclosure v1",
+    jurisdictionCode: "US",
     assets: [
       { symbol: "USDC", address: "", decimals: 6, usdPrice: "1.00" },
       { symbol: "USDT", address: "", decimals: 6, usdPrice: "1.00" },
@@ -48,7 +52,7 @@
     ],
   };
 
-  const config = Object.assign({}, defaultConfig, window.SYNTHOS_EARLY_ACCESS_CONFIG || {});
+  let config = Object.assign({}, defaultConfig, window.SYNTHOS_EARLY_ACCESS_CONFIG || {});
   config.assets = (window.SYNTHOS_EARLY_ACCESS_CONFIG && window.SYNTHOS_EARLY_ACCESS_CONFIG.assets) || defaultConfig.assets;
 
   const state = {
@@ -133,6 +137,31 @@
 
   function validAddress(value) {
     return typeof value === "string" && /^0x[a-fA-F0-9]{40}$/.test(value);
+  }
+
+  function normalizeConfig(nextConfig) {
+    config = Object.assign({}, defaultConfig, config, nextConfig || {});
+    config.assets = Array.isArray(config.assets) && config.assets.length ? config.assets : defaultConfig.assets;
+    if (config.maxTrancheValueUsd && !config.maxTrancheUsd) {
+      config.maxTrancheUsd = `$${Number(config.maxTrancheValueUsd).toLocaleString()}`;
+    }
+  }
+
+  async function loadBackendConfig() {
+    const baseURL = window.SYNTHOS_API_URL || window.SYNTHOS_BACKEND_URL || config.apiURL || "";
+    if (!baseURL) return;
+    try {
+      const response = await fetch(`${String(baseURL).replace(/\/$/, "")}/api/early-access/config`, {
+        headers: { Accept: "application/json" },
+      });
+      if (!response.ok) return;
+      const body = await response.json();
+      if (body && body.ok !== false) {
+        normalizeConfig(body);
+      }
+    } catch (error) {
+      console.warn("SYNTHOS early access config fetch failed", error);
+    }
   }
 
   function render() {
@@ -224,6 +253,33 @@
     await quote();
   }
 
+  async function ensureEligible() {
+    const ethers = await ethersReady();
+    let eligible = await state.compliance.eligibleToReceive(state.account, 6);
+    if (eligible) return true;
+
+    const selfRegistrationOpen = await state.compliance.communitySelfRegistrationOpen();
+    if (!selfRegistrationOpen) {
+      setStatus("Early access self-registration is not open yet.", "warn");
+      return false;
+    }
+
+    const writableCompliance = new ethers.Contract(config.complianceRegistry, COMPLIANCE_ABI, state.signer);
+    const disclosureHash = config.disclosureHash || ethers.id(config.disclosureText);
+    const jurisdictionHash = config.jurisdictionHash || ethers.id(config.jurisdictionCode);
+    setStatus("Registering wallet for the early adopter tranche...");
+    const tx = await writableCompliance.selfRegisterCommunity(disclosureHash, jurisdictionHash);
+    await tx.wait();
+
+    eligible = await state.compliance.eligibleToReceive(state.account, 6);
+    if (!eligible) {
+      setStatus("Wallet registration completed, but eligibility check still failed.", "warn");
+      return false;
+    }
+    setStatus("Wallet registered. Continuing purchase...", "ok");
+    return true;
+  }
+
   async function requestNetworkSwitch() {
     if (!config.chainId || !window.ethereum) return;
     const chainIdHex = `0x${Number(config.chainId).toString(16)}`;
@@ -267,11 +323,7 @@
       return;
     }
     const ethers = await ethersReady();
-    const eligible = await state.compliance.eligibleToReceive(state.account, 6);
-    if (!eligible) {
-      setStatus("Wallet is not eligible for early access yet.", "warn");
-      return;
-    }
+    if (!(await ensureEligible())) return;
 
     const asset = activeAsset();
     const raw = root.querySelector("[data-sale-amount]").value.trim();
@@ -306,5 +358,10 @@
     }
   }
 
-  render();
+  async function boot() {
+    await loadBackendConfig();
+    render();
+  }
+
+  boot();
 })();

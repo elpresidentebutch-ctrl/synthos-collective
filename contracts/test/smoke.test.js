@@ -675,6 +675,98 @@ describe("post-incubation compile / deploy smoke", function () {
     ).to.be.revertedWith("Pausable: paused");
   });
 
+  it("lets early adopters self-register and buy from the first 250M SYN tranche", async function () {
+    const [operator, buyer, treasury] = await ethers.getSigners();
+
+    const SynCoin = await ethers.getContractFactory("SynCoin");
+    const syn = await SynCoin.deploy();
+    await syn.waitForDeployment();
+
+    const ComplianceRegistry = await ethers.getContractFactory(
+      "SYNTHOSComplianceRegistry"
+    );
+    const compliance = await ComplianceRegistry.deploy();
+    await compliance.waitForDeployment();
+
+    const Sale = await ethers.getContractFactory("SYNTHOSEarlyAdopterSale");
+    const sale = await Sale.deploy(
+      await syn.getAddress(),
+      await compliance.getAddress(),
+      treasury.address,
+      ethers.parseUnits("250000000", 18),
+      ethers.parseUnits("20", 18),
+      ethers.parseUnits("100000", 18)
+    );
+    await sale.waitForDeployment();
+
+    await syn.allocateTokens(
+      await sale.getAddress(),
+      ethers.parseUnits("2000000", 18),
+      "COMMUNITY_EARLY_ADOPTER_CAMPAIGNS"
+    );
+
+    const MockERC20 = await ethers.getContractFactory("MockERC20");
+    const usdc = await MockERC20.deploy(
+      "USD Coin Test",
+      "USDC",
+      buyer.address,
+      ethers.parseUnits("1000", 18)
+    );
+    await usdc.waitForDeployment();
+
+    await sale.setPaymentAsset(
+      await usdc.getAddress(),
+      true,
+      ethers.parseUnits("1", 18)
+    );
+
+    const disclosureHash = ethers.keccak256(
+      ethers.toUtf8Bytes("SYNTHOS early access disclosure v1")
+    );
+    const jurisdictionHash = ethers.keccak256(ethers.toUtf8Bytes("US"));
+
+    await expect(
+      compliance
+        .connect(buyer)
+        .selfRegisterCommunity(disclosureHash, jurisdictionHash)
+    ).to.be.revertedWith("community registration closed");
+
+    await expect(compliance.connect(operator).setCommunitySelfRegistrationOpen(true))
+      .to.emit(compliance, "CommunitySelfRegistrationOpenUpdated")
+      .withArgs(true);
+
+    await expect(
+      compliance
+        .connect(buyer)
+        .selfRegisterCommunity(disclosureHash, jurisdictionHash)
+    )
+      .to.emit(compliance, "DisclosureAcknowledged")
+      .withArgs(buyer.address, disclosureHash);
+
+    expect(await compliance.eligibleToReceive(buyer.address, 6)).to.equal(true);
+
+    await usdc.connect(buyer).approve(
+      await sale.getAddress(),
+      ethers.parseUnits("25", 18)
+    );
+
+    await sale.connect(buyer).buyWithToken(
+      await usdc.getAddress(),
+      ethers.parseUnits("25", 18),
+      buyer.address
+    );
+
+    expect(await syn.balanceOf(buyer.address)).to.equal(
+      ethers.parseUnits("500", 18)
+    );
+    expect(await usdc.balanceOf(treasury.address)).to.equal(
+      ethers.parseUnits("25", 18)
+    );
+    expect(await sale.maxSaleAllocation()).to.equal(
+      ethers.parseUnits("250000000", 18)
+    );
+  });
+
   it("can sell SYN for native crypto when founder sets a native USD price", async function () {
     const [operator, buyer, treasury] = await ethers.getSigners();
 

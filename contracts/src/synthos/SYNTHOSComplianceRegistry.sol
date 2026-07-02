@@ -39,6 +39,7 @@ contract SYNTHOSComplianceRegistry is Ownable {
     }
 
     mapping(address => ComplianceRecord) private records;
+    bool public communitySelfRegistrationOpen;
 
     event ComplianceRecordUpdated(
         address indexed account,
@@ -54,6 +55,46 @@ contract SYNTHOSComplianceRegistry is Ownable {
     event DisclosureAcknowledged(address indexed account, bytes32 indexed disclosureHash);
     event RecipientRevoked(address indexed account, string reason);
     event RecipientRestored(address indexed account);
+    event CommunitySelfRegistrationOpenUpdated(bool open);
+
+    function setCommunitySelfRegistrationOpen(bool open) external onlyOwner {
+        communitySelfRegistrationOpen = open;
+        emit CommunitySelfRegistrationOpenUpdated(open);
+    }
+
+    function selfRegisterCommunity(
+        bytes32 disclosureHash,
+        bytes32 jurisdictionHash
+    ) external {
+        require(communitySelfRegistrationOpen, "community registration closed");
+        require(disclosureHash != bytes32(0), "disclosure hash required");
+        require(jurisdictionHash != bytes32(0), "jurisdiction hash required");
+
+        records[msg.sender] = ComplianceRecord({
+            category: RecipientCategory.Community,
+            walletVerified: true,
+            jurisdictionEligible: true,
+            disclosureAcknowledged: true,
+            revoked: false,
+            lockupUntil: 0,
+            disclosureHash: disclosureHash,
+            jurisdictionHash: jurisdictionHash,
+            updatedAt: uint64(block.timestamp)
+        });
+
+        emit DisclosureAcknowledged(msg.sender, disclosureHash);
+        emit ComplianceRecordUpdated(
+            msg.sender,
+            RecipientCategory.Community,
+            true,
+            true,
+            true,
+            false,
+            0,
+            disclosureHash,
+            jurisdictionHash
+        );
+    }
 
     function setComplianceRecord(
         address account,

@@ -54,6 +54,14 @@ type contactMessage struct {
 	CreatedAt int64  `json:"created_at"`
 }
 
+type earlyAccessAsset struct {
+	Symbol   string `json:"symbol"`
+	Address  string `json:"address,omitempty"`
+	Native   bool   `json:"native,omitempty"`
+	Decimals int    `json:"decimals"`
+	USDPrice string `json:"usdPrice,omitempty"`
+}
+
 type registryState struct {
 	Peers    map[string]peer             `json:"peers"`
 	Mailbox  map[string][]mailboxMessage `json:"mailbox"`
@@ -106,6 +114,7 @@ func main() {
 	mux.HandleFunc("/api/nodes", s.handleAPINodes)
 	mux.HandleFunc("/api/nodes/provision", s.handleAPIProvisionNode)
 	mux.HandleFunc("/api/contact", s.handleAPIContact)
+	mux.HandleFunc("/api/early-access/config", s.handleAPIEarlyAccessConfig)
 	mux.HandleFunc("/api/node/windows-installer.ps1", s.handleWindowsInstaller)
 
 	log.Printf("SYNTHOS cloudless registry listening on %s", listen)
@@ -132,6 +141,7 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 			"GET /api/nodes",
 			"POST /api/nodes/provision",
 			"POST /api/contact",
+			"GET /api/early-access/config",
 			"GET /api/node/windows-installer.ps1",
 			"DELETE /peers/NODE",
 		},
@@ -505,6 +515,44 @@ func (s *server) handleAPIContact(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "ref": msg.ID, "message": "received"})
 }
 
+func (s *server) handleAPIEarlyAccessConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	saleContract := os.Getenv("SYNTHOS_EARLY_ACCESS_SALE_CONTRACT")
+	complianceRegistry := os.Getenv("SYNTHOS_EARLY_ACCESS_COMPLIANCE_REGISTRY")
+	chainID := os.Getenv("SYNTHOS_EARLY_ACCESS_CHAIN_ID")
+	assets := earlyAccessAssetsFromEnv()
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":                 true,
+		"configured":         saleContract != "" && complianceRegistry != "" && chainID != "",
+		"chainId":            chainID,
+		"chainName":          env("SYNTHOS_EARLY_ACCESS_CHAIN_NAME", "SYNTHOS"),
+		"rpcUrls":            splitCSV(env("SYNTHOS_EARLY_ACCESS_RPC_URLS", "https://rpc.ishamwilliamsblockchains.com")),
+		"saleContract":       saleContract,
+		"complianceRegistry": complianceRegistry,
+		"treasuryWallet":     env("SYNTHOS_EARLY_ACCESS_TREASURY_WALLET", "0xdAE5DF4807274D7a115bB5078c94b023453A05F5"),
+		"tokenPriceUsd":      "0.05",
+		"activeTrancheSyn":   "250,000,000",
+		"maxTrancheUsd":      "$12,500,000",
+		"maxTrancheValueUsd": "12500000",
+		"campaignReserveSyn": "1,750,000,000",
+		"communitySourceBucket": env(
+			"SYNTHOS_EARLY_ACCESS_SOURCE_BUCKET",
+			"COMMUNITY_EARLY_ADOPTER_CAMPAIGNS",
+		),
+		"disclosureText":   env("SYNTHOS_EARLY_ACCESS_DISCLOSURE_TEXT", "SYNTHOS early access disclosure v1"),
+		"disclosureHash":   os.Getenv("SYNTHOS_EARLY_ACCESS_DISCLOSURE_HASH"),
+		"jurisdictionCode": env("SYNTHOS_EARLY_ACCESS_JURISDICTION", "US"),
+		"jurisdictionHash": os.Getenv("SYNTHOS_EARLY_ACCESS_JURISDICTION_HASH"),
+		"assets":           assets,
+		"updated_at":       time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
 func (s *server) handleWindowsInstaller(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -653,6 +701,35 @@ func defaultString(value, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func splitCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func earlyAccessAssetsFromEnv() []earlyAccessAsset {
+	if raw := os.Getenv("SYNTHOS_EARLY_ACCESS_ASSETS_JSON"); raw != "" {
+		var assets []earlyAccessAsset
+		if err := json.Unmarshal([]byte(raw), &assets); err == nil && len(assets) > 0 {
+			return assets
+		}
+		log.Printf("SYNTHOS_EARLY_ACCESS_ASSETS_JSON is invalid; using default asset slots")
+	}
+	return []earlyAccessAsset{
+		{Symbol: "USDC", Decimals: 6, USDPrice: "1.00"},
+		{Symbol: "USDT", Decimals: 6, USDPrice: "1.00"},
+		{Symbol: "WETH", Decimals: 18},
+		{Symbol: "WBTC", Decimals: 8},
+		{Symbol: "ETH", Native: true, Decimals: 18},
+	}
 }
 
 func normalizeChoice(value, fallback string, allowed ...string) string {

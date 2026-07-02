@@ -57,6 +57,46 @@ Content-Type: application/json
 
 Stores the contact message in the registry state file and returns a reference ID.
 
+### Early Access Config
+
+```http
+GET /api/early-access/config
+```
+
+Returns the launch-ready early adopter sale configuration for the website:
+
+- `tokenPriceUsd`: `0.05`
+- `activeTrancheSyn`: `250,000,000`
+- `maxTrancheUsd`: `$12,500,000`
+- `communitySourceBucket`: `COMMUNITY_EARLY_ADOPTER_CAMPAIGNS`
+- `treasuryWallet`: `0xdAE5DF4807274D7a115bB5078c94b023453A05F5` unless overridden
+
+Production deployment values are read from environment variables:
+
+```bash
+SYNTHOS_EARLY_ACCESS_CHAIN_ID=
+SYNTHOS_EARLY_ACCESS_CHAIN_NAME=SYNTHOS
+SYNTHOS_EARLY_ACCESS_RPC_URLS=https://rpc.ishamwilliamsblockchains.com
+SYNTHOS_EARLY_ACCESS_SALE_CONTRACT=
+SYNTHOS_EARLY_ACCESS_COMPLIANCE_REGISTRY=
+SYNTHOS_EARLY_ACCESS_TREASURY_WALLET=0xdAE5DF4807274D7a115bB5078c94b023453A05F5
+SYNTHOS_EARLY_ACCESS_ASSETS_JSON=[]
+```
+
+`SYNTHOS_EARLY_ACCESS_ASSETS_JSON` should contain the live payment assets for the same EVM chain as the sale contract. Example shape:
+
+```json
+[
+  { "symbol": "USDC", "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", "decimals": 6, "usdPrice": "1.00" },
+  { "symbol": "USDT", "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7", "decimals": 6, "usdPrice": "1.00" },
+  { "symbol": "WETH", "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", "decimals": 18, "usdPrice": "2000.00" },
+  { "symbol": "WBTC", "address": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599", "decimals": 8, "usdPrice": "60000.00" },
+  { "symbol": "ETH", "native": true, "decimals": 18, "usdPrice": "2000.00" }
+]
+```
+
+Those asset addresses are Ethereum mainnet addresses. If the SYNTHOS sale is deployed on a different EVM chain, use that chain's real token or wrapped-token addresses instead.
+
 ### Windows Installer
 
 ```http
@@ -97,6 +137,22 @@ export async function submitContact(input) {
   if (!response.ok) throw new Error(await response.text());
   return response.json();
 }
+
+export async function getEarlyAccessConfig() {
+  const response = await fetch(`${API_BASE}/api/early-access/config`, { cache: "no-store" });
+  if (!response.ok) throw new Error(`status ${response.status}`);
+  return response.json();
+}
+```
+
+For the early adopter section, set the API origin and load the widget:
+
+```html
+<div data-synthos-early-access></div>
+<script>
+  window.SYNTHOS_API_URL = window.location.origin;
+</script>
+<script src="/assets/early-access-sale.js"></script>
 ```
 
 The current deployed Lovable app uses Supabase auth and generated server functions. Keep Supabase auth if you want site login, but route SYNTHOS-specific node provisioning and status data through this backend.
