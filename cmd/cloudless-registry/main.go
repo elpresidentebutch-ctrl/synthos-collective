@@ -114,7 +114,7 @@ func main() {
 	var listen string
 	var stateFile string
 	var secret string
-	flag.StringVar(&listen, "listen", env("SYNTHOS_REGISTRY_LISTEN", ":8090"), "HTTP listen address")
+	flag.StringVar(&listen, "listen", defaultListen(":8090"), "HTTP listen address")
 	flag.StringVar(&stateFile, "state", env("SYNTHOS_REGISTRY_STATE", ".synthos/cloudless-registry.json"), "registry state JSON path")
 	flag.StringVar(&secret, "secret", os.Getenv("REGISTRY_SECRET"), "optional registry admin/mailbox secret")
 	flag.Parse()
@@ -1358,6 +1358,16 @@ func nextProposer(peers []peer) string {
 func env(name, fallback string) string {
 	if value := os.Getenv(name); value != "" {
 		return value
+	}
+	return fallback
+}
+
+func defaultListen(fallback string) string {
+	if value := os.Getenv("SYNTHOS_REGISTRY_LISTEN"); value != "" {
+		return value
+	}
+	if port := os.Getenv("PORT"); port != "" {
+		return ":" + port
 	}
 	return fallback
 }

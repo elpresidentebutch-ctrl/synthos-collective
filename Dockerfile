@@ -19,4 +19,4 @@ ENV SYNTHOS_DATA_DIR=/data
 ENV SYNTHOS_EARLY_ACCESS_WIDGET_PATH=/website/assets/early-access-sale.js
 RUN mkdir -p /data
 EXPOSE 8080
-ENTRYPOINT ["/usr/local/bin/rpcnode"]
+CMD ["/usr/local/bin/rpcnode"]
