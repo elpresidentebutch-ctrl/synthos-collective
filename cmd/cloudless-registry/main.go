@@ -151,6 +151,8 @@ func main() {
 	mux.HandleFunc("/api/early-access/config", s.handleAPIEarlyAccessConfig)
 	mux.HandleFunc("/api/early-access/payment-intents", s.handleAPIEarlyAccessPaymentIntents)
 	mux.HandleFunc("/api/early-access/payment-intents/", s.handleAPIEarlyAccessPaymentIntentByID)
+	mux.HandleFunc("/early-access", s.handleEarlyAccessPage)
+	mux.HandleFunc("/early-adopters", s.handleEarlyAccessPage)
 	mux.HandleFunc("/assets/early-access-sale.js", s.handleEarlyAccessWidget)
 	mux.HandleFunc("/api/node/windows-installer.ps1", s.handleWindowsInstaller)
 
@@ -182,6 +184,8 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 			"POST /api/early-access/payment-intents",
 			"GET /api/early-access/payment-intents/ID",
 			"POST /api/early-access/payment-intents/ID/verify",
+			"GET /early-access",
+			"GET /early-adopters",
 			"GET /assets/early-access-sale.js",
 			"GET /api/node/windows-installer.ps1",
 			"DELETE /peers/NODE",
@@ -671,6 +675,49 @@ func (s *server) handleAPIEarlyAccessPaymentIntents(w http.ResponseWriter, r *ht
 		log.Printf("persist warning: %v", err)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "intent": intent})
+}
+
+func (s *server) handleEarlyAccessPage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write([]byte(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SYNTHOS Early Access</title>
+  <meta name="description" content="SYNTHOS Collective early adopter presale." />
+  <style>
+    :root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;--bg:#07090d;--text:#f5f8ff;--muted:#9aa9bd;--line:rgba(255,255,255,.13);--green:#31d39f;--cyan:#73d7ff}
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh;background:linear-gradient(180deg,rgba(115,215,255,.08),transparent 520px),#07090d;color:var(--text)}
+    header{position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px clamp(16px,4vw,42px);border-bottom:1px solid var(--line);background:rgba(7,9,13,.9);backdrop-filter:blur(14px)}
+    a{color:inherit}.brand{display:inline-flex;align-items:center;gap:10px;text-decoration:none;font-weight:850}.brand-mark{width:22px;height:22px;border:2px solid var(--green);border-radius:50%;box-shadow:inset 0 0 0 5px rgba(49,211,159,.14),0 0 18px rgba(49,211,159,.25)}
+    nav{display:flex;gap:8px;flex-wrap:wrap}nav a{color:var(--muted);font-size:.86rem;text-decoration:none;padding:8px 10px;border-radius:6px}nav a:hover{background:rgba(255,255,255,.07);color:var(--text)}
+    main{width:min(1180px,calc(100% - 32px));margin:0 auto;padding:28px 0 56px}
+    .notice{max-width:1080px;margin:0 auto 12px;padding:12px 16px;border:1px solid rgba(242,196,93,.35);border-radius:8px;background:rgba(242,196,93,.08);color:#f2c45d;line-height:1.5}
+    footer{display:flex;justify-content:space-between;gap:12px;padding:22px clamp(16px,4vw,42px);border-top:1px solid var(--line);color:var(--muted)}
+  </style>
+</head>
+<body>
+  <header>
+    <a class="brand" href="/early-access" aria-label="SYNTHOS Collective"><span class="brand-mark"></span><span>SYNTHOS Collective</span></a>
+    <nav aria-label="Primary"><a href="/early-access">Early Access</a><a href="/health">Health</a><a href="/api/early-access/config">Config</a></nav>
+  </header>
+  <main>
+    <p class="notice">Early access uses crypto payment verification and allocates SYN on the SYNTHOS native network after payment verification. Confirm the payment amount and receiving address before sending funds.</p>
+    <div data-synthos-early-access></div>
+  </main>
+  <footer><span>SYNTHOS Collective</span><span>synthos-mainnet-1</span></footer>
+  <script>
+    window.SYNTHOS_API_URL = window.location.origin;
+  </script>
+  <script src="/assets/early-access-sale.js"></script>
+</body>
+</html>`))
 }
 
 func (s *server) handleEarlyAccessWidget(w http.ResponseWriter, r *http.Request) {
