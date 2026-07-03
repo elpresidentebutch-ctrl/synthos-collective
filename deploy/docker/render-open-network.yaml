@@ -1,0 +1,42 @@
+services:
+  - type: web
+    name: synthos-rpc
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: /usr/local/bin/synthosd
+    envVars:
+      - key: SYNTHOS_CONFIG
+        value: /config/validator-1.json
+    disk:
+      name: synthos-rpc-data
+      mountPath: /data
+      sizeGB: 1
+    healthCheckPath: /health
+
+  - type: web
+    name: synthos-early-access-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: /usr/local/bin/cloudless-registry -listen :8090 -state /data/cloudless-registry.json
+    envVars:
+      - key: SYNTHOS_NATIVE_RPC_URL
+        value: https://rpc.ishamwilliamsblockchains.com
+      - key: SYNTHOS_EARLY_ACCESS_TREASURY_WALLET
+        value: 0xdAE5DF4807274D7a115bB5078c94b023453A05F5
+      - key: SYNTHOS_EARLY_ACCESS_PAYMENT_TREASURY
+        value: 0xdAE5DF4807274D7a115bB5078c94b023453A05F5
+      - key: SYNTHOS_EARLY_ACCESS_CHAIN_ID
+        value: "20260702"
+      - key: SYNTHOS_EARLY_ACCESS_CHAIN_NAME
+        value: synthos-mainnet-1
+      - key: SYNTHOS_EARLY_ACCESS_RPC_URLS
+        value: https://rpc.ishamwilliamsblockchains.com
+      - key: SYNTHOS_EARLY_ACCESS_ALLOCATION_PRIVATE_KEY
+        sync: false
+      - key: SYNTHOS_EARLY_ACCESS_ASSETS_JSON
+        sync: false
+    disk:
+      name: synthos-early-access-data
+      mountPath: /data
+      sizeGB: 1
+    healthCheckPath: /health
