@@ -41,6 +41,8 @@
     activeTrancheSyn: "250,000,000",
     maxTrancheUsd: "$12,500,000",
     communitySourceBucket: "COMMUNITY_EARLY_ADOPTER_CAMPAIGNS",
+    paymentRails: false,
+    paymentIntentUrl: "/api/early-access/payment-intents",
     disclosureText: "SYNTHOS early access disclosure v1",
     jurisdictionCode: "US",
     assets: [
@@ -61,6 +63,7 @@
     signer: null,
     sale: null,
     compliance: null,
+    paymentIntent: null,
   };
 
   const root = document.querySelector("[data-synthos-early-access]");
@@ -106,6 +109,9 @@
       .synthos-sale-actions button:first-child{background:#31d39f;color:#04130e}
       .synthos-sale-actions button:last-child{background:#7bdcff;color:#031018}
       .synthos-sale-actions button:disabled{opacity:.45;cursor:not-allowed}
+      .synthos-payment-instructions{display:none;gap:8px;border:1px solid rgba(123,220,255,.28);border-radius:8px;padding:12px;background:rgba(123,220,255,.07)}
+      .synthos-payment-instructions[data-open=true]{display:grid}
+      .synthos-payment-instructions code{overflow-wrap:anywhere;color:#f5f8ff}
       [data-sale-status]{margin:0;color:#aeb9c8}
       [data-sale-status][data-tone=warn]{color:#f2c45d}
       [data-sale-status][data-tone=ok]{color:#31d39f}
@@ -145,6 +151,7 @@
     if (config.maxTrancheValueUsd && !config.maxTrancheUsd) {
       config.maxTrancheUsd = `$${Number(config.maxTrancheValueUsd).toLocaleString()}`;
     }
+    config.paymentRails = Boolean(config.paymentRails || config.paymentIntentUrl);
   }
 
   async function loadBackendConfig() {
@@ -186,13 +193,23 @@
               ${config.assets.map((asset, index) => `<option value="${index}">${html(asset.symbol)}</option>`).join("")}
             </select>
           </label>
-          <label>Amount To Spend
+          <label>${config.paymentRails && !validAddress(config.saleContract) ? "USD Amount To Spend" : "Amount To Spend"}
             <input data-sale-amount inputmode="decimal" autocomplete="off" />
           </label>
+          ${config.paymentRails && !validAddress(config.saleContract) ? `
+          <label>SYNTHOS Wallet Address
+            <input data-synthos-address autocomplete="off" placeholder="0x..." />
+          </label>
+          <div class="synthos-payment-instructions" data-payment-instructions></div>
+          <label>Payment Transaction Hash
+            <input data-payment-tx autocomplete="off" placeholder="0x..." />
+          </label>
+          ` : ""}
           <div class="synthos-sale-quote" data-sale-quote>Connect wallet for quote.</div>
           <div class="synthos-sale-actions">
             <button type="button" data-sale-connect>Connect Wallet</button>
             <button type="button" data-sale-buy disabled>Buy SYN</button>
+            ${config.paymentRails && !validAddress(config.saleContract) ? `<button type="button" data-payment-verify>Verify Payment</button>` : ""}
           </div>
           <p data-sale-status data-tone="muted">Sale contract is checking configuration.</p>
         </div>
@@ -202,11 +219,17 @@
     root.querySelector("[data-sale-buy]").addEventListener("click", buySyn);
     root.querySelector("[data-sale-amount]").addEventListener("input", quote);
     root.querySelector("[data-sale-asset]").addEventListener("change", quote);
+    root.querySelector("[data-payment-verify]")?.addEventListener("click", verifyPaymentIntent);
     validateConfig();
   }
 
   function validateConfig() {
     const buy = root.querySelector("[data-sale-buy]");
+    if (config.paymentRails && !validAddress(config.saleContract)) {
+      setStatus("Native SYNTHOS payment rails are ready. Create a payment intent to continue.");
+      buy.disabled = false;
+      return true;
+    }
     if (!validAddress(config.saleContract)) {
       setStatus("Early access contract is not deployed/configured yet.", "warn");
       buy.disabled = true;
@@ -298,6 +321,14 @@
   }
 
   async function quote() {
+    if (config.paymentRails && !state.sale) {
+      const raw = root.querySelector("[data-sale-amount]").value.trim();
+      const usd = Number(raw || 0);
+      root.querySelector("[data-sale-quote]").textContent = usd > 0
+        ? `${(usd * 20).toLocaleString()} SYN at $0.05`
+        : "Enter a USD amount.";
+      return;
+    }
     if (!state.sale) return;
     const ethers = await ethersReady();
     const asset = activeAsset();
@@ -318,6 +349,10 @@
   }
 
   async function buySyn() {
+    if (config.paymentRails && !state.sale) {
+      await createPaymentIntent();
+      return;
+    }
     if (!state.sale || !state.account) {
       setStatus("Connect wallet first.", "warn");
       return;
@@ -356,6 +391,91 @@
     } catch (error) {
       setStatus(error.shortMessage || error.message || "Purchase failed", "warn");
     }
+  }
+
+  async function createPaymentIntent() {
+    const asset = activeAsset();
+    const raw = root.querySelector("[data-sale-amount]").value.trim();
+    const synthosAddress = root.querySelector("[data-synthos-address]")?.value.trim();
+    if (!raw || Number(raw) <= 0) {
+      setStatus("Enter a USD amount.", "warn");
+      return;
+    }
+    if (!synthosAddress) {
+      setStatus("Enter the SYNTHOS wallet address that should receive SYN.", "warn");
+      return;
+    }
+    try {
+      setStatus("Creating crypto payment intent...");
+      const response = await fetch(resolveBackendURL(config.paymentIntentUrl), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          buyerWallet: state.account || "",
+          synthosAddress,
+          assetSymbol: asset.symbol,
+          usdValue: raw,
+        }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const body = await response.json();
+      state.paymentIntent = body.intent;
+      renderPaymentInstructions(body.intent);
+      setStatus("Payment intent created. Send the exact crypto amount, then paste the transaction hash.", "ok");
+    } catch (error) {
+      setStatus(error.shortMessage || error.message || "Payment intent failed", "warn");
+    }
+  }
+
+  async function verifyPaymentIntent() {
+    const txHash = root.querySelector("[data-payment-tx]")?.value.trim();
+    if (!state.paymentIntent?.id) {
+      setStatus("Create a payment intent first.", "warn");
+      return;
+    }
+    if (!txHash) {
+      setStatus("Paste the payment transaction hash.", "warn");
+      return;
+    }
+    try {
+      setStatus("Verifying payment on-chain...");
+      const url = resolveBackendURL(`${config.paymentIntentUrl}/${state.paymentIntent.id}/verify`);
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ txHash }),
+      });
+      const body = await response.json();
+      state.paymentIntent = body.intent;
+      renderPaymentInstructions(body.intent);
+      setStatus(body.intent.status === "syn_allocated"
+        ? "Payment verified and SYN allocated on the SYNTHOS network."
+        : `Payment status: ${body.intent.status}`,
+        body.ok ? "ok" : "warn");
+    } catch (error) {
+      setStatus(error.shortMessage || error.message || "Payment verification failed", "warn");
+    }
+  }
+
+  function renderPaymentInstructions(intent) {
+    const node = root.querySelector("[data-payment-instructions]");
+    if (!node || !intent) return;
+    node.dataset.open = "true";
+    node.innerHTML = `
+      <strong>Send ${html(intent.assetSymbol)} payment</strong>
+      <span>Network: ${html(intent.network || "configured payment network")}</span>
+      <span>Amount: <code>${html(intent.paymentAmount)}</code> base units</span>
+      <span>To: <code>${html(intent.paymentAddress)}</code></span>
+      <span>SYN allocation: ${html(intent.synAmount)} SYN</span>
+      <span>Status: ${html(intent.status)}</span>
+      ${intent.synthosTxId ? `<span>SYNTHOS tx: <code>${html(intent.synthosTxId)}</code></span>` : ""}
+    `;
+  }
+
+  function resolveBackendURL(path) {
+    if (/^https?:\/\//.test(path)) return path;
+    const baseURL = window.SYNTHOS_API_URL || window.SYNTHOS_BACKEND_URL || config.apiURL || "";
+    return `${String(baseURL).replace(/\/$/, "")}${path.startsWith("/") ? path : `/${path}`}`;
   }
 
   async function boot() {

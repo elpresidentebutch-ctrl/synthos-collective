@@ -70,6 +70,8 @@ Returns the launch-ready early adopter sale configuration for the website:
 - `maxTrancheUsd`: `$12,500,000`
 - `communitySourceBucket`: `COMMUNITY_EARLY_ADOPTER_CAMPAIGNS`
 - `treasuryWallet`: `0xdAE5DF4807274D7a115bB5078c94b023453A05F5` unless overridden
+- `paymentRails`: `true`
+- `paymentIntentUrl`: `/api/early-access/payment-intents`
 
 Production deployment values are read from environment variables:
 
@@ -81,6 +83,8 @@ SYNTHOS_EARLY_ACCESS_SALE_CONTRACT=
 SYNTHOS_EARLY_ACCESS_COMPLIANCE_REGISTRY=
 SYNTHOS_EARLY_ACCESS_TREASURY_WALLET=0xdAE5DF4807274D7a115bB5078c94b023453A05F5
 SYNTHOS_EARLY_ACCESS_ASSETS_JSON=[]
+SYNTHOS_EARLY_ACCESS_ALLOCATION_PRIVATE_KEY=
+SYNTHOS_NATIVE_RPC_URL=https://rpc.ishamwilliamsblockchains.com
 ```
 
 `SYNTHOS_EARLY_ACCESS_ASSETS_JSON` should contain the live payment assets for the same EVM chain as the sale contract. Example shape:
@@ -96,6 +100,39 @@ SYNTHOS_EARLY_ACCESS_ASSETS_JSON=[]
 ```
 
 Those asset addresses are Ethereum mainnet addresses. If the SYNTHOS sale is deployed on a different EVM chain, use that chain's real token or wrapped-token addresses instead.
+
+### Early Access Payment Intent
+
+```http
+POST /api/early-access/payment-intents
+Content-Type: application/json
+
+{
+  "buyerWallet": "0xEVMBuyerWallet",
+  "synthosAddress": "0xSYNTHOSRecipient",
+  "assetSymbol": "USDC",
+  "usdValue": "25.00"
+}
+```
+
+Returns a payment intent with the treasury address, exact base-unit payment
+amount, and SYN allocation at `$0.05` per SYN.
+
+After the buyer sends the crypto payment, verify it:
+
+```http
+POST /api/early-access/payment-intents/{id}/verify
+Content-Type: application/json
+
+{
+  "txHash": "0x..."
+}
+```
+
+The backend verifies the EVM payment transaction. If
+`SYNTHOS_EARLY_ACCESS_ALLOCATION_PRIVATE_KEY` and `SYNTHOS_NATIVE_RPC_URL` are
+configured, it then submits the SYN allocation transaction on the SYNTHOS native
+network.
 
 ### Windows Installer
 

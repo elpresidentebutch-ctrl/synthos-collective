@@ -1,13 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
+	"math/big"
 	"net/http"
 	"os"
 	"regexp"
@@ -15,6 +18,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"synthos-collective/internal/chain"
+	"synthos-collective/internal/wallet"
 )
 
 const staleAfter = 5 * time.Minute
@@ -55,17 +61,44 @@ type contactMessage struct {
 }
 
 type earlyAccessAsset struct {
-	Symbol   string `json:"symbol"`
-	Address  string `json:"address,omitempty"`
-	Native   bool   `json:"native,omitempty"`
-	Decimals int    `json:"decimals"`
-	USDPrice string `json:"usdPrice,omitempty"`
+	Symbol          string `json:"symbol"`
+	Network         string `json:"network,omitempty"`
+	ChainID         string `json:"chainId,omitempty"`
+	RPCURL          string `json:"rpcUrl,omitempty"`
+	Address         string `json:"address,omitempty"`
+	TreasuryAddress string `json:"treasuryAddress,omitempty"`
+	Native          bool   `json:"native,omitempty"`
+	Decimals        int    `json:"decimals"`
+	USDPrice        string `json:"usdPrice,omitempty"`
+	Enabled         bool   `json:"enabled"`
+}
+
+type earlyAccessPaymentIntent struct {
+	ID                string `json:"id"`
+	Status            string `json:"status"`
+	BuyerWallet       string `json:"buyerWallet,omitempty"`
+	SynthosAddress    string `json:"synthosAddress"`
+	AssetSymbol       string `json:"assetSymbol"`
+	Network           string `json:"network,omitempty"`
+	PaymentAddress    string `json:"paymentAddress"`
+	PaymentAsset      string `json:"paymentAsset,omitempty"`
+	PaymentAmount     string `json:"paymentAmount"`
+	PaymentDecimals   int    `json:"paymentDecimals"`
+	USDValueCents     uint64 `json:"usdValueCents"`
+	SynAmount         uint64 `json:"synAmount"`
+	TxHash            string `json:"txHash,omitempty"`
+	SynthosTxID       string `json:"synthosTxId,omitempty"`
+	CreatedAt         int64  `json:"createdAt"`
+	UpdatedAt         int64  `json:"updatedAt"`
+	ExpiresAt         int64  `json:"expiresAt"`
+	VerificationError string `json:"verificationError,omitempty"`
 }
 
 type registryState struct {
-	Peers    map[string]peer             `json:"peers"`
-	Mailbox  map[string][]mailboxMessage `json:"mailbox"`
-	Contacts []contactMessage            `json:"contacts,omitempty"`
+	Peers               map[string]peer                     `json:"peers"`
+	Mailbox             map[string][]mailboxMessage         `json:"mailbox"`
+	Contacts            []contactMessage                    `json:"contacts,omitempty"`
+	EarlyAccessPayments map[string]earlyAccessPaymentIntent `json:"early_access_payments,omitempty"`
 }
 
 type server struct {
@@ -88,9 +121,10 @@ func main() {
 
 	s := &server{
 		state: registryState{
-			Peers:    map[string]peer{},
-			Mailbox:  map[string][]mailboxMessage{},
-			Contacts: []contactMessage{},
+			Peers:               map[string]peer{},
+			Mailbox:             map[string][]mailboxMessage{},
+			Contacts:            []contactMessage{},
+			EarlyAccessPayments: map[string]earlyAccessPaymentIntent{},
 		},
 		secret:     secret,
 		stateFile:  stateFile,
@@ -115,6 +149,8 @@ func main() {
 	mux.HandleFunc("/api/nodes/provision", s.handleAPIProvisionNode)
 	mux.HandleFunc("/api/contact", s.handleAPIContact)
 	mux.HandleFunc("/api/early-access/config", s.handleAPIEarlyAccessConfig)
+	mux.HandleFunc("/api/early-access/payment-intents", s.handleAPIEarlyAccessPaymentIntents)
+	mux.HandleFunc("/api/early-access/payment-intents/", s.handleAPIEarlyAccessPaymentIntentByID)
 	mux.HandleFunc("/api/node/windows-installer.ps1", s.handleWindowsInstaller)
 
 	log.Printf("SYNTHOS cloudless registry listening on %s", listen)
@@ -142,6 +178,9 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 			"POST /api/nodes/provision",
 			"POST /api/contact",
 			"GET /api/early-access/config",
+			"POST /api/early-access/payment-intents",
+			"GET /api/early-access/payment-intents/ID",
+			"POST /api/early-access/payment-intents/ID/verify",
 			"GET /api/node/windows-installer.ps1",
 			"DELETE /peers/NODE",
 		},
@@ -529,6 +568,8 @@ func (s *server) handleAPIEarlyAccessConfig(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":                 true,
 		"configured":         saleContract != "" && complianceRegistry != "" && chainID != "",
+		"paymentRails":       true,
+		"paymentIntentUrl":   "/api/early-access/payment-intents",
 		"chainId":            chainID,
 		"chainName":          env("SYNTHOS_EARLY_ACCESS_CHAIN_NAME", "SYNTHOS"),
 		"rpcUrls":            splitCSV(env("SYNTHOS_EARLY_ACCESS_RPC_URLS", "https://rpc.ishamwilliamsblockchains.com")),
@@ -551,6 +592,175 @@ func (s *server) handleAPIEarlyAccessConfig(w http.ResponseWriter, r *http.Reque
 		"assets":           assets,
 		"updated_at":       time.Now().UTC().Format(time.RFC3339),
 	})
+}
+
+func (s *server) handleAPIEarlyAccessPaymentIntents(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		BuyerWallet    string `json:"buyerWallet"`
+		SynthosAddress string `json:"synthosAddress"`
+		AssetSymbol    string `json:"assetSymbol"`
+		USDValue       string `json:"usdValue"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	body.SynthosAddress = strings.TrimSpace(body.SynthosAddress)
+	body.AssetSymbol = strings.ToUpper(strings.TrimSpace(body.AssetSymbol))
+	if body.SynthosAddress == "" || body.AssetSymbol == "" || strings.TrimSpace(body.USDValue) == "" {
+		http.Error(w, "synthosAddress, assetSymbol, and usdValue are required", http.StatusBadRequest)
+		return
+	}
+	usdCents, err := parseUSDCents(body.USDValue)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	synAmount := usdCents / 5 // $0.05 per SYN.
+	if synAmount < 20 {
+		http.Error(w, "minimum early access purchase is 20 SYN", http.StatusBadRequest)
+		return
+	}
+	asset, ok := earlyAccessAssetBySymbol(body.AssetSymbol)
+	if !ok || !asset.Enabled {
+		http.Error(w, "payment asset is not enabled", http.StatusBadRequest)
+		return
+	}
+	if asset.TreasuryAddress == "" {
+		http.Error(w, "payment treasury address is not configured", http.StatusServiceUnavailable)
+		return
+	}
+	paymentAmount, err := quotePaymentAmount(usdCents, asset)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	now := time.Now().UnixMilli()
+	intent := earlyAccessPaymentIntent{
+		ID:              "syn-presale-" + shortID(),
+		Status:          "pending_payment",
+		BuyerWallet:     truncate(body.BuyerWallet, 128),
+		SynthosAddress:  body.SynthosAddress,
+		AssetSymbol:     asset.Symbol,
+		Network:         asset.Network,
+		PaymentAddress:  asset.TreasuryAddress,
+		PaymentAsset:    asset.Address,
+		PaymentAmount:   paymentAmount,
+		PaymentDecimals: asset.Decimals,
+		USDValueCents:   usdCents,
+		SynAmount:       synAmount,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		ExpiresAt:       time.Now().Add(30 * time.Minute).UnixMilli(),
+	}
+
+	s.mu.Lock()
+	if s.state.EarlyAccessPayments == nil {
+		s.state.EarlyAccessPayments = map[string]earlyAccessPaymentIntent{}
+	}
+	s.state.EarlyAccessPayments[intent.ID] = intent
+	s.mu.Unlock()
+	if err := s.persist(); err != nil {
+		log.Printf("persist warning: %v", err)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "intent": intent})
+}
+
+func (s *server) handleAPIEarlyAccessPaymentIntentByID(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/early-access/payment-intents/")
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) == 0 || parts[0] == "" {
+		http.Error(w, "payment intent id required", http.StatusBadRequest)
+		return
+	}
+	id := parts[0]
+	if len(parts) == 1 && r.Method == http.MethodGet {
+		intent, ok := s.getPaymentIntent(id)
+		if !ok {
+			http.Error(w, "payment intent not found", http.StatusNotFound)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "intent": intent})
+		return
+	}
+	if len(parts) == 2 && parts[1] == "verify" && r.Method == http.MethodPost {
+		s.verifyPaymentIntent(w, r, id)
+		return
+	}
+	http.Error(w, "not found", http.StatusNotFound)
+}
+
+func (s *server) verifyPaymentIntent(w http.ResponseWriter, r *http.Request, id string) {
+	var body struct {
+		TxHash string `json:"txHash"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	txHash := strings.TrimSpace(body.TxHash)
+	if !isHexHash(txHash) {
+		http.Error(w, "valid txHash is required", http.StatusBadRequest)
+		return
+	}
+	intent, ok := s.getPaymentIntent(id)
+	if !ok {
+		http.Error(w, "payment intent not found", http.StatusNotFound)
+		return
+	}
+	asset, ok := earlyAccessAssetBySymbol(intent.AssetSymbol)
+	if !ok {
+		http.Error(w, "payment asset config missing", http.StatusServiceUnavailable)
+		return
+	}
+	if err := verifyEVMPayment(txHash, intent, asset); err != nil {
+		intent.Status = "verification_failed"
+		intent.TxHash = txHash
+		intent.VerificationError = err.Error()
+		intent.UpdatedAt = time.Now().UnixMilli()
+		s.savePaymentIntent(intent)
+		writeJSON(w, http.StatusAccepted, map[string]any{"ok": false, "intent": intent})
+		return
+	}
+
+	intent.Status = "payment_verified"
+	intent.TxHash = txHash
+	intent.VerificationError = ""
+	intent.UpdatedAt = time.Now().UnixMilli()
+	if txID, err := allocateNativeSYN(intent); err == nil && txID != "" {
+		intent.Status = "syn_allocated"
+		intent.SynthosTxID = txID
+	} else if err != nil {
+		intent.Status = "allocation_pending"
+		intent.VerificationError = err.Error()
+	}
+	intent.UpdatedAt = time.Now().UnixMilli()
+	s.savePaymentIntent(intent)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "intent": intent})
+}
+
+func (s *server) getPaymentIntent(id string) (earlyAccessPaymentIntent, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	intent, ok := s.state.EarlyAccessPayments[id]
+	return intent, ok
+}
+
+func (s *server) savePaymentIntent(intent earlyAccessPaymentIntent) {
+	s.mu.Lock()
+	if s.state.EarlyAccessPayments == nil {
+		s.state.EarlyAccessPayments = map[string]earlyAccessPaymentIntent{}
+	}
+	s.state.EarlyAccessPayments[intent.ID] = intent
+	s.mu.Unlock()
+	if err := s.persist(); err != nil {
+		log.Printf("persist warning: %v", err)
+	}
 }
 
 func (s *server) handleWindowsInstaller(w http.ResponseWriter, r *http.Request) {
@@ -631,6 +841,9 @@ func (s *server) load() error {
 	}
 	if st.Contacts == nil {
 		st.Contacts = []contactMessage{}
+	}
+	if st.EarlyAccessPayments == nil {
+		st.EarlyAccessPayments = map[string]earlyAccessPaymentIntent{}
 	}
 	s.state = st
 	return nil
@@ -719,17 +932,306 @@ func earlyAccessAssetsFromEnv() []earlyAccessAsset {
 	if raw := os.Getenv("SYNTHOS_EARLY_ACCESS_ASSETS_JSON"); raw != "" {
 		var assets []earlyAccessAsset
 		if err := json.Unmarshal([]byte(raw), &assets); err == nil && len(assets) > 0 {
+			for i := range assets {
+				if assets[i].Enabled == false && !strings.Contains(raw, `"enabled"`) {
+					assets[i].Enabled = true
+				}
+				if assets[i].TreasuryAddress == "" {
+					assets[i].TreasuryAddress = env("SYNTHOS_EARLY_ACCESS_PAYMENT_TREASURY", env("SYNTHOS_EARLY_ACCESS_TREASURY_WALLET", "0xdAE5DF4807274D7a115bB5078c94b023453A05F5"))
+				}
+			}
 			return assets
 		}
 		log.Printf("SYNTHOS_EARLY_ACCESS_ASSETS_JSON is invalid; using default asset slots")
 	}
 	return []earlyAccessAsset{
-		{Symbol: "USDC", Decimals: 6, USDPrice: "1.00"},
-		{Symbol: "USDT", Decimals: 6, USDPrice: "1.00"},
-		{Symbol: "WETH", Decimals: 18},
-		{Symbol: "WBTC", Decimals: 8},
-		{Symbol: "ETH", Native: true, Decimals: 18},
+		{Symbol: "USDC", Decimals: 6, USDPrice: "1.00", Enabled: false},
+		{Symbol: "USDT", Decimals: 6, USDPrice: "1.00", Enabled: false},
+		{Symbol: "WETH", Decimals: 18, Enabled: false},
+		{Symbol: "WBTC", Decimals: 8, Enabled: false},
+		{Symbol: "ETH", Native: true, Decimals: 18, Enabled: false},
 	}
+}
+
+func earlyAccessAssetBySymbol(symbol string) (earlyAccessAsset, bool) {
+	symbol = strings.ToUpper(strings.TrimSpace(symbol))
+	for _, asset := range earlyAccessAssetsFromEnv() {
+		if strings.ToUpper(asset.Symbol) == symbol {
+			return asset, true
+		}
+	}
+	return earlyAccessAsset{}, false
+}
+
+func parseUSDCents(value string) (uint64, error) {
+	value = strings.TrimSpace(strings.TrimPrefix(value, "$"))
+	if value == "" {
+		return 0, fmt.Errorf("usdValue required")
+	}
+	parts := strings.Split(value, ".")
+	if len(parts) > 2 {
+		return 0, fmt.Errorf("invalid usdValue")
+	}
+	dollars, ok := new(big.Int).SetString(defaultString(parts[0], "0"), 10)
+	if !ok || dollars.Sign() < 0 {
+		return 0, fmt.Errorf("invalid usdValue")
+	}
+	cents := new(big.Int).Mul(dollars, big.NewInt(100))
+	if len(parts) == 2 {
+		frac := parts[1]
+		if len(frac) > 2 {
+			frac = frac[:2]
+		}
+		for len(frac) < 2 {
+			frac += "0"
+		}
+		f, ok := new(big.Int).SetString(frac, 10)
+		if !ok {
+			return 0, fmt.Errorf("invalid usdValue")
+		}
+		cents.Add(cents, f)
+	}
+	if !cents.IsUint64() || cents.Uint64() == 0 {
+		return 0, fmt.Errorf("usdValue must be greater than zero")
+	}
+	return cents.Uint64(), nil
+}
+
+func quotePaymentAmount(usdCents uint64, asset earlyAccessAsset) (string, error) {
+	priceCents, err := parseUSDCents(defaultString(asset.USDPrice, "1.00"))
+	if err != nil || priceCents == 0 {
+		return "", fmt.Errorf("asset USD price missing")
+	}
+	scale := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(asset.Decimals)), nil)
+	amount := new(big.Int).Mul(new(big.Int).SetUint64(usdCents), scale)
+	amount.Div(amount, new(big.Int).SetUint64(priceCents))
+	return amount.String(), nil
+}
+
+func isHexHash(value string) bool {
+	value = strings.TrimPrefix(value, "0x")
+	if len(value) != 64 {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
+}
+
+func verifyEVMPayment(txHash string, intent earlyAccessPaymentIntent, asset earlyAccessAsset) error {
+	if asset.RPCURL == "" {
+		return fmt.Errorf("asset RPC URL is not configured")
+	}
+	receipt, err := evmRPC(asset.RPCURL, "eth_getTransactionReceipt", []any{txHash})
+	if err != nil {
+		return err
+	}
+	if receipt == nil {
+		return fmt.Errorf("transaction receipt not found yet")
+	}
+	receiptMap, ok := receipt.(map[string]any)
+	if !ok {
+		return fmt.Errorf("invalid transaction receipt")
+	}
+	if !hexBool(receiptMap["status"]) {
+		return fmt.Errorf("transaction failed on-chain")
+	}
+	expectedAmount, ok := new(big.Int).SetString(intent.PaymentAmount, 10)
+	if !ok {
+		return fmt.Errorf("invalid expected payment amount")
+	}
+	if asset.Native {
+		tx, err := evmRPC(asset.RPCURL, "eth_getTransactionByHash", []any{txHash})
+		if err != nil {
+			return err
+		}
+		txMap, ok := tx.(map[string]any)
+		if !ok {
+			return fmt.Errorf("transaction not found")
+		}
+		if !sameAddress(stringValue(txMap["to"]), intent.PaymentAddress) {
+			return fmt.Errorf("native payment recipient mismatch")
+		}
+		value, err := parseHexBig(stringValue(txMap["value"]))
+		if err != nil {
+			return err
+		}
+		if value.Cmp(expectedAmount) < 0 {
+			return fmt.Errorf("native payment amount too small")
+		}
+		return nil
+	}
+	if asset.Address == "" {
+		return fmt.Errorf("token payment asset address missing")
+	}
+	logs, ok := receiptMap["logs"].([]any)
+	if !ok {
+		return fmt.Errorf("receipt logs missing")
+	}
+	for _, rawLog := range logs {
+		logMap, ok := rawLog.(map[string]any)
+		if !ok || !sameAddress(stringValue(logMap["address"]), asset.Address) {
+			continue
+		}
+		topics, ok := logMap["topics"].([]any)
+		if !ok || len(topics) < 3 {
+			continue
+		}
+		if !strings.EqualFold(stringValue(topics[0]), "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef") {
+			continue
+		}
+		if !topicAddressMatches(stringValue(topics[2]), intent.PaymentAddress) {
+			continue
+		}
+		amount, err := parseHexBig(stringValue(logMap["data"]))
+		if err != nil {
+			continue
+		}
+		if amount.Cmp(expectedAmount) >= 0 {
+			return nil
+		}
+	}
+	return fmt.Errorf("matching token transfer to treasury not found")
+}
+
+func evmRPC(url string, method string, params []any) (any, error) {
+	body, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  method,
+		"params":  params,
+	})
+	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("evm rpc status %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
+	}
+	var decoded struct {
+		Result any `json:"result"`
+		Error  *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return nil, err
+	}
+	if decoded.Error != nil {
+		return nil, fmt.Errorf("%s", decoded.Error.Message)
+	}
+	return decoded.Result, nil
+}
+
+func allocateNativeSYN(intent earlyAccessPaymentIntent) (string, error) {
+	privHex := os.Getenv("SYNTHOS_EARLY_ACCESS_ALLOCATION_PRIVATE_KEY")
+	rpcURL := strings.TrimRight(env("SYNTHOS_NATIVE_RPC_URL", "https://rpc.ishamwilliamsblockchains.com"), "/")
+	if privHex == "" {
+		return "", fmt.Errorf("SYN allocation key is not configured")
+	}
+	w, err := wallet.FromPrivateKeyHex(privHex)
+	if err != nil {
+		return "", err
+	}
+	from, _ := w.Address()
+	pub, _ := w.PublicKeyHex()
+	nonce, err := synthosNonce(rpcURL, string(from))
+	if err != nil {
+		return "", err
+	}
+	tx := chain.Tx{
+		ChainID:   20260702,
+		From:      from,
+		To:        chain.Address(intent.SynthosAddress),
+		Amount:    intent.SynAmount,
+		Fee:       1,
+		Nonce:     nonce,
+		PublicKey: pub,
+		Metadata: []chain.KeyValuePair{
+			{Key: "payment_intent", Value: intent.ID},
+			{Key: "payment_tx", Value: intent.TxHash},
+			{Key: "asset", Value: intent.AssetSymbol},
+		},
+	}
+	if err := tx.Sign(w.Private); err != nil {
+		return "", err
+	}
+	data, _ := json.Marshal(tx)
+	resp, err := http.Post(rpcURL+"/submitTx", "application/json", bytes.NewReader(data))
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode >= 400 {
+		return "", fmt.Errorf("SYN allocation submit failed: %s", strings.TrimSpace(string(body)))
+	}
+	var result struct {
+		OK   bool   `json:"ok"`
+		TxID string `json:"tx_id"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", err
+	}
+	if !result.OK {
+		return "", fmt.Errorf("SYN allocation was not accepted")
+	}
+	_, _ = http.Post(rpcURL+"/proposeBlock", "application/json", bytes.NewReader([]byte("{}")))
+	return result.TxID, nil
+}
+
+func synthosNonce(rpcURL string, address string) (uint64, error) {
+	resp, err := http.Get(rpcURL + "/account?address=" + address)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode >= 400 {
+		return 0, fmt.Errorf("SYN account lookup failed: %s", strings.TrimSpace(string(body)))
+	}
+	var account struct {
+		Nonce uint64 `json:"nonce"`
+	}
+	if err := json.Unmarshal(body, &account); err != nil {
+		return 0, err
+	}
+	return account.Nonce, nil
+}
+
+func parseHexBig(value string) (*big.Int, error) {
+	value = strings.TrimPrefix(value, "0x")
+	if value == "" {
+		return big.NewInt(0), nil
+	}
+	n, ok := new(big.Int).SetString(value, 16)
+	if !ok {
+		return nil, fmt.Errorf("invalid hex value")
+	}
+	return n, nil
+}
+
+func hexBool(value any) bool {
+	raw := stringValue(value)
+	return raw == "0x1" || raw == "1"
+}
+
+func stringValue(value any) string {
+	if value == nil {
+		return ""
+	}
+	return fmt.Sprint(value)
+}
+
+func sameAddress(left string, right string) bool {
+	return strings.EqualFold(strings.TrimSpace(left), strings.TrimSpace(right))
+}
+
+func topicAddressMatches(topic string, address string) bool {
+	topic = strings.TrimPrefix(strings.ToLower(topic), "0x")
+	address = strings.TrimPrefix(strings.ToLower(address), "0x")
+	return len(topic) == 64 && len(address) == 40 && strings.HasSuffix(topic, address)
 }
 
 func normalizeChoice(value, fallback string, allowed ...string) string {
