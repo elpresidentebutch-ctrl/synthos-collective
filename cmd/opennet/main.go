@@ -54,7 +54,7 @@ func main() {
 	var publicRPCURL string
 	flag.StringVar(&outDir, "out", ".synthos/open-network", "output directory for generated open-network files")
 	flag.StringVar(&chainID, "chain-id", "synthos-mainnet-1", "human-readable chain ID")
-	flag.Uint64Var(&txChainID, "tx-chain-id", 1234, "numeric transaction chain ID")
+	flag.Uint64Var(&txChainID, "tx-chain-id", 20260702, "numeric transaction chain ID")
 	flag.IntVar(&validators, "validators", 4, "validator count")
 	flag.StringVar(&publicRPCURL, "public-rpc", "https://rpc.ishamwilliamsblockchains.com", "public RPC URL")
 	flag.Parse()
@@ -98,6 +98,7 @@ func main() {
 	writeJSON(filepath.Join(outDir, "genesis.json"), genesis, 0o600)
 	writeJSON(filepath.Join(outDir, "founder-wallet.private.json"), founder, 0o600)
 	writeJSON(filepath.Join(outDir, "validator-wallets.private.json"), validatorKeys, 0o600)
+	writeEarlyAccessEnv(filepath.Join(outDir, "early-access.env"), founder, publicRPCURL)
 
 	for i, key := range validatorKeys {
 		nodeID := key.Name
@@ -157,6 +158,7 @@ func main() {
 			"docker_compose": "docker-compose.yml",
 			"founder_wallet": "founder-wallet.private.json",
 			"validator_keys": "validator-wallets.private.json",
+			"backend_env":    "early-access.env",
 			"validator_configs": []string{
 				"validator-1.json",
 				"validator-2.json",
@@ -168,6 +170,7 @@ func main() {
 			"Keep this folder private because validator private keys are inside it.",
 			"Run docker compose up --build from the generated folder.",
 			"Point rpc.ishamwilliamsblockchains.com to the host running validator-1 port 8080 through HTTPS.",
+			"Point the Lovable early access page at the backend running on port 8090 through HTTPS.",
 			"Verify /health and /status before inviting early adopters.",
 		},
 	}
@@ -221,7 +224,7 @@ func writeCompose(path string, validators int) {
     build:
       context: ../..
       dockerfile: Dockerfile
-    command: ["/usr/local/bin/synthosd"]
+    entrypoint: ["/usr/local/bin/synthosd"]
     environment:
       SYNTHOS_CONFIG: /config/%s.json
     volumes:
@@ -232,10 +235,43 @@ func writeCompose(path string, validators int) {
 
 `, name, name, name, 8079+i)
 	}
+	content += `  early-access-backend:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    entrypoint: ["/usr/local/bin/cloudless-registry"]
+    command: ["-listen", ":8090", "-state", "/data/cloudless-registry.json"]
+    env_file:
+      - ./early-access.env
+    volumes:
+      - backend-data:/data
+    ports:
+      - "8090:8090"
+    depends_on:
+      - validator-1
+
+`
 	content += "volumes:\n"
 	for i := 1; i <= validators; i++ {
 		content += fmt.Sprintf("  validator-%d-data:\n", i)
 	}
+	content += "  backend-data:\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		panic(err)
+	}
+}
+
+func writeEarlyAccessEnv(path string, founder generatedKey, publicRPCURL string) {
+	assets := `[{"symbol":"ETH","network":"Ethereum","chainId":"1","rpcUrl":"https://eth.llamarpc.com","treasuryAddress":"0xdAE5DF4807274D7a115bB5078c94b023453A05F5","native":true,"decimals":18,"usdPrice":"2000.00","enabled":true},{"symbol":"USDC","network":"Ethereum","chainId":"1","rpcUrl":"https://eth.llamarpc.com","address":"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48","treasuryAddress":"0xdAE5DF4807274D7a115bB5078c94b023453A05F5","decimals":6,"usdPrice":"1.00","enabled":true},{"symbol":"USDT","network":"Ethereum","chainId":"1","rpcUrl":"https://eth.llamarpc.com","address":"0xdAC17F958D2ee523a2206206994597C13D831ec7","treasuryAddress":"0xdAE5DF4807274D7a115bB5078c94b023453A05F5","decimals":6,"usdPrice":"1.00","enabled":true}]`
+	content := fmt.Sprintf(`SYNTHOS_NATIVE_RPC_URL=http://validator-1:8080
+SYNTHOS_EARLY_ACCESS_ALLOCATION_PRIVATE_KEY=%s
+SYNTHOS_EARLY_ACCESS_TREASURY_WALLET=0xdAE5DF4807274D7a115bB5078c94b023453A05F5
+SYNTHOS_EARLY_ACCESS_PAYMENT_TREASURY=0xdAE5DF4807274D7a115bB5078c94b023453A05F5
+SYNTHOS_EARLY_ACCESS_CHAIN_ID=20260702
+SYNTHOS_EARLY_ACCESS_CHAIN_NAME=synthos-mainnet-1
+SYNTHOS_EARLY_ACCESS_RPC_URLS=%s
+SYNTHOS_EARLY_ACCESS_ASSETS_JSON=%s
+`, founder.PrivateKey, publicRPCURL, assets)
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		panic(err)
 	}
