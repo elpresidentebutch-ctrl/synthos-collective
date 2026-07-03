@@ -1,5 +1,5 @@
 # Reproducible build for local demo / reviewer runs.
-# Default: HTTP RPC node (persists under SYNTHOS_DATA_DIR, default /data).
+# Default: early access website/API backend (persists under SYNTHOS_DATA_DIR, default /data).
 FROM golang:1.25-alpine AS build
 WORKDIR /src
 COPY go.mod ./
@@ -19,4 +19,4 @@ ENV SYNTHOS_DATA_DIR=/data
 ENV SYNTHOS_EARLY_ACCESS_WIDGET_PATH=/website/assets/early-access-sale.js
 RUN mkdir -p /data
 EXPOSE 8080
-CMD ["/usr/local/bin/rpcnode"]
+CMD ["/usr/local/bin/cloudless-registry"]
