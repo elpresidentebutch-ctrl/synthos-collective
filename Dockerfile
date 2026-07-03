@@ -14,7 +14,9 @@ RUN go build -trimpath -ldflags="-s -w" -o /out/rpcnode ./cmd/rpcnode \
 FROM alpine:3.19
 RUN apk add --no-cache ca-certificates
 COPY --from=build /out/rpcnode /out/devnet /out/synthosd /out/cloudless-registry /usr/local/bin/
+COPY website/assets/early-access-sale.js /website/assets/early-access-sale.js
 ENV SYNTHOS_DATA_DIR=/data
+ENV SYNTHOS_EARLY_ACCESS_WIDGET_PATH=/website/assets/early-access-sale.js
 RUN mkdir -p /data
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/rpcnode"]

@@ -85,6 +85,8 @@ SYNTHOS_EARLY_ACCESS_TREASURY_WALLET=0xdAE5DF4807274D7a115bB5078c94b023453A05F5
 SYNTHOS_EARLY_ACCESS_ASSETS_JSON=[]
 SYNTHOS_EARLY_ACCESS_ALLOCATION_PRIVATE_KEY=
 SYNTHOS_NATIVE_RPC_URL=https://rpc.ishamwilliamsblockchains.com
+SYNTHOS_CORS_ORIGINS=https://www.ishamwilliamsblockchains.com,https://ishamwilliamsblockchains.com,https://lovable.dev
+SYNTHOS_EARLY_ACCESS_WIDGET_PATH=/website/assets/early-access-sale.js
 ```
 
 `SYNTHOS_EARLY_ACCESS_ASSETS_JSON` should contain the live payment assets for the same EVM chain as the sale contract. Example shape:
@@ -187,9 +189,9 @@ For the early adopter section, set the API origin and load the widget:
 ```html
 <div data-synthos-early-access></div>
 <script>
-  window.SYNTHOS_API_URL = window.location.origin;
+  window.SYNTHOS_API_URL = "https://api.ishamwilliamsblockchains.com";
 </script>
-<script src="/assets/early-access-sale.js"></script>
+<script src="https://api.ishamwilliamsblockchains.com/assets/early-access-sale.js"></script>
 ```
 
 The current deployed Lovable app uses Supabase auth and generated server functions. Keep Supabase auth if you want site login, but route SYNTHOS-specific node provisioning and status data through this backend.

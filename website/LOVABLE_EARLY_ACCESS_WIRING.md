@@ -7,18 +7,17 @@ container:
 <div data-synthos-early-access></div>
 ```
 
-Load the widget after the container. If the SYNTHOS backend is served from the
-same origin as the website, use:
+Load the widget after the container:
 
 ```html
 <script>
-  window.SYNTHOS_API_URL = window.location.origin;
+  window.SYNTHOS_API_URL = "https://api.ishamwilliamsblockchains.com";
 </script>
-<script src="/assets/early-access-sale.js"></script>
+<script src="https://api.ishamwilliamsblockchains.com/assets/early-access-sale.js"></script>
 ```
 
-If the backend is served from a dedicated API origin, set
-`window.SYNTHOS_API_URL` to that real HTTPS origin before loading the script.
+The backend serves the widget script and sends CORS headers for the website and
+Lovable origins.
 
 ## Backend Config
 
@@ -48,6 +47,8 @@ SYNTHOS_EARLY_ACCESS_SALE_CONTRACT=
 SYNTHOS_EARLY_ACCESS_COMPLIANCE_REGISTRY=
 SYNTHOS_EARLY_ACCESS_TREASURY_WALLET=0xdAE5DF4807274D7a115bB5078c94b023453A05F5
 SYNTHOS_EARLY_ACCESS_ASSETS_JSON=[]
+SYNTHOS_CORS_ORIGINS=https://www.ishamwilliamsblockchains.com,https://ishamwilliamsblockchains.com,https://lovable.dev
+SYNTHOS_EARLY_ACCESS_WIDGET_PATH=/website/assets/early-access-sale.js
 ```
 
 Leave the sale contract and compliance registry empty until the public contracts

@@ -151,6 +151,7 @@ func main() {
 	mux.HandleFunc("/api/early-access/config", s.handleAPIEarlyAccessConfig)
 	mux.HandleFunc("/api/early-access/payment-intents", s.handleAPIEarlyAccessPaymentIntents)
 	mux.HandleFunc("/api/early-access/payment-intents/", s.handleAPIEarlyAccessPaymentIntentByID)
+	mux.HandleFunc("/assets/early-access-sale.js", s.handleEarlyAccessWidget)
 	mux.HandleFunc("/api/node/windows-installer.ps1", s.handleWindowsInstaller)
 
 	log.Printf("SYNTHOS cloudless registry listening on %s", listen)
@@ -181,6 +182,7 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 			"POST /api/early-access/payment-intents",
 			"GET /api/early-access/payment-intents/ID",
 			"POST /api/early-access/payment-intents/ID/verify",
+			"GET /assets/early-access-sale.js",
 			"GET /api/node/windows-installer.ps1",
 			"DELETE /peers/NODE",
 		},
@@ -671,6 +673,30 @@ func (s *server) handleAPIEarlyAccessPaymentIntents(w http.ResponseWriter, r *ht
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "intent": intent})
 }
 
+func (s *server) handleEarlyAccessWidget(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	candidates := []string{
+		env("SYNTHOS_EARLY_ACCESS_WIDGET_PATH", ""),
+		"/website/assets/early-access-sale.js",
+		"website/assets/early-access-sale.js",
+	}
+	for _, candidate := range candidates {
+		if candidate == "" {
+			continue
+		}
+		if _, err := os.Stat(candidate); err == nil {
+			w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+			w.Header().Set("Cache-Control", "public, max-age=300")
+			http.ServeFile(w, r, candidate)
+			return
+		}
+	}
+	http.Error(w, "early access widget asset not found", http.StatusNotFound)
+}
+
 func (s *server) handleAPIEarlyAccessPaymentIntentByID(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/early-access/payment-intents/")
 	parts := strings.Split(strings.Trim(path, "/"), "/")
@@ -878,15 +904,29 @@ func (s *server) persist() error {
 
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Origin", allowedOrigin(r.Header.Get("Origin")))
+		w.Header().Set("Vary", "Origin")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Registry-Secret")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Registry-Secret, Authorization")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func allowedOrigin(origin string) string {
+	origins := splitCSV(os.Getenv("SYNTHOS_CORS_ORIGINS"))
+	if len(origins) == 0 {
+		return "*"
+	}
+	for _, allowed := range origins {
+		if allowed == "*" || strings.EqualFold(strings.TrimRight(allowed, "/"), strings.TrimRight(origin, "/")) {
+			return origin
+		}
+	}
+	return origins[0]
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

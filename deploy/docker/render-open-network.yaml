@@ -31,6 +31,10 @@ services:
         value: synthos-mainnet-1
       - key: SYNTHOS_EARLY_ACCESS_RPC_URLS
         value: https://rpc.ishamwilliamsblockchains.com
+      - key: SYNTHOS_CORS_ORIGINS
+        value: https://www.ishamwilliamsblockchains.com,https://ishamwilliamsblockchains.com,https://lovable.dev
+      - key: SYNTHOS_EARLY_ACCESS_WIDGET_PATH
+        value: /website/assets/early-access-sale.js
       - key: SYNTHOS_EARLY_ACCESS_ALLOCATION_PRIVATE_KEY
         sync: false
       - key: SYNTHOS_EARLY_ACCESS_ASSETS_JSON

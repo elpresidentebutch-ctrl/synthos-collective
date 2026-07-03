@@ -270,6 +270,8 @@ SYNTHOS_EARLY_ACCESS_PAYMENT_TREASURY=0xdAE5DF4807274D7a115bB5078c94b023453A05F5
 SYNTHOS_EARLY_ACCESS_CHAIN_ID=20260702
 SYNTHOS_EARLY_ACCESS_CHAIN_NAME=synthos-mainnet-1
 SYNTHOS_EARLY_ACCESS_RPC_URLS=%s
+SYNTHOS_CORS_ORIGINS=https://www.ishamwilliamsblockchains.com,https://ishamwilliamsblockchains.com,https://lovable.dev
+SYNTHOS_EARLY_ACCESS_WIDGET_PATH=/website/assets/early-access-sale.js
 SYNTHOS_EARLY_ACCESS_ASSETS_JSON=%s
 `, founder.PrivateKey, publicRPCURL, assets)
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
