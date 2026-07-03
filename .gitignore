@@ -48,6 +48,8 @@ dist/
 .wrangler/
 .dev.vars
 wrangler.toml.bak
+.synthos/early-access-keys/
+.synthos/open-network/
 .synthos/mainnet-secrets/
 contracts/.env.mainnet.local
 contracts/.env.mainnet.generated
