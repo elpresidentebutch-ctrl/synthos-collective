@@ -189,9 +189,12 @@ For the early adopter section, set the API origin and load the widget:
 ```html
 <div data-synthos-early-access></div>
 <script>
-  window.SYNTHOS_API_URL = "https://api.ishamwilliamsblockchains.com";
+  window.SYNTHOS_API_URL = "https://www.ishamwilliamsblockchains.com";
 </script>
-<script src="https://api.ishamwilliamsblockchains.com/assets/early-access-sale.js"></script>
+<script src="https://www.ishamwilliamsblockchains.com/assets/early-access-sale.js"></script>
 ```
+
+For this same-domain setup, the `www` host must route `/api/*` and
+`/assets/early-access-sale.js` to the SYNTHOS backend.
 
 The current deployed Lovable app uses Supabase auth and generated server functions. Keep Supabase auth if you want site login, but route SYNTHOS-specific node provisioning and status data through this backend.

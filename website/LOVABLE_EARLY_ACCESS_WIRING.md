@@ -11,13 +11,15 @@ Load the widget after the container:
 
 ```html
 <script>
-  window.SYNTHOS_API_URL = "https://api.ishamwilliamsblockchains.com";
+  window.SYNTHOS_API_URL = "https://www.ishamwilliamsblockchains.com";
 </script>
-<script src="https://api.ishamwilliamsblockchains.com/assets/early-access-sale.js"></script>
+<script src="https://www.ishamwilliamsblockchains.com/assets/early-access-sale.js"></script>
 ```
 
 The backend serves the widget script and sends CORS headers for the website and
 Lovable origins.
+For this same-domain setup, `www.ishamwilliamsblockchains.com` must route
+`/api/*` and `/assets/early-access-sale.js` to the SYNTHOS backend.
 
 ## Backend Config
 
