@@ -1,5 +1,20 @@
 services:
   - type: web
+    name: synthos-rpc
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: /usr/local/bin/rpcnode
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: SYNTHOS_DATA_DIR
+        value: /data
+    disk:
+      name: synthos-rpc-data
+      mountPath: /data
+      sizeGB: 1
+
+  - type: web
     name: synthos-www
     runtime: docker
     dockerfilePath: ./Dockerfile
@@ -8,21 +23,27 @@ services:
     autoDeploy: true
     envVars:
       - key: SYNTHOS_NATIVE_RPC_URL
-        value: https://rpc.ishamwilliamsblockchains.com
+        value: https://synthos-rpc.onrender.com
+      - key: SYNTHOS_DISTRIBUTION_AGENT_ID
+        value: synthos-early-adopter-distributor
       - key: SYNTHOS_EARLY_ACCESS_TREASURY_WALLET
         value: 0xdAE5DF4807274D7a115bB5078c94b023453A05F5
       - key: SYNTHOS_EARLY_ACCESS_PAYMENT_TREASURY
         value: 0xdAE5DF4807274D7a115bB5078c94b023453A05F5
       - key: SYNTHOS_EARLY_ACCESS_CHAIN_ID
         value: "20260702"
+      - key: SYNTHOS_EARLY_ACCESS_TX_CHAIN_ID
+        value: "20260702"
       - key: SYNTHOS_EARLY_ACCESS_CHAIN_NAME
         value: synthos-mainnet-1
       - key: SYNTHOS_EARLY_ACCESS_RPC_URLS
-        value: https://rpc.ishamwilliamsblockchains.com
+        value: https://rpc.ishamwilliamsblockchains.com,https://synthos-rpc.onrender.com
       - key: SYNTHOS_CORS_ORIGINS
         value: https://www.ishamwilliamsblockchains.com,https://ishamwilliamsblockchains.com,https://lovable.dev
       - key: SYNTHOS_EARLY_ACCESS_WIDGET_PATH
         value: /website/assets/early-access-sale.js
+      - key: SYNTHOS_DISTRIBUTION_AGENT_PRIVATE_KEY
+        sync: false
       - key: SYNTHOS_EARLY_ACCESS_ALLOCATION_PRIVATE_KEY
         sync: false
       - key: SYNTHOS_EARLY_ACCESS_ASSETS_JSON
