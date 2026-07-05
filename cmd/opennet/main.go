@@ -264,16 +264,19 @@ func writeCompose(path string, validators int) {
 func writeEarlyAccessEnv(path string, founder generatedKey, publicRPCURL string) {
 	assets := `[{"symbol":"ETH","network":"Ethereum","chainId":"1","rpcUrl":"https://eth.llamarpc.com","treasuryAddress":"0xdAE5DF4807274D7a115bB5078c94b023453A05F5","native":true,"decimals":18,"usdPrice":"2000.00","enabled":true},{"symbol":"USDC","network":"Ethereum","chainId":"1","rpcUrl":"https://eth.llamarpc.com","address":"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48","treasuryAddress":"0xdAE5DF4807274D7a115bB5078c94b023453A05F5","decimals":6,"usdPrice":"1.00","enabled":true},{"symbol":"USDT","network":"Ethereum","chainId":"1","rpcUrl":"https://eth.llamarpc.com","address":"0xdAC17F958D2ee523a2206206994597C13D831ec7","treasuryAddress":"0xdAE5DF4807274D7a115bB5078c94b023453A05F5","decimals":6,"usdPrice":"1.00","enabled":true}]`
 	content := fmt.Sprintf(`SYNTHOS_NATIVE_RPC_URL=http://validator-1:8080
+SYNTHOS_DISTRIBUTION_AGENT_ID=synthos-early-adopter-distributor
+SYNTHOS_DISTRIBUTION_AGENT_PRIVATE_KEY=%s
 SYNTHOS_EARLY_ACCESS_ALLOCATION_PRIVATE_KEY=%s
 SYNTHOS_EARLY_ACCESS_TREASURY_WALLET=0xdAE5DF4807274D7a115bB5078c94b023453A05F5
 SYNTHOS_EARLY_ACCESS_PAYMENT_TREASURY=0xdAE5DF4807274D7a115bB5078c94b023453A05F5
 SYNTHOS_EARLY_ACCESS_CHAIN_ID=20260702
+SYNTHOS_EARLY_ACCESS_TX_CHAIN_ID=20260702
 SYNTHOS_EARLY_ACCESS_CHAIN_NAME=synthos-mainnet-1
 SYNTHOS_EARLY_ACCESS_RPC_URLS=%s
 SYNTHOS_CORS_ORIGINS=https://www.ishamwilliamsblockchains.com,https://ishamwilliamsblockchains.com,https://lovable.dev
 SYNTHOS_EARLY_ACCESS_WIDGET_PATH=/website/assets/early-access-sale.js
 SYNTHOS_EARLY_ACCESS_ASSETS_JSON=%s
-`, founder.PrivateKey, publicRPCURL, assets)
+`, founder.PrivateKey, founder.PrivateKey, publicRPCURL, assets)
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		panic(err)
 	}

@@ -15,6 +15,7 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -570,6 +571,7 @@ func (s *server) handleAPIEarlyAccessConfig(w http.ResponseWriter, r *http.Reque
 	complianceRegistry := os.Getenv("SYNTHOS_EARLY_ACCESS_COMPLIANCE_REGISTRY")
 	chainID := os.Getenv("SYNTHOS_EARLY_ACCESS_CHAIN_ID")
 	assets := earlyAccessAssetsFromEnv()
+	distributor := earlyAccessDistributorConfig()
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":                 true,
@@ -582,6 +584,7 @@ func (s *server) handleAPIEarlyAccessConfig(w http.ResponseWriter, r *http.Reque
 		"saleContract":       saleContract,
 		"complianceRegistry": complianceRegistry,
 		"treasuryWallet":     env("SYNTHOS_EARLY_ACCESS_TREASURY_WALLET", "0xdAE5DF4807274D7a115bB5078c94b023453A05F5"),
+		"distributionAgent":  distributor,
 		"tokenPriceUsd":      "0.05",
 		"activeTrancheSyn":   "250,000,000",
 		"maxTrancheUsd":      "$12,500,000",
@@ -1212,12 +1215,16 @@ func evmRPC(url string, method string, params []any) (any, error) {
 }
 
 func allocateNativeSYN(intent earlyAccessPaymentIntent) (string, error) {
-	privHex := os.Getenv("SYNTHOS_EARLY_ACCESS_ALLOCATION_PRIVATE_KEY")
+	privHex := distributionAgentPrivateKey()
 	rpcURL := strings.TrimRight(env("SYNTHOS_NATIVE_RPC_URL", "https://rpc.ishamwilliamsblockchains.com"), "/")
 	if privHex == "" {
-		return "", fmt.Errorf("SYN allocation key is not configured")
+		return "", fmt.Errorf("SYN distribution agent key is not configured")
 	}
 	w, err := wallet.FromPrivateKeyHex(privHex)
+	if err != nil {
+		return "", err
+	}
+	txChainID, err := synthosTxChainID()
 	if err != nil {
 		return "", err
 	}
@@ -1228,14 +1235,15 @@ func allocateNativeSYN(intent earlyAccessPaymentIntent) (string, error) {
 		return "", err
 	}
 	tx := chain.Tx{
-		ChainID:   20260702,
+		ChainID:   txChainID,
 		From:      from,
 		To:        chain.Address(intent.SynthosAddress),
 		Amount:    intent.SynAmount,
-		Fee:       1,
+		Fee:       chain.MIN_FEE,
 		Nonce:     nonce,
 		PublicKey: pub,
 		Metadata: []chain.KeyValuePair{
+			{Key: "distribution_agent", Value: env("SYNTHOS_DISTRIBUTION_AGENT_ID", "synthos-early-adopter-distributor")},
 			{Key: "payment_intent", Value: intent.ID},
 			{Key: "payment_tx", Value: intent.TxHash},
 			{Key: "asset", Value: intent.AssetSymbol},
@@ -1285,6 +1293,52 @@ func synthosNonce(rpcURL string, address string) (uint64, error) {
 		return 0, err
 	}
 	return account.Nonce, nil
+}
+
+func distributionAgentPrivateKey() string {
+	if value := os.Getenv("SYNTHOS_DISTRIBUTION_AGENT_PRIVATE_KEY"); value != "" {
+		return value
+	}
+	return os.Getenv("SYNTHOS_EARLY_ACCESS_ALLOCATION_PRIVATE_KEY")
+}
+
+func earlyAccessDistributorConfig() map[string]any {
+	info := map[string]any{
+		"agentId": env("SYNTHOS_DISTRIBUTION_AGENT_ID", "synthos-early-adopter-distributor"),
+		"enabled": distributionAgentPrivateKey() != "",
+	}
+	if txChainID, err := synthosTxChainID(); err == nil {
+		info["txChainId"] = txChainID
+	}
+	if privHex := distributionAgentPrivateKey(); privHex != "" {
+		if w, err := wallet.FromPrivateKeyHex(privHex); err == nil {
+			if address, err := w.Address(); err == nil {
+				info["address"] = address
+			}
+			if fingerprint, err := w.Fingerprint(); err == nil {
+				info["fingerprint"] = fingerprint
+			}
+		}
+	}
+	return info
+}
+
+func synthosTxChainID() (uint64, error) {
+	for _, raw := range []string{
+		os.Getenv("SYNTHOS_EARLY_ACCESS_TX_CHAIN_ID"),
+		os.Getenv("SYNTHOS_EARLY_ACCESS_CHAIN_ID"),
+	} {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		id, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil || id == 0 {
+			return 0, fmt.Errorf("invalid SYNTHOS transaction chain ID %q", raw)
+		}
+		return id, nil
+	}
+	return 20260702, nil
 }
 
 func parseHexBig(value string) (*big.Int, error) {
