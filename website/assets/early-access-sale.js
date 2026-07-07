@@ -1,5 +1,5 @@
 (function () {
-  const TREASURY_WALLET = "0xdAE5DF4807274D7a115bB5078c94b023453A05F5";
+  const TREASURY_WALLET = "0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2";
   const HARDHAT_CHAIN_ID = 31337;
   const ETHERS_CDN = "https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js";
 
@@ -37,9 +37,9 @@
     saleContract: "",
     complianceRegistry: "",
     treasuryWallet: TREASURY_WALLET,
-    tokenPriceUsd: "0.05",
+    tokenPriceUsd: "0.10",
     activeTrancheSyn: "250,000,000",
-    maxTrancheUsd: "$12,500,000",
+    maxTrancheUsd: "$25,000,000",
     communitySourceBucket: "COMMUNITY_EARLY_ADOPTER_CAMPAIGNS",
     paymentRails: false,
     paymentIntentUrl: "/api/early-access/payment-intents",
@@ -325,7 +325,7 @@
       const raw = root.querySelector("[data-sale-amount]").value.trim();
       const usd = Number(raw || 0);
       root.querySelector("[data-sale-quote]").textContent = usd > 0
-        ? `${(usd * 20).toLocaleString()} SYN at $0.05`
+        ? `${(usd * 10).toLocaleString()} SYN at $0.10`
         : "Enter a USD amount.";
       return;
     }

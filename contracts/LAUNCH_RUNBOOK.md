@@ -44,7 +44,7 @@ SYNTHOS_CHAIN_ID=1234
 TIMELOCK_MIN_DELAY=172800
 MULTISIG_OWNERS=0xa68A867aAdA7652eB3FeE14a5786B92317139B5c,0xD37fCaa767d425E11Ff7CC074B4e924cE60DcdB5,0x6DA0C1148c76b5bd77EF5455eE79A6859e865290
 MULTISIG_THRESHOLD=2
-TREASURY_WALLET=0xdAE5DF4807274D7a115bB5078c94b023453A05F5
+TREASURY_WALLET=0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2
 ```
 
 The private key is stored only in `.synthos/mainnet-secrets/2026-07-02/`
@@ -141,3 +141,31 @@ Publish only these public values:
 - Token risk disclosure
 
 Never publish private keys, seed phrases, or raw `.env` files.
+
+## 8. Bitcoin & WBTC Payment Setup
+
+The core `SYNTHOSEarlyAdopterSale` contract only auto-delivers SYN for
+EVM-native payments (ETH, USDC, USDT, WETH, WBTC). Native BTC and any other
+non-EVM asset cannot trigger it directly.
+
+To accept WBTC (no new contract, config only):
+
+```bash
+WBTC_ADDRESS=<wbtc token address on the target chain> \
+WBTC_USD_PRICE=<current BTC/USD price> \
+pnpm hardhat run scripts/enable-wbtc-payment.js --network synthos
+```
+
+To accept native Bitcoin (see `BITCOIN_ADOPTER_SALE.md` for the full trust
+model before enabling this):
+
+```bash
+BITCOIN_SALE_CONFIRMER=<address that will verify and confirm BTC payments> \
+BITCOIN_SALE_ALLOCATION=<SYN to fund the contract with> \
+pnpm hardhat run scripts/deploy-bitcoin-sale.js --network synthos
+```
+
+The confirmer address must be held to treasury-signer custody standards. It
+can release SYN for any Bitcoin transaction it claims occurred, verified or
+not, so do not launch native BTC acceptance until you have a specific,
+accountable process for who checks payments and how.

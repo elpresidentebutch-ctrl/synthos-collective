@@ -583,7 +583,7 @@ func (s *server) handleAPIEarlyAccessConfig(w http.ResponseWriter, r *http.Reque
 		"rpcUrls":            splitCSV(env("SYNTHOS_EARLY_ACCESS_RPC_URLS", "https://rpc.ishamwilliamsblockchains.com")),
 		"saleContract":       saleContract,
 		"complianceRegistry": complianceRegistry,
-		"treasuryWallet":     env("SYNTHOS_EARLY_ACCESS_TREASURY_WALLET", "0xdAE5DF4807274D7a115bB5078c94b023453A05F5"),
+		"treasuryWallet":     env("SYNTHOS_EARLY_ACCESS_TREASURY_WALLET", "0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2"),
 		"distributionAgent":  distributor,
 		"tokenPriceUsd":      "0.05",
 		"activeTrancheSyn":   "250,000,000",
@@ -1027,7 +1027,7 @@ func earlyAccessAssetsFromEnv() []earlyAccessAsset {
 					assets[i].Enabled = true
 				}
 				if assets[i].TreasuryAddress == "" {
-					assets[i].TreasuryAddress = env("SYNTHOS_EARLY_ACCESS_PAYMENT_TREASURY", env("SYNTHOS_EARLY_ACCESS_TREASURY_WALLET", "0xdAE5DF4807274D7a115bB5078c94b023453A05F5"))
+					assets[i].TreasuryAddress = env("SYNTHOS_EARLY_ACCESS_PAYMENT_TREASURY", env("SYNTHOS_EARLY_ACCESS_TREASURY_WALLET", "0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2"))
 				}
 			}
 			return assets

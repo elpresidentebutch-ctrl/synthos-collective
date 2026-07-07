@@ -15,7 +15,7 @@ import "./SYNTHOSComplianceRegistry.sol";
  * @dev Crypto-only SYN sale contract for eligible early adopters.
  *
  * The contract must be pre-funded with SYN. Buyers pay accepted crypto assets
- * to the treasury wallet and receive SYN immediately at 0.05 USD per SYN.
+ * to the treasury wallet and receive SYN immediately at 0.10 USD per SYN.
  *
  * Non-stable payment assets require the owner to update the asset USD price.
  * This contract intentionally does not use an external oracle.
@@ -23,7 +23,7 @@ import "./SYNTHOSComplianceRegistry.sol";
 contract SYNTHOSEarlyAdopterSale is Ownable, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
-    uint256 public constant USD_PRICE_PER_SYN_18 = 5 * 10 ** 16; // $0.05
+    uint256 public constant USD_PRICE_PER_SYN_18 = 1 * 10 ** 17; // $0.10
 
     struct PaymentAsset {
         bool enabled;

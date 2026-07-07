@@ -1,9 +1,14 @@
 {
-  "chain_id": "synthos-l1-devnet",
+  "chain_id": "synthos-mainnet-1",
+  "tx_chain_id": 20260702,
   "alloc": {
-    "0x4ab2003c0391f25013f15539c9123e770d3c5a67": 10000,
-    "agent-0": 100000000000
+    "0x825fd94aa826da6ce0b4e57487418b72aea09f5e": 100000000000
   },
-  "symbol": "SYN",
-  "decimals": 0
+  "metadata": {
+    "symbol": "SYN",
+    "decimals": 0,
+    "network": "SYNTHOS Collective",
+    "public_rpc_url": "https://rpc.ishamwilliamsblockchains.com",
+    "founder_allocation": 100000000000
+  }
 }

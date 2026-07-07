@@ -5,18 +5,18 @@ early adopter allocation.
 
 ## Price
 
-- 1 SYN = 0.05 USD
-- 1 USD = 20 SYN
-- 100 USD = 2,000 SYN
+- 1 SYN = 0.10 USD
+- 1 USD = 10 SYN
+- 100 USD = 1,000 SYN
 - First active tranche = 250,000,000 SYN
-- First active tranche maximum value = 12,500,000 USD
+- First active tranche maximum value = 25,000,000 USD
 - Source bucket = `COMMUNITY_EARLY_ADOPTER_CAMPAIGNS`
 - Campaign reserve after tranche one = 1,750,000,000 SYN
 
 The contract uses fixed USD math:
 
 ```text
-SYN received = crypto payment USD value / 0.05
+SYN received = crypto payment USD value / 0.10
 ```
 
 ## Flow
@@ -46,7 +46,7 @@ Native coin payments are optional. They require the owner to set
 Early adopter sale proceeds should be received by the SYNTHOS treasury wallet:
 
 ```text
-0xdAE5DF4807274D7a115bB5078c94b023453A05F5
+0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2
 ```
 
 The pre-sale contract forwards ERC-20 payments and native-chain payments directly

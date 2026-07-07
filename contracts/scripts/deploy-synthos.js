@@ -444,8 +444,8 @@ async function main() {
       merkleLeafCount: merkle.count,
     },
     earlyAdopterSale: {
-      tokenPriceUsd: "0.05",
-      maxTrancheValueUsd: "12500000",
+      tokenPriceUsd: "0.10",
+      maxTrancheValueUsd: "25000000",
       sourceBucket: "COMMUNITY_EARLY_ADOPTER_CAMPAIGNS",
       allocation: ethers.formatUnits(earlyAdopterSaleAllocation, 18),
       campaignReserve: ethers.formatUnits(earlyAdopterCampaignReserve, 18),

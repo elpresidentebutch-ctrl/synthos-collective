@@ -32,10 +32,10 @@ GET /api/early-access/config
 That endpoint supplies the first early adopter tranche:
 
 ```text
-250,000,000 SYN at $0.05 per SYN
-$12,500,000 max tranche value
+250,000,000 SYN at $0.10 per SYN
+$25,000,000 max tranche value
 Source bucket: COMMUNITY_EARLY_ADOPTER_CAMPAIGNS
-Treasury wallet: 0xdAE5DF4807274D7a115bB5078c94b023453A05F5
+Treasury wallet: 0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2
 RPC URL: https://rpc.ishamwilliamsblockchains.com
 ```
 
@@ -47,7 +47,7 @@ SYNTHOS_EARLY_ACCESS_CHAIN_NAME=SYNTHOS
 SYNTHOS_EARLY_ACCESS_RPC_URLS=https://rpc.ishamwilliamsblockchains.com
 SYNTHOS_EARLY_ACCESS_SALE_CONTRACT=
 SYNTHOS_EARLY_ACCESS_COMPLIANCE_REGISTRY=
-SYNTHOS_EARLY_ACCESS_TREASURY_WALLET=0xdAE5DF4807274D7a115bB5078c94b023453A05F5
+SYNTHOS_EARLY_ACCESS_TREASURY_WALLET=0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2
 SYNTHOS_EARLY_ACCESS_ASSETS_JSON=[]
 SYNTHOS_CORS_ORIGINS=https://www.ishamwilliamsblockchains.com,https://ishamwilliamsblockchains.com,https://lovable.dev
 SYNTHOS_EARLY_ACCESS_WIDGET_PATH=/website/assets/early-access-sale.js
@@ -65,7 +65,7 @@ The widget does not use manual payment confirmation. It performs:
 2. Switch to the configured EVM chain when needed.
 3. Check `SYNTHOSComplianceRegistry.eligibleToReceive(wallet, Community)`.
 4. If self-registration is open, call `selfRegisterCommunity`.
-5. Quote SYN at `$0.05`.
+5. Quote SYN at `$0.10`.
 6. Approve ERC-20 payment asset when needed.
 7. Call `buyWithToken` or `buyWithNative`.
 8. Deliver SYN in the purchase transaction.

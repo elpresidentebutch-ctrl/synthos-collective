@@ -560,7 +560,7 @@ describe("post-incubation compile / deploy smoke", function () {
     ).to.be.revertedWith("pool not active");
   });
 
-  it("sells SYN automatically to eligible early adopters at five cents", async function () {
+  it("sells SYN automatically to eligible early adopters at ten cents", async function () {
     const [operator, buyer, outsider, treasury] = await ethers.getSigners();
 
     const SynCoin = await ethers.getContractFactory("SynCoin");
@@ -626,7 +626,7 @@ describe("post-incubation compile / deploy smoke", function () {
       await usdc.getAddress(),
       ethers.parseUnits("100", 18)
     );
-    expect(quotedSyn).to.equal(ethers.parseUnits("2000", 18));
+    expect(quotedSyn).to.equal(ethers.parseUnits("1000", 18));
 
     await expect(
       sale.connect(outsider).buyWithToken(
@@ -643,24 +643,24 @@ describe("post-incubation compile / deploy smoke", function () {
     );
 
     expect(await syn.balanceOf(buyer.address)).to.equal(
-      ethers.parseUnits("2000", 18)
+      ethers.parseUnits("1000", 18)
     );
     expect(await usdc.balanceOf(treasury.address)).to.equal(
       ethers.parseUnits("100", 18)
     );
-    expect(await sale.totalSynSold()).to.equal(ethers.parseUnits("2000", 18));
+    expect(await sale.totalSynSold()).to.equal(ethers.parseUnits("1000", 18));
     expect(await sale.purchasedByWallet(buyer.address)).to.equal(
-      ethers.parseUnits("2000", 18)
+      ethers.parseUnits("1000", 18)
     );
 
     await usdc.connect(buyer).approve(
       await sale.getAddress(),
-      ethers.parseUnits("5000", 18)
+      ethers.parseUnits("10000", 18)
     );
     await expect(
       sale.connect(buyer).buyWithToken(
         await usdc.getAddress(),
-        ethers.parseUnits("5000", 18),
+        ethers.parseUnits("10000", 18),
         buyer.address
       )
     ).to.be.revertedWith("wallet cap exceeded");
@@ -757,7 +757,7 @@ describe("post-incubation compile / deploy smoke", function () {
     );
 
     expect(await syn.balanceOf(buyer.address)).to.equal(
-      ethers.parseUnits("500", 18)
+      ethers.parseUnits("250", 18)
     );
     expect(await usdc.balanceOf(treasury.address)).to.equal(
       ethers.parseUnits("25", 18)
@@ -811,7 +811,7 @@ describe("post-incubation compile / deploy smoke", function () {
 
     await sale.setNativePaymentConfig(true, ethers.parseUnits("2000", 18));
     const [quotedSyn] = await sale.quoteNativePurchase(ethers.parseEther("0.1"));
-    expect(quotedSyn).to.equal(ethers.parseUnits("4000", 18));
+    expect(quotedSyn).to.equal(ethers.parseUnits("2000", 18));
 
     const treasuryBefore = await ethers.provider.getBalance(treasury.address);
     await sale.connect(buyer).buyWithNative(buyer.address, {
@@ -819,7 +819,7 @@ describe("post-incubation compile / deploy smoke", function () {
     });
 
     expect(await syn.balanceOf(buyer.address)).to.equal(
-      ethers.parseUnits("4000", 18)
+      ethers.parseUnits("2000", 18)
     );
     expect(await ethers.provider.getBalance(treasury.address)).to.equal(
       treasuryBefore + ethers.parseEther("0.1")

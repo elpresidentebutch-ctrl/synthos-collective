@@ -69,7 +69,7 @@ Returns the launch-ready early adopter sale configuration for the website:
 - `activeTrancheSyn`: `250,000,000`
 - `maxTrancheUsd`: `$12,500,000`
 - `communitySourceBucket`: `COMMUNITY_EARLY_ADOPTER_CAMPAIGNS`
-- `treasuryWallet`: `0xdAE5DF4807274D7a115bB5078c94b023453A05F5` unless overridden
+- `treasuryWallet`: `0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2` unless overridden
 - `paymentRails`: `true`
 - `paymentIntentUrl`: `/api/early-access/payment-intents`
 
@@ -81,7 +81,7 @@ SYNTHOS_EARLY_ACCESS_CHAIN_NAME=SYNTHOS
 SYNTHOS_EARLY_ACCESS_RPC_URLS=https://rpc.ishamwilliamsblockchains.com
 SYNTHOS_EARLY_ACCESS_SALE_CONTRACT=
 SYNTHOS_EARLY_ACCESS_COMPLIANCE_REGISTRY=
-SYNTHOS_EARLY_ACCESS_TREASURY_WALLET=0xdAE5DF4807274D7a115bB5078c94b023453A05F5
+SYNTHOS_EARLY_ACCESS_TREASURY_WALLET=0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2
 SYNTHOS_EARLY_ACCESS_ASSETS_JSON=[]
 SYNTHOS_EARLY_ACCESS_ALLOCATION_PRIVATE_KEY=
 SYNTHOS_NATIVE_RPC_URL=https://rpc.ishamwilliamsblockchains.com

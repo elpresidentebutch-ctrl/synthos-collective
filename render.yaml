@@ -27,9 +27,9 @@ services:
       - key: SYNTHOS_DISTRIBUTION_AGENT_ID
         value: synthos-early-adopter-distributor
       - key: SYNTHOS_EARLY_ACCESS_TREASURY_WALLET
-        value: 0xdAE5DF4807274D7a115bB5078c94b023453A05F5
+        value: 0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2
       - key: SYNTHOS_EARLY_ACCESS_PAYMENT_TREASURY
-        value: 0xdAE5DF4807274D7a115bB5078c94b023453A05F5
+        value: 0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2
       - key: SYNTHOS_EARLY_ACCESS_CHAIN_ID
         value: "20260702"
       - key: SYNTHOS_EARLY_ACCESS_TX_CHAIN_ID

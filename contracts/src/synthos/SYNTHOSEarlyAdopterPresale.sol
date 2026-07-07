@@ -8,7 +8,7 @@ import "./SYNTHOSEarlyAdopterSale.sol";
  * @dev Founder-facing name for the automatic early adopter pre-sale.
  *
  * The inherited contract accepts enabled crypto payment assets, prices SYN at
- * $0.05, and delivers SYN immediately from the pre-funded 250M SYN tranche.
+ * $0.10, and delivers SYN immediately from the pre-funded 250M SYN tranche.
  */
 contract SYNTHOSEarlyAdopterPresale is SYNTHOSEarlyAdopterSale {
     constructor(
