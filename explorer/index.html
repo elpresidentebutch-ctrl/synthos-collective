@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SYNTHOS Explorer — Live Network</title>
+<meta name="description" content="Live block explorer for the SYNTHOS Collective Layer-1 network." />
+<style>
+  :root{
+    --bg:#07090d; --panel:rgba(12,17,26,.72); --line:rgba(255,255,255,.12);
+    --text:#f5f8ff; --muted:#9aa9bd; --green:#31d39f; --cyan:#73d7ff; --warn:#f2c45d;
+    font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+    color-scheme:dark;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:
+    radial-gradient(1200px 480px at 50% -120px,rgba(115,215,255,.10),transparent 70%),var(--bg);
+    color:var(--text)}
+  a{color:var(--cyan)}
+  header{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;
+    gap:16px;padding:14px clamp(16px,4vw,40px);border-bottom:1px solid var(--line);
+    background:rgba(7,9,13,.9);backdrop-filter:blur(12px)}
+  .brand{display:inline-flex;align-items:center;gap:11px;font-weight:850;letter-spacing:.02em}
+  .brand-mark{width:20px;height:20px;border:2px solid var(--green);border-radius:50%;
+    box-shadow:inset 0 0 0 5px rgba(49,211,159,.16),0 0 18px rgba(49,211,159,.25)}
+  .net-pill{display:inline-flex;align-items:center;gap:8px;font-size:.8rem;font-weight:800;
+    padding:6px 12px;border:1px solid var(--line);border-radius:999px;color:var(--muted)}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--warn);box-shadow:0 0 10px var(--warn)}
+  .dot.live{background:var(--green);box-shadow:0 0 10px var(--green)}
+  main{width:min(1120px,calc(100% - 32px));margin:0 auto;padding:26px 0 60px}
+  h1{margin:0 0 4px;font-size:clamp(1.8rem,4vw,2.6rem);letter-spacing:-.01em}
+  .sub{margin:0 0 24px;color:var(--muted)}
+  .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:26px}
+  .stat{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:16px}
+  .stat dt{margin:0;color:var(--cyan);font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em}
+  .stat dd{margin:8px 0 0;font-size:1.5rem;font-weight:800;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+    overflow-wrap:anywhere}
+  .stat small{color:var(--muted);font-weight:600;font-size:.72rem}
+  section{border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:18px 18px 6px;margin-bottom:20px}
+  section h2{margin:0 0 12px;font-size:1.05rem}
+  .row-head,.row{display:grid;grid-template-columns:90px 1fr 1fr 130px;gap:12px;padding:10px 8px;align-items:center}
+  .row-head{color:var(--muted);font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;
+    border-bottom:1px solid var(--line)}
+  .row{border-bottom:1px solid rgba(255,255,255,.06);font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.85rem}
+  .row:last-child{border-bottom:0}
+  .mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere}
+  .tag{display:inline-block;font-size:.68rem;font-weight:800;padding:3px 8px;border-radius:6px;
+    background:rgba(49,211,159,.12);color:var(--green);border:1px solid rgba(49,211,159,.3)}
+  .lookup{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+  .lookup input{flex:1;min-width:220px;min-height:44px;border:1px solid var(--line);border-radius:9px;
+    padding:10px 13px;color:var(--text);background:#07090d;font:inherit;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+  .lookup button{min-height:44px;border:0;border-radius:9px;padding:10px 18px;font:inherit;font-weight:850;
+    cursor:pointer;background:var(--green);color:#04130e}
+  .acct{display:none;gap:10px;grid-template-columns:repeat(3,minmax(0,1fr));margin-top:6px}
+  .acct.show{display:grid}
+  .acct .stat dd{font-size:1.15rem}
+  .err{color:var(--warn)}
+  footer{width:min(1120px,calc(100% - 32px));margin:0 auto;padding:24px 0 40px;color:var(--muted);
+    border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:.82rem}
+  .updated{color:var(--muted);font-size:.76rem;margin:-14px 0 20px}
+  @media (max-width:820px){.grid{grid-template-columns:1fr 1fr}
+    .row-head,.row{grid-template-columns:60px 1fr 96px}.row .hide-sm,.row-head .hide-sm{display:none}
+    .acct{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+  <header>
+    <span class="brand"><span class="brand-mark"></span> SYNTHOS Explorer</span>
+    <span class="net-pill"><span class="dot" data-live-dot></span><span data-net>connecting…</span></span>
+  </header>
+
+  <main>
+    <h1>Live Network Explorer</h1>
+    <p class="sub">Real-time view of the SYNTHOS Collective Layer-1, served directly from the network RPC.</p>
+
+    <dl class="grid">
+      <div class="stat"><dt>Chain</dt><dd data-chain>—</dd></div>
+      <div class="stat"><dt>Block Height</dt><dd data-height>—</dd></div>
+      <div class="stat"><dt>Immune Nodes</dt><dd data-immune>—</dd><small>active operators</small></div>
+      <div class="stat"><dt>Mempool</dt><dd data-mempool>—</dd><small>pending tx</small></div>
+    </dl>
+
+    <section>
+      <h2>Account Lookup</h2>
+      <div class="lookup">
+        <input data-acct-input placeholder="0x… SYNTHOS address" autocomplete="off" spellcheck="false" />
+        <button data-acct-btn type="button">Look up</button>
+      </div>
+      <p class="err" data-acct-err style="display:none"></p>
+      <dl class="acct" data-acct-out>
+        <div class="stat"><dt>Balance</dt><dd data-acct-bal>—</dd><small>SYN</small></div>
+        <div class="stat"><dt>Nonce</dt><dd data-acct-nonce>—</dd><small>tx count</small></div>
+        <div class="stat"><dt>Address</dt><dd class="mono" data-acct-addr>—</dd></div>
+      </dl>
+    </section>
+
+    <section>
+      <h2>Latest Blocks</h2>
+      <div class="row-head">
+        <span>Height</span><span>Hash</span><span class="hide-sm">Proposer</span><span>Status</span>
+      </div>
+      <div data-blocks><div class="row"><span>—</span><span>loading…</span><span class="hide-sm"></span><span></span></div></div>
+    </section>
+  </main>
+
+  <footer>
+    <span>SYNTHOS Collective · synthos-mainnet-1</span>
+    <span>RPC: <span class="mono" data-rpc></span></span>
+  </footer>
+
+<script>
+(function(){
+  var RPC = "https://rpc.ishamwilliamsblockchains.com";
+  var $ = function(s){ return document.querySelector(s); };
+  function set(sel,v){ var n=document.querySelector(sel); if(n) n.textContent=v; }
+  function shortHash(h){ if(!h) return "—"; h=String(h); return h.length>16 ? h.slice(0,10)+"…"+h.slice(-6) : h; }
+  document.querySelector("[data-rpc]").textContent = RPC.replace(/^https?:\/\//,"");
+
+  function markLive(ok){
+    var dot=$("[data-live-dot]"), net=$("[data-net]");
+    if(ok){ dot.classList.add("live"); } else { dot.classList.remove("live"); net.textContent="offline — retrying"; }
+  }
+
+  async function j(path){
+    var r = await fetch(RPC+path, {cache:"no-store"});
+    if(!r.ok) throw new Error(path+" → HTTP "+r.status);
+    return r.json();
+  }
+
+  async function refresh(){
+    try{
+      var s = await j("/status");
+      markLive(true);
+      set("[data-net]", s.chain_id || "synthos");
+      set("[data-chain]", s.chain_id || "—");
+      set("[data-height]", (s.height!=null? s.height : "—"));
+      set("[data-immune]", (s.immune && s.immune.active_immune_nodes!=null)? s.immune.active_immune_nodes : "0");
+    }catch(e){ markLive(false); }
+
+    try{
+      var m = await j("/mempool");
+      set("[data-mempool]", (m.size!=null? m.size : 0));
+    }catch(e){}
+
+    try{
+      var b = await j("/blocks");
+      var blocks = (b.blocks||[]).slice().sort(function(a,c){ return c.header.height - a.header.height; }).slice(0,12);
+      var html = blocks.map(function(bl){
+        var h = bl.header||{};
+        var fin = bl.finalized ? '<span class="tag">finalized</span>' : '<span class="tag" style="background:rgba(242,196,93,.12);color:var(--warn);border-color:rgba(242,196,93,.3)">pending</span>';
+        return '<div class="row"><span>#'+h.height+'</span>'+
+               '<span class="mono">'+shortHash(bl.hash)+'</span>'+
+               '<span class="hide-sm mono">'+(h.proposer_id||"—")+'</span>'+
+               '<span>'+fin+'</span></div>';
+      }).join("");
+      var box=$("[data-blocks]"); if(box) box.innerHTML = html || '<div class="row"><span>—</span><span>no blocks</span><span class="hide-sm"></span><span></span></div>';
+    }catch(e){}
+  }
+
+  async function lookup(){
+    var addr = $("[data-acct-input]").value.trim();
+    var err = $("[data-acct-err]"), out = $("[data-acct-out]");
+    err.style.display="none"; out.classList.remove("show");
+    if(!addr){ err.textContent="Enter a SYNTHOS address."; err.style.display="block"; return; }
+    try{
+      var a = await j("/account?address="+encodeURIComponent(addr));
+      set("[data-acct-bal]", (a.balance!=null? Number(a.balance).toLocaleString() : "0"));
+      set("[data-acct-nonce]", (a.nonce!=null? a.nonce : "0"));
+      set("[data-acct-addr]", a.address || addr);
+      out.classList.add("show");
+    }catch(e){
+      err.textContent="Lookup failed: "+e.message; err.style.display="block";
+    }
+  }
+
+  $("[data-acct-btn]").addEventListener("click", lookup);
+  $("[data-acct-input]").addEventListener("keydown", function(e){ if(e.key==="Enter") lookup(); });
+
+  refresh();
+  setInterval(refresh, 10000);
+})();
+</script>
+</body>
+</html>
