@@ -585,10 +585,10 @@ func (s *server) handleAPIEarlyAccessConfig(w http.ResponseWriter, r *http.Reque
 		"complianceRegistry": complianceRegistry,
 		"treasuryWallet":     env("SYNTHOS_EARLY_ACCESS_TREASURY_WALLET", "0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2"),
 		"distributionAgent":  distributor,
-		"tokenPriceUsd":      "0.05",
+		"tokenPriceUsd":      "0.10",
 		"activeTrancheSyn":   "250,000,000",
-		"maxTrancheUsd":      "$12,500,000",
-		"maxTrancheValueUsd": "12500000",
+		"maxTrancheUsd":      "$25,000,000",
+		"maxTrancheValueUsd": "25000000",
 		"campaignReserveSyn": "1,750,000,000",
 		"communitySourceBucket": env(
 			"SYNTHOS_EARLY_ACCESS_SOURCE_BUCKET",
@@ -629,7 +629,7 @@ func (s *server) handleAPIEarlyAccessPaymentIntents(w http.ResponseWriter, r *ht
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	synAmount := usdCents / 5 // $0.05 per SYN.
+	synAmount := usdCents / 10 // $0.10 per SYN.
 	if synAmount < 20 {
 		http.Error(w, "minimum early access purchase is 20 SYN", http.StatusBadRequest)
 		return
