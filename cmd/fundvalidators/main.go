@@ -34,6 +34,7 @@ func main() {
 	addressesFile := flag.String("addresses-file", "", "path to a newline-delimited address file")
 	amount := flag.Uint64("amount", 0, "amount to send to each validator")
 	fee := flag.Uint64("fee", 0, "fee per transaction")
+	chainID := flag.Uint64("chain-id", 0, "transaction chain ID (e.g. 20260702 for synthos-mainnet-1)")
 	startNonce := flag.Uint64("start-nonce", 0, "starting nonce if /account is unavailable")
 	useStartNonce := flag.Bool("use-start-nonce", false, "force use of --start-nonce instead of querying /account")
 	dryRun := flag.Bool("dry-run", false, "build transactions without submitting them")
@@ -105,6 +106,7 @@ func main() {
 
 	for index, recipient := range recipients {
 		tx := chain.Tx{
+			ChainID:   *chainID,
 			From:      fromAddr,
 			To:        chain.Address(recipient),
 			Amount:    *amount,
