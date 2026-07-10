@@ -1,0 +1,9 @@
+{
+  "node_id": "synthos-render-validator-1",
+  "data_dir": "/data",
+  "is_validator": true,
+  "rpc_listen": ":8080",
+  "genesis_path": "/config/genesis.json",
+  "peers": [],
+  "listen_addr": ":0"
+}

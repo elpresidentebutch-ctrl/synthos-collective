@@ -54,6 +54,9 @@ func LoadNodeConfig(path string) (*NodeConfig, error) {
 
 	// Load runtime configuration from environment variables
 	cfg.LoadRuntimeConfig()
+	if err := cfg.ValidateNodeConfig(); err != nil {
+		return nil, err
+	}
 
 	return &cfg, nil
 }
@@ -120,6 +123,18 @@ func (cfg *NodeConfig) LoadRuntimeConfig() {
 			cfg.RateLimitRPS = rps
 		}
 	}
+
+	if v := os.Getenv("SYNTHOS_DATA_DIR"); v != "" {
+		cfg.DataDir = v
+	}
+
+	if v := os.Getenv("PORT"); v != "" {
+		cfg.RPCListen = ":" + v
+	}
+
+	if v := os.Getenv("SYNTHOS_LISTEN_ADDR"); v != "" {
+		cfg.ListenAddr = v
+	}
 }
 
 // ValidateNodeConfig validates that required fields are set
@@ -151,10 +166,12 @@ func LoadGenesis(path string) (chain.Genesis, error) {
 	defer f.Close()
 
 	var raw struct {
-		ChainID  string            `json:"chain_id"`
-		Alloc    map[string]uint64 `json:"alloc"`
-		Symbol   string            `json:"symbol"`
-		Decimals int               `json:"decimals"`
+		ChainID   string            `json:"chain_id"`
+		TxChainID uint64            `json:"tx_chain_id"`
+		Alloc     map[string]uint64 `json:"alloc"`
+		Symbol    string            `json:"symbol"`
+		Decimals  int               `json:"decimals"`
+		Metadata  map[string]any    `json:"metadata"`
 	}
 	if err := json.NewDecoder(f).Decode(&raw); err != nil {
 		return chain.Genesis{}, err
@@ -167,12 +184,19 @@ func LoadGenesis(path string) (chain.Genesis, error) {
 		alloc[chain.Address(k)] = v
 	}
 	gen := chain.Genesis{
-		ChainID: raw.ChainID,
-		Alloc:   alloc,
-		Metadata: map[string]any{
-			"symbol":   raw.Symbol,
-			"decimals": raw.Decimals,
-		},
+		ChainID:   raw.ChainID,
+		TxChainID: raw.TxChainID,
+		Alloc:     alloc,
+		Metadata:  raw.Metadata,
+	}
+	if gen.Metadata == nil {
+		gen.Metadata = map[string]any{}
+	}
+	if raw.Symbol != "" {
+		gen.Metadata["symbol"] = raw.Symbol
+	}
+	if raw.Decimals != 0 {
+		gen.Metadata["decimals"] = raw.Decimals
 	}
 	return gen, nil
 }

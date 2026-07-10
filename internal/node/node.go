@@ -293,7 +293,7 @@ func (n *Node) ProposeBlock() error {
 	if err := n.Agent.SendEnvelope(env); err != nil {
 		return err
 	}
-	return n.broadcastSelfVote(b)
+	return n.voteAndFinalizeSelfProposal(b)
 }
 
 func (n *Node) ProposeBlockHash() (string, error) {
@@ -313,20 +313,25 @@ func (n *Node) ProposeBlockHash() (string, error) {
 	if err := n.Agent.SendEnvelope(env); err != nil {
 		return "", err
 	}
-	if err := n.broadcastSelfVote(b); err != nil {
+	if err := n.voteAndFinalizeSelfProposal(b); err != nil {
 		return "", err
 	}
 	return b.Hash, nil
 }
 
-func (n *Node) broadcastSelfVote(b *chain.Block) error {
+func (n *Node) voteAndFinalizeSelfProposal(b *chain.Block) error {
 	v := consensus.BlockVote{
 		BlockHash: b.Hash,
 		Height:    b.Header.Height,
 		VoterID:   n.Agent.Identity.AgentID,
 		Vote:      1,
 	}
-	_, _, _, _ = n.Consensus.OnVote(v)
+	finalized, _, _, _ := n.Consensus.OnVote(v)
+	if finalized {
+		if err := n.TryFinalize(b.Hash); err != nil {
+			return err
+		}
+	}
 	env, err := n.Agent.BuildEnvelope("block_vote", "", consensus.TopicVotes, v)
 	if err != nil {
 		return err

@@ -3,10 +3,12 @@ services:
     name: synthos-rpc
     runtime: docker
     dockerfilePath: ./Dockerfile
-    dockerCommand: /usr/local/bin/rpcnode
+    dockerCommand: /usr/local/bin/synthosd
     healthCheckPath: /health
     autoDeploy: true
     envVars:
+      - key: SYNTHOS_CONFIG
+        value: /config/render-node.json
       - key: SYNTHOS_DATA_DIR
         value: /data
     disk:
