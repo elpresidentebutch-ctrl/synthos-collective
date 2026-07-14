@@ -2,6 +2,7 @@
   const TREASURY_WALLET = "0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2";
   const HARDHAT_CHAIN_ID = 31337;
   const ETHERS_CDN = "https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js";
+  const SYNTHOS_NATIVE_WALLET_STORAGE_KEY = "synthos.nativeWallet.v1";
 
   const SALE_ABI = [
     "function USD_PRICE_PER_SYN_18() view returns (uint256)",
@@ -64,6 +65,7 @@
     sale: null,
     compliance: null,
     paymentIntent: null,
+    synthosWallet: loadStoredSynthosWallet(),
   };
 
   const root = document.querySelector("[data-synthos-early-access]");
@@ -104,6 +106,13 @@
       .synthos-sale-box label{display:grid;gap:7px;color:#aeb9c8;font-size:.82rem;font-weight:800;text-transform:uppercase}
       .synthos-sale-box input,.synthos-sale-box select{min-height:44px;border:1px solid rgba(255,255,255,.16);border-radius:8px;padding:10px 12px;color:#f5f8ff;background:#07090d;font:inherit}
       .synthos-sale-quote{min-height:48px;display:flex;align-items:center;border:1px solid rgba(49,211,159,.35);border-radius:8px;padding:12px;color:#31d39f;background:rgba(49,211,159,.08);font-weight:800}
+      .synthos-native-wallet{display:none;gap:10px;border:1px solid rgba(49,211,159,.28);border-radius:8px;padding:12px;background:rgba(49,211,159,.07)}
+      .synthos-native-wallet[data-open=true]{display:grid}
+      .synthos-native-wallet strong{color:#31d39f}
+      .synthos-native-wallet code{overflow-wrap:anywhere;color:#f5f8ff}
+      .synthos-native-wallet small{color:#f2c45d;line-height:1.45}
+      .synthos-mini-actions{display:flex;flex-wrap:wrap;gap:8px}
+      .synthos-mini-actions button{min-height:36px!important;border:1px solid rgba(255,255,255,.14)!important;border-radius:7px!important;padding:8px 10px!important;background:rgba(255,255,255,.08)!important;color:#f5f8ff!important;font-size:.84rem!important}
       .synthos-sale-actions{display:flex;flex-wrap:wrap;gap:10px}
       .synthos-sale-actions button{min-height:44px;border:0;border-radius:8px;padding:11px 16px;font:inherit;font-weight:850;cursor:pointer}
       .synthos-sale-actions button:first-child{background:#31d39f;color:#04130e}
@@ -198,8 +207,9 @@
           </label>
           ${config.paymentRails && !validAddress(config.saleContract) ? `
           <label>SYNTHOS Wallet Address
-            <input data-synthos-address autocomplete="off" placeholder="0x..." />
+            <input data-synthos-address autocomplete="off" placeholder="0x..." value="${html(state.synthosWallet?.address || "")}" />
           </label>
+          <div class="synthos-native-wallet" data-synthos-wallet-panel></div>
           <div class="synthos-payment-instructions" data-payment-instructions></div>
           <label>Payment Transaction Hash
             <input data-payment-tx autocomplete="off" placeholder="0x..." />
@@ -209,6 +219,7 @@
           <div class="synthos-sale-actions">
             <button type="button" data-sale-connect>Connect Wallet</button>
             <button type="button" data-sale-buy disabled>Buy SYN</button>
+            ${config.paymentRails && !validAddress(config.saleContract) ? `<button type="button" data-generate-synthos-wallet>Generate SYNTHOS Wallet</button>` : ""}
             ${config.paymentRails && !validAddress(config.saleContract) ? `<button type="button" data-payment-verify>Verify Payment</button>` : ""}
           </div>
           <p data-sale-status data-tone="muted">Sale contract is checking configuration.</p>
@@ -219,7 +230,9 @@
     root.querySelector("[data-sale-buy]").addEventListener("click", buySyn);
     root.querySelector("[data-sale-amount]").addEventListener("input", quote);
     root.querySelector("[data-sale-asset]").addEventListener("change", quote);
+    root.querySelector("[data-generate-synthos-wallet]")?.addEventListener("click", generateSynthosWallet);
     root.querySelector("[data-payment-verify]")?.addEventListener("click", verifyPaymentIntent);
+    renderSynthosWallet();
     validateConfig();
   }
 
@@ -247,6 +260,134 @@
     }
     setStatus("Ready. Connect wallet to continue.");
     return true;
+  }
+
+  function loadStoredSynthosWallet() {
+    try {
+      const raw = window.localStorage?.getItem(SYNTHOS_NATIVE_WALLET_STORAGE_KEY);
+      if (!raw) return null;
+      const wallet = JSON.parse(raw);
+      if (!wallet || !validAddress(wallet.address) || !isHexBytes(wallet.publicKey, 32) || !isHexBytes(wallet.privateKey, 64)) {
+        return null;
+      }
+      return wallet;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function storeSynthosWallet(wallet) {
+    state.synthosWallet = wallet;
+    try {
+      window.localStorage?.setItem(SYNTHOS_NATIVE_WALLET_STORAGE_KEY, JSON.stringify(wallet));
+    } catch (_) {
+      // Wallet still works for this page session even if localStorage is unavailable.
+    }
+  }
+
+  function isHexBytes(value, bytes) {
+    return typeof value === "string" && new RegExp(`^0x[a-fA-F0-9]{${bytes * 2}}$`).test(value);
+  }
+
+  function hex(bytes) {
+    return "0x" + Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
+
+  function bytesToBase64(bytes) {
+    let binary = "";
+    bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+    return btoa(binary);
+  }
+
+  function spkiToRawEd25519(spki) {
+    const bytes = new Uint8Array(spki);
+    // DER SubjectPublicKeyInfo for Ed25519 ends with the 32-byte raw public key.
+    return bytes.slice(bytes.length - 32);
+  }
+
+  function pkcs8ToSeed(pkcs8) {
+    const bytes = new Uint8Array(pkcs8);
+    // DER PKCS#8 for Ed25519 generated by WebCrypto ends with a 32-byte seed.
+    // SYNTHOS Go wallets store 64-byte private keys as seed || publicKey.
+    return bytes.slice(bytes.length - 32);
+  }
+
+  async function sha256(bytes) {
+    return new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  }
+
+  async function generateSynthosWallet() {
+    if (!window.crypto?.subtle) {
+      setStatus("This browser cannot generate a SYNTHOS wallet securely. Use a modern HTTPS browser.", "warn");
+      return;
+    }
+    try {
+      setStatus("Generating SYNTHOS native wallet...");
+      const keyPair = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
+      const publicKey = spkiToRawEd25519(await crypto.subtle.exportKey("spki", keyPair.publicKey));
+      const seed = pkcs8ToSeed(await crypto.subtle.exportKey("pkcs8", keyPair.privateKey));
+      const privateKey = new Uint8Array(64);
+      privateKey.set(seed, 0);
+      privateKey.set(publicKey, 32);
+      const digest = await sha256(publicKey);
+      const address = hex(digest.slice(0, 20));
+      const wallet = {
+        address,
+        publicKey: hex(publicKey),
+        privateKey: hex(privateKey),
+        privateKeyBase64: bytesToBase64(privateKey),
+        createdAt: new Date().toISOString(),
+        format: "synthos-ed25519-v1",
+      };
+      storeSynthosWallet(wallet);
+      const input = root.querySelector("[data-synthos-address]");
+      if (input) input.value = wallet.address;
+      renderSynthosWallet();
+      setStatus("SYNTHOS wallet generated. Save the private key before sending payment.", "ok");
+    } catch (error) {
+      setStatus(error.message || "Could not generate SYNTHOS wallet.", "warn");
+    }
+  }
+
+  function renderSynthosWallet() {
+    const panel = root.querySelector("[data-synthos-wallet-panel]");
+    if (!panel) return;
+    const wallet = state.synthosWallet;
+    if (!wallet) {
+      panel.dataset.open = "true";
+      panel.innerHTML = `
+        <strong>No SYNTHOS receiving wallet selected</strong>
+        <span>Generate a native SYNTHOS wallet, or paste an address from your own SYNTHOS wallet.</span>
+        <small>For early access, save your private key somewhere safe. If you lose it, nobody can recover the SYN sent to that address.</small>
+      `;
+      return;
+    }
+    panel.dataset.open = "true";
+    panel.innerHTML = `
+      <strong>SYNTHOS receiving wallet ready</strong>
+      <span>Address: <code>${html(wallet.address)}</code></span>
+      <span>Public key: <code>${html(wallet.publicKey)}</code></span>
+      <details>
+        <summary>Show private key backup</summary>
+        <small>This key controls the SYNTHOS address above. Save it offline. Do not share it.</small>
+        <code>${html(wallet.privateKey)}</code>
+      </details>
+      <div class="synthos-mini-actions">
+        <button type="button" data-copy-synthos-address>Copy address</button>
+        <button type="button" data-copy-synthos-private>Copy private key</button>
+      </div>
+    `;
+    panel.querySelector("[data-copy-synthos-address]")?.addEventListener("click", () => copyText(wallet.address, "SYNTHOS address copied."));
+    panel.querySelector("[data-copy-synthos-private]")?.addEventListener("click", () => copyText(wallet.privateKey, "Private key copied. Keep it secret."));
+  }
+
+  async function copyText(value, message) {
+    try {
+      await navigator.clipboard.writeText(value);
+      setStatus(message, "ok");
+    } catch (_) {
+      setStatus("Copy failed. Select and copy the value manually.", "warn");
+    }
   }
 
   async function connectWallet() {
