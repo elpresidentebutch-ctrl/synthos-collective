@@ -404,6 +404,7 @@ func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) 
 	fresh := 0
 	validators := 0
 	immune := 0
+	agents := 0
 	for i := range peers {
 		if !peers[i].Stale {
 			reachable++
@@ -412,8 +413,11 @@ func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) 
 		if peerHasCapability(peers[i], "immune_node") || peers[i].Kind == "immune" {
 			immune++
 		}
-		if peers[i].Kind == "" || peers[i].Kind == "validator" || peerHasCapability(peers[i], "immune_node") {
+		if peers[i].Kind == "" || peers[i].Kind == "validator" {
 			validators++
+		}
+		if !peers[i].Stale && len(peers[i].Capabilities) > 0 {
+			agents++
 		}
 	}
 
@@ -426,6 +430,7 @@ func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) 
 		"fresh_heartbeats":     fresh,
 		"validators_running":   validators,
 		"immune_nodes_running": immune,
+		"agents_running":       agents,
 		"highest_height":       0,
 		"tip":                  "",
 		"state_root":           "",

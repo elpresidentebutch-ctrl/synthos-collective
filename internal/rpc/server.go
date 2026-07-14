@@ -63,6 +63,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/dex/quote", s.handleDEXQuote)
 	mux.HandleFunc("/dex/swap", s.handleDEXSwap)
 	mux.HandleFunc("/immune/status", s.handleImmuneStatus)
+	mux.HandleFunc("/aen/status", s.handleAENStatus)
 	mux.HandleFunc("/capabilities", s.handleCapabilities)
 	mux.HandleFunc("/peers", s.handlePeers)
 	mux.HandleFunc("/submitTx", s.handleSubmitTx)
@@ -132,6 +133,32 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 		"public_key":     s.Node.Agent.Identity.PublicKey,
 		"capabilities":   s.Node.Agent.CoreCapabilities(),
 		"immune_capable": true,
+	})
+}
+
+func (s *Server) handleAENStatus(w http.ResponseWriter, r *http.Request) {
+	if s.Node == nil || s.Node.Agent == nil {
+		writeJSON(w, map[string]any{
+			"ok":    false,
+			"ready": false,
+			"error": "agent not attached",
+		})
+		return
+	}
+	writeJSON(w, map[string]any{
+		"ok":           true,
+		"ready":        true,
+		"network":      "Agent Execution Network",
+		"model":        "agents_and_nodes_are_the_same",
+		"node_id":      s.Node.Agent.Identity.AgentID,
+		"agent_id":     s.Node.Agent.Identity.AgentID,
+		"public_key":   s.Node.Agent.Identity.PublicKey,
+		"chain_id":     s.Chain.ChainID,
+		"height":       s.Chain.Height(),
+		"tip":          s.Chain.Tip().Hash,
+		"state_root":   s.Chain.State.Root(),
+		"peers":        s.PeerURLs,
+		"capabilities": s.Node.Agent.CoreCapabilities(),
 	})
 }
 
