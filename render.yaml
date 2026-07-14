@@ -17,6 +17,131 @@ services:
       sizeGB: 1
 
   - type: web
+    name: synthos-validator-11
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: /usr/local/bin/synthosd
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: SYNTHOS_CONFIG
+        value: /config/render-validator-11.json
+      - key: SYNTHOS_DATA_DIR
+        value: /data
+      - key: SYNTHOS_NODE_ID
+        value: synthos-validator-11
+      - key: SYNTHOS_SELF_URL
+        value: https://synthos-validator-11.onrender.com
+      - key: SYNTHOS_REGISTRY_URL
+        value: https://synthos-www.onrender.com
+      - key: SYNTHOS_PRIVATE_KEY
+        sync: false
+    disk:
+      name: synthos-validator-11-data
+      mountPath: /data
+      sizeGB: 1
+
+  - type: web
+    name: synthos-validator-12
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: /usr/local/bin/synthosd
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: SYNTHOS_CONFIG
+        value: /config/render-validator-12.json
+      - key: SYNTHOS_DATA_DIR
+        value: /data
+      - key: SYNTHOS_NODE_ID
+        value: synthos-validator-12
+      - key: SYNTHOS_SELF_URL
+        value: https://synthos-validator-12.onrender.com
+      - key: SYNTHOS_REGISTRY_URL
+        value: https://synthos-www.onrender.com
+      - key: SYNTHOS_PRIVATE_KEY
+        sync: false
+    disk:
+      name: synthos-validator-12-data
+      mountPath: /data
+      sizeGB: 1
+
+  - type: web
+    name: synthos-validator-13
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: /usr/local/bin/synthosd
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: SYNTHOS_CONFIG
+        value: /config/render-validator-13.json
+      - key: SYNTHOS_DATA_DIR
+        value: /data
+      - key: SYNTHOS_NODE_ID
+        value: synthos-validator-13
+      - key: SYNTHOS_SELF_URL
+        value: https://synthos-validator-13.onrender.com
+      - key: SYNTHOS_REGISTRY_URL
+        value: https://synthos-www.onrender.com
+      - key: SYNTHOS_PRIVATE_KEY
+        sync: false
+    disk:
+      name: synthos-validator-13-data
+      mountPath: /data
+      sizeGB: 1
+
+  - type: web
+    name: synthos-validator-14
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: /usr/local/bin/synthosd
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: SYNTHOS_CONFIG
+        value: /config/render-validator-14.json
+      - key: SYNTHOS_DATA_DIR
+        value: /data
+      - key: SYNTHOS_NODE_ID
+        value: synthos-validator-14
+      - key: SYNTHOS_SELF_URL
+        value: https://synthos-validator-14.onrender.com
+      - key: SYNTHOS_REGISTRY_URL
+        value: https://synthos-www.onrender.com
+      - key: SYNTHOS_PRIVATE_KEY
+        sync: false
+    disk:
+      name: synthos-validator-14-data
+      mountPath: /data
+      sizeGB: 1
+
+  - type: web
+    name: synthos-validator-15
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: /usr/local/bin/synthosd
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: SYNTHOS_CONFIG
+        value: /config/render-validator-15.json
+      - key: SYNTHOS_DATA_DIR
+        value: /data
+      - key: SYNTHOS_NODE_ID
+        value: synthos-validator-15
+      - key: SYNTHOS_SELF_URL
+        value: https://synthos-validator-15.onrender.com
+      - key: SYNTHOS_REGISTRY_URL
+        value: https://synthos-www.onrender.com
+      - key: SYNTHOS_PRIVATE_KEY
+        sync: false
+    disk:
+      name: synthos-validator-15-data
+      mountPath: /data
+      sizeGB: 1
+
+  - type: web
     name: synthos-www
     runtime: docker
     dockerfilePath: ./Dockerfile
@@ -25,7 +150,7 @@ services:
     autoDeploy: true
     envVars:
       - key: SYNTHOS_NATIVE_RPC_URL
-        value: https://synthos-rpc.onrender.com
+        value: https://synthos-validator-11.onrender.com
       - key: SYNTHOS_DISTRIBUTION_AGENT_ID
         value: synthos-early-adopter-distributor
       - key: SYNTHOS_EARLY_ACCESS_TREASURY_WALLET
@@ -39,7 +164,7 @@ services:
       - key: SYNTHOS_EARLY_ACCESS_CHAIN_NAME
         value: synthos-mainnet-1
       - key: SYNTHOS_EARLY_ACCESS_RPC_URLS
-        value: https://rpc.ishamwilliamsblockchains.com,https://synthos-rpc.onrender.com
+        value: https://synthos-validator-11.onrender.com,https://synthos-validator-12.onrender.com,https://synthos-validator-13.onrender.com,https://synthos-validator-14.onrender.com,https://synthos-validator-15.onrender.com
       - key: SYNTHOS_CORS_ORIGINS
         value: https://www.ishamwilliamsblockchains.com,https://ishamwilliamsblockchains.com,https://lovable.dev
       - key: SYNTHOS_EARLY_ACCESS_WIDGET_PATH
