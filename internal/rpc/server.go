@@ -63,6 +63,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/dex/quote", s.handleDEXQuote)
 	mux.HandleFunc("/dex/swap", s.handleDEXSwap)
 	mux.HandleFunc("/immune/status", s.handleImmuneStatus)
+	mux.HandleFunc("/capabilities", s.handleCapabilities)
 	mux.HandleFunc("/peers", s.handlePeers)
 	mux.HandleFunc("/submitTx", s.handleSubmitTx)
 	mux.HandleFunc("/proposeBlock", s.handleProposeBlock)
@@ -101,13 +102,36 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, map[string]any{
+	body := map[string]any{
 		"chain_id":   s.Chain.ChainID,
 		"height":     s.Chain.Height(),
 		"tip":        s.Chain.Tip().Hash,
 		"state_root": s.Chain.State.Root(),
 		"immune":     s.Chain.State.ImmuneStatus(),
 		"peers":      s.PeerURLs,
+	}
+	if s.Node != nil && s.Node.Agent != nil {
+		body["agent"] = map[string]any{
+			"id":           s.Node.Agent.Identity.AgentID,
+			"public_key":   s.Node.Agent.Identity.PublicKey,
+			"capabilities": s.Node.Agent.CoreCapabilities(),
+		}
+		body["capabilities"] = s.Node.Agent.CoreCapabilities()
+		body["immune_capable"] = true
+	}
+	writeJSON(w, body)
+}
+
+func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
+	if s.Node == nil || s.Node.Agent == nil {
+		writeJSON(w, map[string]any{"capabilities": []string{}})
+		return
+	}
+	writeJSON(w, map[string]any{
+		"agent_id":       s.Node.Agent.Identity.AgentID,
+		"public_key":     s.Node.Agent.Identity.PublicKey,
+		"capabilities":   s.Node.Agent.CoreCapabilities(),
+		"immune_capable": true,
 	})
 }
 

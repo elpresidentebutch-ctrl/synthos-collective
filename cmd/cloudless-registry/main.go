@@ -29,19 +29,20 @@ const staleAfter = 5 * time.Minute
 var safeName = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
 
 type peer struct {
-	Name               string `json:"name"`
-	URL                string `json:"url"`
-	Kind               string `json:"kind,omitempty"`
-	Network            string `json:"network,omitempty"`
-	Status             string `json:"status,omitempty"`
-	PublicKey          string `json:"public_key,omitempty"`
-	Cloud              string `json:"cloud"`
-	Mode               string `json:"mode"`
-	InboundPorts       int    `json:"inbound_ports"`
-	HardwareCommitment string `json:"hardware_commitment,omitempty"`
-	RegisteredAt       int64  `json:"registered_at"`
-	LastSeen           int64  `json:"last_seen"`
-	Stale              bool   `json:"stale,omitempty"`
+	Name               string   `json:"name"`
+	URL                string   `json:"url"`
+	Kind               string   `json:"kind,omitempty"`
+	Network            string   `json:"network,omitempty"`
+	Status             string   `json:"status,omitempty"`
+	PublicKey          string   `json:"public_key,omitempty"`
+	Capabilities       []string `json:"capabilities,omitempty"`
+	Cloud              string   `json:"cloud"`
+	Mode               string   `json:"mode"`
+	InboundPorts       int      `json:"inbound_ports"`
+	HardwareCommitment string   `json:"hardware_commitment,omitempty"`
+	RegisteredAt       int64    `json:"registered_at"`
+	LastSeen           int64    `json:"last_seen"`
+	Stale              bool     `json:"stale,omitempty"`
 }
 
 type mailboxMessage struct {
@@ -213,16 +214,17 @@ func (s *server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Name               string `json:"name"`
-		URL                string `json:"url"`
-		Cloud              string `json:"cloud"`
-		Kind               string `json:"kind"`
-		Network            string `json:"network"`
-		Status             string `json:"status"`
-		PublicKey          string `json:"public_key"`
-		Mode               string `json:"mode"`
-		InboundPorts       int    `json:"inbound_ports"`
-		HardwareCommitment string `json:"hardware_commitment"`
+		Name               string   `json:"name"`
+		URL                string   `json:"url"`
+		Cloud              string   `json:"cloud"`
+		Kind               string   `json:"kind"`
+		Network            string   `json:"network"`
+		Status             string   `json:"status"`
+		PublicKey          string   `json:"public_key"`
+		Capabilities       []string `json:"capabilities"`
+		Mode               string   `json:"mode"`
+		InboundPorts       int      `json:"inbound_ports"`
+		HardwareCommitment string   `json:"hardware_commitment"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -254,6 +256,7 @@ func (s *server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		Network:            normalizeChoice(body.Network, "testnet", "testnet", "mainnet"),
 		Status:             truncate(defaultString(body.Status, "running"), 32),
 		PublicKey:          truncate(body.PublicKey, 256),
+		Capabilities:       normalizeCapabilities(body.Capabilities),
 		Cloud:              truncate(defaultString(body.Cloud, "cloudless"), 32),
 		Mode:               mode,
 		InboundPorts:       body.InboundPorts,
@@ -406,10 +409,10 @@ func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) 
 			reachable++
 			fresh++
 		}
-		switch peers[i].Kind {
-		case "immune":
+		if peerHasCapability(peers[i], "immune_node") || peers[i].Kind == "immune" {
 			immune++
-		default:
+		}
+		if peers[i].Kind == "" || peers[i].Kind == "validator" || peerHasCapability(peers[i], "immune_node") {
 			validators++
 		}
 	}
@@ -1383,6 +1386,38 @@ func normalizeChoice(value, fallback string, allowed ...string) string {
 		}
 	}
 	return fallback
+}
+
+func normalizeCapabilities(values []string) []string {
+	allowed := map[string]bool{
+		"immune_node":  true,
+		"economist":    true,
+		"governor":     true,
+		"communicator": true,
+		"simulator":    true,
+		"enforcer":     true,
+		"citizen":      true,
+	}
+	out := make([]string, 0, len(values))
+	seen := map[string]bool{}
+	for _, value := range values {
+		value = strings.ToLower(strings.TrimSpace(value))
+		if !allowed[value] || seen[value] {
+			continue
+		}
+		out = append(out, value)
+		seen[value] = true
+	}
+	return out
+}
+
+func peerHasCapability(p peer, capability string) bool {
+	for _, value := range p.Capabilities {
+		if value == capability {
+			return true
+		}
+	}
+	return false
 }
 
 func shortID() string {

@@ -133,6 +133,7 @@ func startRegistryHeartbeat(nodeID string, chainID string, publicKey ed25519.Pub
 		"network":       "mainnet",
 		"status":        "running",
 		"public_key":    hex.EncodeToString(publicKey),
+		"capabilities":  agent.CoreCapabilities(),
 		"cloud":         "render",
 		"mode":          "reachable",
 		"inbound_ports": 1,

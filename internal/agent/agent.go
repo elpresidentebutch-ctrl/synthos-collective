@@ -18,14 +18,29 @@ import (
 type Role string
 
 const (
-	RoleValidator       Role = "validator"
-	RoleGovernor        Role = "governor"
-	RoleEconomist       Role = "economist"
-	RoleCommunicator    Role = "communicator"
+	RoleImmuneNode   Role = "immune_node"
+	RoleValidator    Role = "immune_node" // Backward-compatible alias for the validator/immune role.
+	RoleEconomist    Role = "economist"
+	RoleGovernor     Role = "governor"
+	RoleCommunicator Role = "communicator"
+	RoleSimulator    Role = "simulator"
+	RoleEnforcer     Role = "enforcer"
+	RoleCitizen      Role = "citizen"
+
+	// Compatibility roles used by older code paths.
 	RoleRegistryKeeper  Role = "registry_keeper"
 	RoleSecurityWatcher Role = "security_watcher"
-	RoleSimulator       Role = "simulator"
 )
+
+var coreRoles = []Role{
+	RoleImmuneNode,
+	RoleEconomist,
+	RoleGovernor,
+	RoleCommunicator,
+	RoleSimulator,
+	RoleEnforcer,
+	RoleCitizen,
+}
 
 // MessageType represents high-level P2P message types.
 type MessageType string
@@ -56,6 +71,21 @@ type Identity struct {
 	ConsensusRoundsParticipated int       `json:"consensus_rounds_participated"`
 	BlocksValidated             int       `json:"blocks_validated"`
 	ProposalsVoted              int       `json:"proposals_voted"`
+}
+
+// CoreCapabilities returns the seven capabilities every SYNTHOS node should
+// expose when it presents itself as a sovereign computational agent.
+func CoreCapabilities() []string {
+	out := make([]string, 0, len(coreRoles))
+	for _, role := range coreRoles {
+		out = append(out, string(role))
+	}
+	return out
+}
+
+// CoreCapabilities returns this agent's built-in core capabilities.
+func (a *Agent) CoreCapabilities() []string {
+	return CoreCapabilities()
 }
 
 // ProofOfComputation is a per-agent, hardware-bound record of work.
@@ -290,7 +320,7 @@ func (a *Agent) CanPerformRole(role Role) error {
 
 	// Check role-specific reputation requirements
 	switch role {
-	case RoleValidator:
+	case RoleImmuneNode:
 		if a.Identity.Reputation < 100 {
 			return ErrInsufficientReputation
 		}
@@ -302,7 +332,7 @@ func (a *Agent) CanPerformRole(role Role) error {
 		if a.Identity.Reputation < 50 {
 			return ErrInsufficientReputation
 		}
-	case RoleSecurityWatcher:
+	case RoleEnforcer, RoleSecurityWatcher:
 		if a.Identity.Reputation < 150 {
 			return ErrInsufficientReputation
 		}
@@ -313,6 +343,8 @@ func (a *Agent) CanPerformRole(role Role) error {
 	case RoleCommunicator:
 		// Communicator: any verified agent can communicate
 		// No additional reputation check needed
+	case RoleCitizen:
+		// Citizen: any verified agent can participate in the ecosystem.
 	case RoleRegistryKeeper:
 		if a.Identity.Reputation < 100 {
 			return ErrInsufficientReputation
