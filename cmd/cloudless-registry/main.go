@@ -13,6 +13,7 @@ import (
 	"math/big"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -153,8 +154,15 @@ func main() {
 	mux.HandleFunc("/api/early-access/config", s.handleAPIEarlyAccessConfig)
 	mux.HandleFunc("/api/early-access/payment-intents", s.handleAPIEarlyAccessPaymentIntents)
 	mux.HandleFunc("/api/early-access/payment-intents/", s.handleAPIEarlyAccessPaymentIntentByID)
+	mux.HandleFunc("/index.html", s.handleWebsitePage)
+	mux.HandleFunc("/chain.html", s.handleWebsitePage)
+	mux.HandleFunc("/explorer", s.handleWebsitePage)
+	mux.HandleFunc("/explorer.html", s.handleWebsitePage)
+	mux.HandleFunc("/dex.html", s.handleWebsitePage)
+	mux.HandleFunc("/api.html", s.handleWebsitePage)
 	mux.HandleFunc("/early-access", s.handleEarlyAccessPage)
 	mux.HandleFunc("/early-adopters", s.handleEarlyAccessPage)
+	mux.HandleFunc("/assets/", s.handleWebsiteAsset)
 	mux.HandleFunc("/assets/early-access-sale.js", s.handleEarlyAccessWidget)
 	mux.HandleFunc("/api/node/windows-installer.ps1", s.handleWindowsInstaller)
 
@@ -729,6 +737,56 @@ func (s *server) handleEarlyAccessPage(w http.ResponseWriter, r *http.Request) {
   <script src="/assets/early-access-sale.js"></script>
 </body>
 </html>`))
+}
+
+func (s *server) handleWebsitePage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	name := strings.TrimPrefix(r.URL.Path, "/")
+	if name == "explorer" {
+		name = "explorer.html"
+	}
+	if name == "" || strings.Contains(name, "/") || !strings.HasSuffix(name, ".html") {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	s.serveWebsiteFile(w, r, name)
+}
+
+func (s *server) handleWebsiteAsset(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	name := strings.TrimPrefix(r.URL.Path, "/")
+	if name == "" || strings.Contains(name, "..") {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	s.serveWebsiteFile(w, r, name)
+}
+
+func (s *server) serveWebsiteFile(w http.ResponseWriter, r *http.Request, name string) {
+	clean := filepath.ToSlash(filepath.Clean(name))
+	if clean == "." || strings.HasPrefix(clean, "../") || filepath.IsAbs(clean) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	candidates := []string{
+		filepath.Join("/website", filepath.FromSlash(clean)),
+		filepath.Join("website", filepath.FromSlash(clean)),
+	}
+	for _, candidate := range candidates {
+		info, err := os.Stat(candidate)
+		if err == nil && !info.IsDir() {
+			w.Header().Set("Cache-Control", "public, max-age=300")
+			http.ServeFile(w, r, candidate)
+			return
+		}
+	}
+	http.Error(w, "website asset not found", http.StatusNotFound)
 }
 
 func (s *server) handleEarlyAccessWidget(w http.ResponseWriter, r *http.Request) {
