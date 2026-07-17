@@ -51,14 +51,23 @@ func main() {
 	// Initialize or load chain.
 	var ch *chain.Chain
 	if snap, err := st.Load(); err == nil && snap != nil && len(snap.Blocks) > 0 && snap.State != nil {
-		ch = &chain.Chain{
-			ChainID:   snap.ChainID,
-			TxChainID: snap.TxChainID,
-			State:     snap.State,
-			DEX:       chain.NewDEX(),
-			Oracle:    chain.NewOracle(),
-			Blocks:    snap.Blocks,
-			Mempool:   make(map[string]chain.Tx),
+		genesisChain, err := chain.NewChain(gen)
+		if err != nil {
+			panic(err)
+		}
+		if shouldRefreshHeightZeroSnapshot(snap, genesisChain) {
+			ch = genesisChain
+			_ = st.Save(ch)
+		} else {
+			ch = &chain.Chain{
+				ChainID:   snap.ChainID,
+				TxChainID: snap.TxChainID,
+				State:     snap.State,
+				DEX:       chain.NewDEX(),
+				Oracle:    chain.NewOracle(),
+				Blocks:    snap.Blocks,
+				Mempool:   make(map[string]chain.Tx),
+			}
 		}
 	} else {
 		ch, err = chain.NewChain(gen)
@@ -167,6 +176,20 @@ func startRegistryHeartbeat(nodeID string, chainID string, publicKey ed25519.Pub
 			post()
 		}
 	}()
+}
+
+func shouldRefreshHeightZeroSnapshot(snap *storage.Snapshot, genesisChain *chain.Chain) bool {
+	if snap == nil || genesisChain == nil || snap.State == nil || len(snap.Blocks) != 1 {
+		return false
+	}
+	genesisBlock := snap.Blocks[0]
+	if genesisBlock == nil || genesisBlock.Header.Height != 0 || len(genesisBlock.Tx) != 0 {
+		return false
+	}
+	if snap.ChainID != genesisChain.ChainID || snap.TxChainID != genesisChain.TransactionChainID() {
+		return true
+	}
+	return snap.State.Root() != genesisChain.State.Root()
 }
 
 func nodeKeys(privateKeyHex string) (synthoscrypto.KeyPair, error) {
