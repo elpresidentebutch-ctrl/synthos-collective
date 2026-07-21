@@ -631,7 +631,7 @@ describe("post-incubation compile / deploy smoke", function () {
     await expect(
       sale.connect(outsider).buyWithToken(
         await usdc.getAddress(),
-        ethers.parseUnits("1", 18),
+        ethers.parseUnits("2", 18),
         outsider.address
       )
     ).to.be.revertedWith("buyer not eligible");

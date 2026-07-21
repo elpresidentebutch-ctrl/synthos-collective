@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"synthos-collective/internal/chain"
@@ -18,6 +19,7 @@ type NodeConfig struct {
 	RPCListen   string            `json:"rpc_listen"`
 	GenesisPath string            `json:"genesis_path"`
 	Peers       []string          `json:"peers"`       // "agentID@host:port"
+	HTTPPeers   []string          `json:"http_peers"`  // HTTPS peer RPC endpoints for provider-neutral sync
 	ListenAddr  string            `json:"listen_addr"` // e.g. ":9001"
 	PrivateKey  string            `json:"private_key"` // hex encoded ed25519 private key for reproducible devnets
 	Validators  []string          `json:"validators"`  // validator agent IDs used for finality threshold
@@ -99,6 +101,15 @@ func (cfg *NodeConfig) LoadRuntimeConfig() {
 	if v := os.Getenv("AGENT_PRIVATE_KEY"); v != "" {
 		cfg.AgentPrivateKey = v
 	}
+	if v := os.Getenv("SYNTHOS_NODE_ID"); v != "" {
+		cfg.NodeID = v
+	}
+	if v := os.Getenv("SYNTHOS_PRIVATE_KEY"); v != "" {
+		cfg.PrivateKey = v
+	}
+	if v := os.Getenv("SYNTHOS_HTTP_PEERS"); v != "" {
+		cfg.HTTPPeers = splitCSV(v)
+	}
 
 	if v := os.Getenv("HSM_ENABLED"); v == "true" {
 		cfg.HSMEnabled = true
@@ -135,6 +146,17 @@ func (cfg *NodeConfig) LoadRuntimeConfig() {
 	if v := os.Getenv("SYNTHOS_LISTEN_ADDR"); v != "" {
 		cfg.ListenAddr = v
 	}
+}
+
+func splitCSV(value string) []string {
+	var out []string
+	for _, part := range strings.Split(value, ",") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 // ValidateNodeConfig validates that required fields are set

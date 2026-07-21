@@ -6,6 +6,7 @@
 
 # Redundant audit export (use docs/audit + scripts/package_audit.ps1 to regenerate)
 SYNTHOS_AUDIT_PACKET.zip
+SYNTHOS_AUDIT_PACKET_FINAL.zip
 SYNTHOS_AUDIT_PACKET/
 
 # Go
@@ -27,6 +28,7 @@ contracts/merkle/adopter-merkle.json
 
 # Local runtime output
 *.log
+*.tmp
 dex-config.json
 
 # Python
@@ -49,6 +51,8 @@ dist/
 .dev.vars
 wrangler.toml.bak
 .synthos/early-access-keys/
+.synthos/collectivecoin-wallets/
+.synthos/senthedcoins-wallets/
 .synthos/open-network/
 .synthos/mainnet-secrets/
 contracts/.env.mainnet.local
@@ -61,6 +65,7 @@ validator-deployment/validator-keys.json
 validator-deployment/validators.txt
 validator-deployment/test-results.json
 validator-deployment/.dev.vars*
+scratch/
 scratch/*.local.txt
 scratch/*.local.json
 

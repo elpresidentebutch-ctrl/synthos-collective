@@ -2,13 +2,23 @@
   "chain_id": "synthos-mainnet-1",
   "tx_chain_id": 20260702,
   "alloc": {
-    "0x825fd94aa826da6ce0b4e57487418b72aea09f5e": 100000000000
+    "0x825fd94aa826da6ce0b4e57487418b72aea09f5e": 99999978940,
+    "0x25151dd517ef19003d8feb50a501d8a096b7f597": 7000,
+    "0xb039d690927d389e4c03a87f3f0001069f4832fe": 10000,
+    "0xcf206e37d6425bbcebeefa006b1df9e4964ba87c": 20,
+    "0x757a88a78ad5e636a083de9775f8606fc3f0a511": 40,
+    "0xea5435f9b214f9bf193a9b9f1d3ae8fb8ec09d99": 2000,
+    "0x66a0c64a9ff8d5187715b1fefed6b0ccc883b702": 2000
   },
   "metadata": {
-    "symbol": "SYN",
+    "symbol": "COLLECTIVE",
     "decimals": 0,
     "network": "SYNTHOS Collective",
     "public_rpc_url": "https://rpc.ishamwilliamsblockchains.com",
-    "founder_allocation": 100000000000
+    "founder_allocation": 99999978940,
+    "coin_name": "collectivecoin",
+    "display_name": "collectivecoin",
+    "named_wallet_allocation": 21060,
+    "named_wallets_file": ".synthos/collectivecoin-wallets/public-wallets.json"
   }
 }

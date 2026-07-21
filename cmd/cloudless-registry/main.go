@@ -13,6 +13,7 @@ import (
 	"math/big"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -29,19 +30,20 @@ const staleAfter = 5 * time.Minute
 var safeName = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
 
 type peer struct {
-	Name               string `json:"name"`
-	URL                string `json:"url"`
-	Kind               string `json:"kind,omitempty"`
-	Network            string `json:"network,omitempty"`
-	Status             string `json:"status,omitempty"`
-	PublicKey          string `json:"public_key,omitempty"`
-	Cloud              string `json:"cloud"`
-	Mode               string `json:"mode"`
-	InboundPorts       int    `json:"inbound_ports"`
-	HardwareCommitment string `json:"hardware_commitment,omitempty"`
-	RegisteredAt       int64  `json:"registered_at"`
-	LastSeen           int64  `json:"last_seen"`
-	Stale              bool   `json:"stale,omitempty"`
+	Name               string   `json:"name"`
+	URL                string   `json:"url"`
+	Kind               string   `json:"kind,omitempty"`
+	Network            string   `json:"network,omitempty"`
+	Status             string   `json:"status,omitempty"`
+	PublicKey          string   `json:"public_key,omitempty"`
+	Capabilities       []string `json:"capabilities,omitempty"`
+	Cloud              string   `json:"cloud"`
+	Mode               string   `json:"mode"`
+	InboundPorts       int      `json:"inbound_ports"`
+	HardwareCommitment string   `json:"hardware_commitment,omitempty"`
+	RegisteredAt       int64    `json:"registered_at"`
+	LastSeen           int64    `json:"last_seen"`
+	Stale              bool     `json:"stale,omitempty"`
 }
 
 type mailboxMessage struct {
@@ -152,8 +154,15 @@ func main() {
 	mux.HandleFunc("/api/early-access/config", s.handleAPIEarlyAccessConfig)
 	mux.HandleFunc("/api/early-access/payment-intents", s.handleAPIEarlyAccessPaymentIntents)
 	mux.HandleFunc("/api/early-access/payment-intents/", s.handleAPIEarlyAccessPaymentIntentByID)
+	mux.HandleFunc("/index.html", s.handleWebsitePage)
+	mux.HandleFunc("/chain.html", s.handleWebsitePage)
+	mux.HandleFunc("/explorer", s.handleWebsitePage)
+	mux.HandleFunc("/explorer.html", s.handleWebsitePage)
+	mux.HandleFunc("/dex.html", s.handleWebsitePage)
+	mux.HandleFunc("/api.html", s.handleWebsitePage)
 	mux.HandleFunc("/early-access", s.handleEarlyAccessPage)
 	mux.HandleFunc("/early-adopters", s.handleEarlyAccessPage)
+	mux.HandleFunc("/assets/", s.handleWebsiteAsset)
 	mux.HandleFunc("/assets/early-access-sale.js", s.handleEarlyAccessWidget)
 	mux.HandleFunc("/api/node/windows-installer.ps1", s.handleWindowsInstaller)
 
@@ -213,16 +222,17 @@ func (s *server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Name               string `json:"name"`
-		URL                string `json:"url"`
-		Cloud              string `json:"cloud"`
-		Kind               string `json:"kind"`
-		Network            string `json:"network"`
-		Status             string `json:"status"`
-		PublicKey          string `json:"public_key"`
-		Mode               string `json:"mode"`
-		InboundPorts       int    `json:"inbound_ports"`
-		HardwareCommitment string `json:"hardware_commitment"`
+		Name               string   `json:"name"`
+		URL                string   `json:"url"`
+		Cloud              string   `json:"cloud"`
+		Kind               string   `json:"kind"`
+		Network            string   `json:"network"`
+		Status             string   `json:"status"`
+		PublicKey          string   `json:"public_key"`
+		Capabilities       []string `json:"capabilities"`
+		Mode               string   `json:"mode"`
+		InboundPorts       int      `json:"inbound_ports"`
+		HardwareCommitment string   `json:"hardware_commitment"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -254,6 +264,7 @@ func (s *server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		Network:            normalizeChoice(body.Network, "testnet", "testnet", "mainnet"),
 		Status:             truncate(defaultString(body.Status, "running"), 32),
 		PublicKey:          truncate(body.PublicKey, 256),
+		Capabilities:       normalizeCapabilities(body.Capabilities),
 		Cloud:              truncate(defaultString(body.Cloud, "cloudless"), 32),
 		Mode:               mode,
 		InboundPorts:       body.InboundPorts,
@@ -401,16 +412,20 @@ func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) 
 	fresh := 0
 	validators := 0
 	immune := 0
+	agents := 0
 	for i := range peers {
 		if !peers[i].Stale {
 			reachable++
 			fresh++
 		}
-		switch peers[i].Kind {
-		case "immune":
+		if peerHasCapability(peers[i], "immune_node") || peers[i].Kind == "immune" {
 			immune++
-		default:
+		}
+		if peers[i].Kind == "" || peers[i].Kind == "validator" {
 			validators++
+		}
+		if !peers[i].Stale && len(peers[i].Capabilities) > 0 {
+			agents++
 		}
 	}
 
@@ -423,6 +438,7 @@ func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) 
 		"fresh_heartbeats":     fresh,
 		"validators_running":   validators,
 		"immune_nodes_running": immune,
+		"agents_running":       agents,
 		"highest_height":       0,
 		"tip":                  "",
 		"state_root":           "",
@@ -721,6 +737,56 @@ func (s *server) handleEarlyAccessPage(w http.ResponseWriter, r *http.Request) {
   <script src="/assets/early-access-sale.js"></script>
 </body>
 </html>`))
+}
+
+func (s *server) handleWebsitePage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	name := strings.TrimPrefix(r.URL.Path, "/")
+	if name == "explorer" {
+		name = "explorer.html"
+	}
+	if name == "" || strings.Contains(name, "/") || !strings.HasSuffix(name, ".html") {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	s.serveWebsiteFile(w, r, name)
+}
+
+func (s *server) handleWebsiteAsset(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	name := strings.TrimPrefix(r.URL.Path, "/")
+	if name == "" || strings.Contains(name, "..") {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	s.serveWebsiteFile(w, r, name)
+}
+
+func (s *server) serveWebsiteFile(w http.ResponseWriter, r *http.Request, name string) {
+	clean := filepath.ToSlash(filepath.Clean(name))
+	if clean == "." || strings.HasPrefix(clean, "../") || filepath.IsAbs(clean) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	candidates := []string{
+		filepath.Join("/website", filepath.FromSlash(clean)),
+		filepath.Join("website", filepath.FromSlash(clean)),
+	}
+	for _, candidate := range candidates {
+		info, err := os.Stat(candidate)
+		if err == nil && !info.IsDir() {
+			w.Header().Set("Cache-Control", "public, max-age=300")
+			http.ServeFile(w, r, candidate)
+			return
+		}
+	}
+	http.Error(w, "website asset not found", http.StatusNotFound)
 }
 
 func (s *server) handleEarlyAccessWidget(w http.ResponseWriter, r *http.Request) {
@@ -1383,6 +1449,38 @@ func normalizeChoice(value, fallback string, allowed ...string) string {
 		}
 	}
 	return fallback
+}
+
+func normalizeCapabilities(values []string) []string {
+	allowed := map[string]bool{
+		"immune_node":  true,
+		"economist":    true,
+		"governor":     true,
+		"communicator": true,
+		"simulator":    true,
+		"enforcer":     true,
+		"citizen":      true,
+	}
+	out := make([]string, 0, len(values))
+	seen := map[string]bool{}
+	for _, value := range values {
+		value = strings.ToLower(strings.TrimSpace(value))
+		if !allowed[value] || seen[value] {
+			continue
+		}
+		out = append(out, value)
+		seen[value] = true
+	}
+	return out
+}
+
+func peerHasCapability(p peer, capability string) bool {
+	for _, value := range p.Capabilities {
+		if value == capability {
+			return true
+		}
+	}
+	return false
 }
 
 func shortID() string {

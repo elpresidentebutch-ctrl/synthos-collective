@@ -1,10 +1,14 @@
 package rpc
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"synthos-collective/internal/chain"
 	"synthos-collective/internal/node"
@@ -17,6 +21,8 @@ type Server struct {
 	Node        *node.Node
 	RateLimiter *RateLimiter
 	MaxBodySize int64
+	PeerURLs    []string
+	HTTPClient  *http.Client
 }
 
 func NewServer(c *chain.Chain, st *storage.Store, n *node.Node) *Server {
@@ -26,6 +32,7 @@ func NewServer(c *chain.Chain, st *storage.Store, n *node.Node) *Server {
 		Node:        n,
 		RateLimiter: NewRateLimiter(1000), // Default 1000 RPS
 		MaxBodySize: 1024 * 1024,          // Default 1MB
+		HTTPClient:  &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
@@ -36,7 +43,12 @@ func NewServerWithConfig(c *chain.Chain, st *storage.Store, n *node.Node, rps in
 		Node:        n,
 		RateLimiter: NewRateLimiter(rps),
 		MaxBodySize: maxBodySize,
+		HTTPClient:  &http.Client{Timeout: 10 * time.Second},
 	}
+}
+
+func (s *Server) SetPeerURLs(urls []string) {
+	s.PeerURLs = sanitizePeerURLs(urls)
 }
 
 func (s *Server) Handler() http.Handler {
@@ -51,8 +63,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/dex/quote", s.handleDEXQuote)
 	mux.HandleFunc("/dex/swap", s.handleDEXSwap)
 	mux.HandleFunc("/immune/status", s.handleImmuneStatus)
+	mux.HandleFunc("/aen/status", s.handleAENStatus)
+	mux.HandleFunc("/capabilities", s.handleCapabilities)
+	mux.HandleFunc("/peers", s.handlePeers)
 	mux.HandleFunc("/submitTx", s.handleSubmitTx)
 	mux.HandleFunc("/proposeBlock", s.handleProposeBlock)
+	mux.HandleFunc("/gossip/block", s.handleGossipBlock)
 
 	// Wrap with rate limiting and input size limit middleware
 	handler := s.RateLimiter.Middleware(mux)
@@ -87,12 +103,70 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, map[string]any{
+	body := map[string]any{
 		"chain_id":   s.Chain.ChainID,
 		"height":     s.Chain.Height(),
 		"tip":        s.Chain.Tip().Hash,
 		"state_root": s.Chain.State.Root(),
 		"immune":     s.Chain.State.ImmuneStatus(),
+		"peers":      s.PeerURLs,
+	}
+	if s.Node != nil && s.Node.Agent != nil {
+		body["agent"] = map[string]any{
+			"id":           s.Node.Agent.Identity.AgentID,
+			"public_key":   s.Node.Agent.Identity.PublicKey,
+			"capabilities": s.Node.Agent.CoreCapabilities(),
+		}
+		body["capabilities"] = s.Node.Agent.CoreCapabilities()
+		body["immune_capable"] = true
+	}
+	writeJSON(w, body)
+}
+
+func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
+	if s.Node == nil || s.Node.Agent == nil {
+		writeJSON(w, map[string]any{"capabilities": []string{}})
+		return
+	}
+	writeJSON(w, map[string]any{
+		"agent_id":       s.Node.Agent.Identity.AgentID,
+		"public_key":     s.Node.Agent.Identity.PublicKey,
+		"capabilities":   s.Node.Agent.CoreCapabilities(),
+		"immune_capable": true,
+	})
+}
+
+func (s *Server) handleAENStatus(w http.ResponseWriter, r *http.Request) {
+	if s.Node == nil || s.Node.Agent == nil {
+		writeJSON(w, map[string]any{
+			"ok":    false,
+			"ready": false,
+			"error": "agent not attached",
+		})
+		return
+	}
+	writeJSON(w, map[string]any{
+		"ok":           true,
+		"ready":        true,
+		"network":      "Agent Execution Network",
+		"model":        "agents_and_nodes_are_the_same",
+		"node_id":      s.Node.Agent.Identity.AgentID,
+		"agent_id":     s.Node.Agent.Identity.AgentID,
+		"public_key":   s.Node.Agent.Identity.PublicKey,
+		"chain_id":     s.Chain.ChainID,
+		"height":       s.Chain.Height(),
+		"tip":          s.Chain.Tip().Hash,
+		"state_root":   s.Chain.State.Root(),
+		"peers":        s.PeerURLs,
+		"capabilities": s.Node.Agent.CoreCapabilities(),
+	})
+}
+
+func (s *Server) handlePeers(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, map[string]any{
+		"self":  r.Host,
+		"peers": s.PeerURLs,
+		"total": len(s.PeerURLs),
 	})
 }
 
@@ -245,7 +319,174 @@ func (s *Server) handleProposeBlock(w http.ResponseWriter, r *http.Request) {
 	if s.Store != nil {
 		_ = s.Store.Save(s.Chain)
 	}
+	s.pushBlockToPeers(s.Chain.Tip())
 	writeJSON(w, map[string]any{"ok": true, "block_hash": hash})
+}
+
+func (s *Server) handleGossipBlock(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Block *chain.Block `json:"block"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	applied, err := s.applyPeerBlock(body.Block)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, map[string]any{
+		"ok":      true,
+		"applied": applied,
+		"height":  s.Chain.Height(),
+		"tip":     s.Chain.Tip().Hash,
+	})
+}
+
+func (s *Server) applyPeerBlock(b *chain.Block) (bool, error) {
+	if b == nil {
+		return false, errors.New("missing block")
+	}
+	tip := s.Chain.Tip()
+	if tip != nil && b.Header.Height <= tip.Header.Height {
+		return false, nil
+	}
+	if err := s.Chain.FinalizeBlock(b); err != nil {
+		return false, err
+	}
+	if s.Store != nil {
+		_ = s.Store.Save(s.Chain)
+	}
+	return true, nil
+}
+
+func (s *Server) StartPeerSync(interval time.Duration) {
+	if interval <= 0 {
+		interval = 15 * time.Second
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for range ticker.C {
+			if err := s.CatchUpOnce(); err != nil {
+				log.Printf("http peer catch-up: %v", err)
+			}
+		}
+	}()
+}
+
+func (s *Server) CatchUpOnce() error {
+	myHeight := s.Chain.Height()
+	for _, peer := range s.PeerURLs {
+		status, err := s.peerStatus(peer)
+		if err != nil || status.Height <= myHeight {
+			continue
+		}
+		blocks, err := s.peerBlocks(peer, int(myHeight+1))
+		if err != nil {
+			continue
+		}
+		applied := 0
+		for _, block := range blocks {
+			ok, err := s.applyPeerBlock(block)
+			if err != nil {
+				break
+			}
+			if ok {
+				applied++
+				myHeight = s.Chain.Height()
+			}
+		}
+		if applied > 0 {
+			return nil
+		}
+	}
+	return nil
+}
+
+func (s *Server) pushBlockToPeers(block *chain.Block) {
+	if block == nil || len(s.PeerURLs) == 0 {
+		return
+	}
+	body, _ := json.Marshal(map[string]any{"block": block})
+	for _, peer := range s.PeerURLs {
+		peer := peer
+		go func() {
+			req, err := http.NewRequest(http.MethodPost, strings.TrimRight(peer, "/")+"/gossip/block", bytes.NewReader(body))
+			if err != nil {
+				return
+			}
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := s.client().Do(req)
+			if err == nil && resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+		}()
+	}
+}
+
+type peerStatus struct {
+	Height uint64 `json:"height"`
+}
+
+func (s *Server) peerStatus(peer string) (peerStatus, error) {
+	var out peerStatus
+	resp, err := s.client().Get(strings.TrimRight(peer, "/") + "/status")
+	if err != nil {
+		return out, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return out, errors.New(resp.Status)
+	}
+	err = json.NewDecoder(resp.Body).Decode(&out)
+	return out, err
+}
+
+func (s *Server) peerBlocks(peer string, from int) ([]*chain.Block, error) {
+	resp, err := s.client().Get(strings.TrimRight(peer, "/") + "/blocks?from=" + strconv.Itoa(from))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.New(resp.Status)
+	}
+	var out struct {
+		Blocks []*chain.Block `json:"blocks"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out.Blocks, nil
+}
+
+func (s *Server) client() *http.Client {
+	if s.HTTPClient != nil {
+		return s.HTTPClient
+	}
+	return http.DefaultClient
+}
+
+func sanitizePeerURLs(urls []string) []string {
+	out := make([]string, 0, len(urls))
+	seen := map[string]bool{}
+	for _, url := range urls {
+		url = strings.TrimRight(strings.TrimSpace(url), "/")
+		if url == "" || seen[url] {
+			continue
+		}
+		if strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") {
+			out = append(out, url)
+			seen[url] = true
+		}
+	}
+	return out
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

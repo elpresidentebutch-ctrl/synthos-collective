@@ -14,10 +14,10 @@ RUN go build -trimpath -ldflags="-s -w" -o /out/rpcnode ./cmd/rpcnode \
 FROM alpine:3.19
 RUN apk add --no-cache ca-certificates
 COPY --from=build /out/rpcnode /out/devnet /out/synthosd /out/cloudless-registry /usr/local/bin/
-COPY website/assets/early-access-sale.js /website/assets/early-access-sale.js
+COPY website/ /website/
 # The RPC/validator binaries load genesis and node configuration from /config
 # when deployed as containers.
-COPY config/genesis.json config/render-node.json /config/
+COPY config/*.json /config/
 ENV SYNTHOS_DATA_DIR=/data
 ENV SYNTHOS_EARLY_ACCESS_WIDGET_PATH=/website/assets/early-access-sale.js
 RUN mkdir -p /data

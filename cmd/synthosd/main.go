@@ -1,12 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"synthos-collective/internal/agent"
 	"synthos-collective/internal/chain"
@@ -47,14 +51,23 @@ func main() {
 	// Initialize or load chain.
 	var ch *chain.Chain
 	if snap, err := st.Load(); err == nil && snap != nil && len(snap.Blocks) > 0 && snap.State != nil {
-		ch = &chain.Chain{
-			ChainID:   snap.ChainID,
-			TxChainID: snap.TxChainID,
-			State:     snap.State,
-			DEX:       chain.NewDEX(),
-			Oracle:    chain.NewOracle(),
-			Blocks:    snap.Blocks,
-			Mempool:   make(map[string]chain.Tx),
+		genesisChain, err := chain.NewChain(gen)
+		if err != nil {
+			panic(err)
+		}
+		if shouldRefreshHeightZeroSnapshot(snap, genesisChain) {
+			ch = genesisChain
+			_ = st.Save(ch)
+		} else {
+			ch = &chain.Chain{
+				ChainID:   snap.ChainID,
+				TxChainID: snap.TxChainID,
+				State:     snap.State,
+				DEX:       chain.NewDEX(),
+				Oracle:    chain.NewOracle(),
+				Blocks:    snap.Blocks,
+				Mempool:   make(map[string]chain.Tx),
+			}
 		}
 	} else {
 		ch, err = chain.NewChain(gen)
@@ -106,10 +119,77 @@ func main() {
 
 	// Expose RPC for status, balances, tx submission, and on-demand block proposals.
 	srv := rpc.NewServer(ch, st, n)
+	srv.SetPeerURLs(cfg.HTTPPeers)
+	srv.StartPeerSync(15 * time.Second)
+	startRegistryHeartbeat(cfg.NodeID, ch.ChainID, keys.Public)
 	fmt.Printf("synthosd: RPC listening on %s (data dir %s, node_id=%s)\n", cfg.RPCListen, dataDir, cfg.NodeID)
 	if err := http.ListenAndServe(cfg.RPCListen, srv.Handler()); err != nil {
 		panic(err)
 	}
+}
+
+func startRegistryHeartbeat(nodeID string, chainID string, publicKey ed25519.PublicKey) {
+	registryURL := strings.TrimRight(os.Getenv("SYNTHOS_REGISTRY_URL"), "/")
+	selfURL := strings.TrimRight(os.Getenv("SYNTHOS_SELF_URL"), "/")
+	if registryURL == "" || selfURL == "" {
+		return
+	}
+	secret := os.Getenv("SYNTHOS_REGISTRY_SECRET")
+	payload := map[string]any{
+		"name":          nodeID,
+		"url":           selfURL,
+		"kind":          "validator",
+		"network":       "mainnet",
+		"status":        "running",
+		"public_key":    hex.EncodeToString(publicKey),
+		"capabilities":  agent.CoreCapabilities(),
+		"cloud":         "render",
+		"mode":          "reachable",
+		"inbound_ports": 1,
+	}
+	post := func() {
+		body, _ := json.Marshal(payload)
+		req, err := http.NewRequest(http.MethodPost, registryURL+"/register", bytes.NewReader(body))
+		if err != nil {
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if secret != "" {
+			req.Header.Set("X-Registry-Secret", secret)
+		}
+		client := &http.Client{Timeout: 10 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Printf("registry heartbeat failed: %v", err)
+			return
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			log.Printf("registry heartbeat returned %s", resp.Status)
+		}
+	}
+	post()
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			post()
+		}
+	}()
+}
+
+func shouldRefreshHeightZeroSnapshot(snap *storage.Snapshot, genesisChain *chain.Chain) bool {
+	if snap == nil || genesisChain == nil || snap.State == nil || len(snap.Blocks) != 1 {
+		return false
+	}
+	genesisBlock := snap.Blocks[0]
+	if genesisBlock == nil || genesisBlock.Header.Height != 0 || len(genesisBlock.Tx) != 0 {
+		return false
+	}
+	if snap.ChainID != genesisChain.ChainID || snap.TxChainID != genesisChain.TransactionChainID() {
+		return true
+	}
+	return snap.State.Root() != genesisChain.State.Root()
 }
 
 func nodeKeys(privateKeyHex string) (synthoscrypto.KeyPair, error) {
