@@ -9,11 +9,13 @@ ENV CGO_ENABLED=0
 RUN go build -trimpath -ldflags="-s -w" -o /out/rpcnode ./cmd/rpcnode \
   && go build -trimpath -ldflags="-s -w" -o /out/devnet ./cmd/devnet \
   && go build -trimpath -ldflags="-s -w" -o /out/synthosd ./cmd/synthosd \
-  && go build -trimpath -ldflags="-s -w" -o /out/cloudless-registry ./cmd/cloudless-registry
+  && go build -trimpath -ldflags="-s -w" -o /out/cloudless-registry ./cmd/cloudless-registry \
+  && GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/silentnode.exe ./cmd/silentnode
 
 FROM alpine:3.19
 RUN apk add --no-cache ca-certificates
 COPY --from=build /out/rpcnode /out/devnet /out/synthosd /out/cloudless-registry /usr/local/bin/
+COPY --from=build /out/silentnode.exe /downloads/silentnode.exe
 COPY website/ /website/
 # The RPC/validator binaries load genesis and node configuration from /config
 # when deployed as containers.

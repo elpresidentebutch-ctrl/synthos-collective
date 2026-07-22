@@ -165,6 +165,8 @@ func main() {
 	mux.HandleFunc("/assets/", s.handleWebsiteAsset)
 	mux.HandleFunc("/assets/early-access-sale.js", s.handleEarlyAccessWidget)
 	mux.HandleFunc("/api/node/windows-installer.ps1", s.handleWindowsInstaller)
+	mux.HandleFunc("/api/node/install.bat", s.handleWindowsInstallerBat)
+	mux.HandleFunc("/downloads/silentnode.exe", s.handleSilentNodeBinary)
 
 	log.Printf("SYNTHOS cloudless registry listening on %s", listen)
 	log.Printf("state file: %s", stateFile)
@@ -905,23 +907,88 @@ func (s *server) savePaymentIntent(intent earlyAccessPaymentIntent) {
 	}
 }
 
+// baseURL reconstructs this server's public origin from the incoming request,
+// so downloads work whether reached via onrender.com or a custom domain.
+func baseURL(r *http.Request) string {
+	scheme := "https"
+	if r.TLS == nil && r.Header.Get("X-Forwarded-Proto") == "" {
+		scheme = "http"
+	}
+	if p := r.Header.Get("X-Forwarded-Proto"); p != "" {
+		scheme = p
+	}
+	return scheme + "://" + r.Host
+}
+
+// handleSilentNodeBinary serves the prebuilt Windows node binary.
+func (s *server) handleSilentNodeBinary(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	const path = "/downloads/silentnode.exe"
+	if _, err := os.Stat(path); err != nil {
+		http.Error(w, "node binary not available in this build", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", `attachment; filename="silentnode.exe"`)
+	http.ServeFile(w, r, path)
+}
+
+// handleWindowsInstaller serves a real one-shot PowerShell installer: it
+// downloads the prebuilt node binary and registers it to run in the
+// background at every login. No Go, no repo clone, no terminal skills.
 func (s *server) handleWindowsInstaller(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	base := baseURL(r)
+	script := "# SYNTHOS background node installer\n" +
+		"$ErrorActionPreference = \"Stop\"\n" +
+		"$base = \"" + base + "\"\n" +
+		"$dir = Join-Path $env:LOCALAPPDATA \"SynthosNode\"\n" +
+		"New-Item -ItemType Directory -Force -Path $dir | Out-Null\n" +
+		"$exe = Join-Path $dir \"silentnode.exe\"\n" +
+		"Write-Host \"Downloading your SYNTHOS node...\"\n" +
+		"Invoke-WebRequest -Uri \"$base/downloads/silentnode.exe\" -OutFile $exe\n" +
+		"Write-Host \"Setting it to run quietly in the background at login...\"\n" +
+		"$action = New-ScheduledTaskAction -Execute $exe\n" +
+		"$trigger = New-ScheduledTaskTrigger -AtLogOn\n" +
+		"$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries\n" +
+		"Register-ScheduledTask -TaskName \"SynthosNode\" -Action $action -Trigger $trigger -Settings $settings -Force | Out-Null\n" +
+		"Start-ScheduledTask -TaskName \"SynthosNode\"\n" +
+		"Write-Host \"\"\n" +
+		"Write-Host \"Done! Your SYNTHOS node is now running in the background\"\n" +
+		"Write-Host \"and will start automatically every time you log in.\"\n" +
+		"Write-Host \"\"\n" +
+		"Write-Host \"To stop and remove it later, run:\"\n" +
+		"Write-Host \"  Stop-ScheduledTask -TaskName SynthosNode; Unregister-ScheduledTask -TaskName SynthosNode -Confirm:`$false\"\n"
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Header().Set("Content-Disposition", `attachment; filename="install-synthos-node.ps1"`)
-	_, _ = w.Write([]byte(`# SYNTHOS background node installer
-param(
-  [string]$RegistryUrl = "http://127.0.0.1:8090"
-)
+	_, _ = w.Write([]byte(script))
+}
 
-Write-Host "SYNTHOS background node installer"
-Write-Host "Registry: $RegistryUrl"
-Write-Host "Clone the SYNTHOS repository, then run:"
-Write-Host "powershell -ExecutionPolicy Bypass -File scripts\install_background_node.ps1 -RegistryUrl $RegistryUrl"
-`))
+// handleWindowsInstallerBat serves a double-clickable .bat wrapper that runs
+// the PowerShell installer above -- the true "push button" for non-technical
+// users: download this one file, double-click, done.
+func (s *server) handleWindowsInstallerBat(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	base := baseURL(r)
+	bat := "@echo off\r\n" +
+		"title SYNTHOS Node Installer\r\n" +
+		"echo Installing your SYNTHOS background node...\r\n" +
+		"echo.\r\n" +
+		"powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm " + base + "/api/node/windows-installer.ps1 | iex\"\r\n" +
+		"echo.\r\n" +
+		"echo You can close this window.\r\n" +
+		"pause >nul\r\n"
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", `attachment; filename="install-synthos-node.bat"`)
+	_, _ = w.Write([]byte(bat))
 }
 
 func (s *server) writePeerList(w http.ResponseWriter, activeOnly bool) {
