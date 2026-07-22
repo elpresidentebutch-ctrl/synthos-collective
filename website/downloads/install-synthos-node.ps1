@@ -1,12 +1,21 @@
+# SYNTHOS background node installer
+# Downloads the prebuilt node and registers it to run in the background at login.
 $ErrorActionPreference = "Stop"
-
-Write-Host "SYNTHOS Background Node Installer"
-Write-Host "This installer is for source builds. Run it from the SYNTHOS Collective repository root."
+$base = "https://synthos-www.onrender.com"
+$dir = Join-Path $env:LOCALAPPDATA "SynthosNode"
+New-Item -ItemType Directory -Force -Path $dir | Out-Null
+$exe = Join-Path $dir "silentnode.exe"
+Write-Host "Downloading your SYNTHOS node..."
+Invoke-WebRequest -Uri "$base/downloads/silentnode.exe" -OutFile $exe
+Write-Host "Setting it to run quietly in the background at login..."
+$action = New-ScheduledTaskAction -Execute $exe
+$trigger = New-ScheduledTaskTrigger -AtLogOn
+$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+Register-ScheduledTask -TaskName "SynthosNode" -Action $action -Trigger $trigger -Settings $settings -Force | Out-Null
+Start-ScheduledTask -TaskName "SynthosNode"
 Write-Host ""
-
-$script = Join-Path (Get-Location) "scripts\install_background_node.ps1"
-if (!(Test-Path $script)) {
-  throw "scripts\install_background_node.ps1 was not found. Download or clone the SYNTHOS Collective repository, then run this installer from the repository root."
-}
-
-& $script
+Write-Host "Done! Your SYNTHOS node is now running in the background"
+Write-Host "and will start automatically every time you log in."
+Write-Host ""
+Write-Host "To stop and remove it later, run:"
+Write-Host "  Stop-ScheduledTask -TaskName SynthosNode; Unregister-ScheduledTask -TaskName SynthosNode -Confirm:`$false"

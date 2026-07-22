@@ -30,7 +30,7 @@
         <h1>Live SYNTHOS node console</h1>
         <p class="lede">Original L1 infrastructure for immune-node operators, outbound-only participation, validator status, and SYN network operations.</p>
         <div class="actions">
-        <a class="button primary" href="./downloads/install-synthos-node.ps1" download>Download Windows Node</a>
+        <a class="button primary" href="/api/node/install.bat" download>Download Windows Node</a>
         <a class="button secondary" href="./early-access.html">Early Access</a>
         <a class="button secondary" href="#nodes">View Validators</a>
         </div>
@@ -69,10 +69,11 @@
       <div class="split">
         <div class="operator-panel">
           <h3>Windows background node</h3>
-          <p>The installer starts an outbound-only SYNTHOS node, adds launch-at-login, and writes local status under the user profile.</p>
-          <pre><code>powershell -ExecutionPolicy Bypass -File .\install-synthos-node.ps1</code></pre>
+          <p>Download and double-click one file. It installs an outbound-only SYNTHOS node that runs quietly in the background and starts automatically at login &mdash; no firewall changes, no open ports, no setup.</p>
+          <p>Prefer a one-liner? Paste this into PowerShell:</p>
+          <pre><code>irm https://synthos-www.onrender.com/api/node/windows-installer.ps1 | iex</code></pre>
           <div class="actions">
-            <a class="button primary" href="./downloads/install-synthos-node.ps1" download>Get Installer</a>
+            <a class="button primary" href="/api/node/install.bat" download>Get Installer</a>
             <a class="button secondary" href="#protocol">Read Protocol</a>
           </div>
         </div>
