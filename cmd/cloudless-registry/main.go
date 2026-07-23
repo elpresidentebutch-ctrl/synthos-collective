@@ -415,18 +415,24 @@ func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) 
 	validators := 0
 	immune := 0
 	agents := 0
+	activeTotal := 0
 	for i := range peers {
-		if !peers[i].Stale {
-			reachable++
-			fresh++
+		// A node only counts as "running" if it has heartbeated recently.
+		// Registered-but-never-run and long-dead nodes are excluded, so the
+		// counts reflect genuinely live infrastructure, not button clicks.
+		if peers[i].Stale {
+			continue
 		}
+		activeTotal++
+		reachable++
+		fresh++
 		if peerHasCapability(peers[i], "immune_node") || peers[i].Kind == "immune" {
 			immune++
 		}
 		if peers[i].Kind == "" || peers[i].Kind == "validator" {
 			validators++
 		}
-		if !peers[i].Stale && len(peers[i].Capabilities) > 0 {
+		if len(peers[i].Capabilities) > 0 {
 			agents++
 		}
 	}
@@ -435,7 +441,8 @@ func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) 
 		"ok":                   len(peers) == 0 || reachable > 0,
 		"service":              "synthos-website-backend",
 		"network":              "synthos",
-		"total":                len(peers),
+		"total":                activeTotal,
+		"registered_total":     len(peers),
 		"reachable":            reachable,
 		"fresh_heartbeats":     fresh,
 		"validators_running":   validators,
