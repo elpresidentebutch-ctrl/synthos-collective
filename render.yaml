@@ -34,6 +34,13 @@ services:
         value: https://synthos-validator-11.onrender.com
       - key: SYNTHOS_REGISTRY_URL
         value: https://synthos-www.onrender.com
+      # Single designated sequencer: only this validator auto-produces blocks.
+      # The other validators (12-15) follow via HTTP peer catch-up. Enabling
+      # this on more than one node would fork the chain.
+      - key: SYNTHOS_BLOCK_PRODUCER
+        value: "true"
+      - key: SYNTHOS_BLOCK_INTERVAL_SECONDS
+        value: "10"
       - key: SYNTHOS_PRIVATE_KEY
         sync: false
     disk:

@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -122,10 +123,50 @@ func main() {
 	srv.SetPeerURLs(cfg.HTTPPeers)
 	srv.StartPeerSync(15 * time.Second)
 	startRegistryHeartbeat(cfg.NodeID, ch.ChainID, keys.Public)
+	startBlockProducer(n, ch)
 	fmt.Printf("synthosd: RPC listening on %s (data dir %s, node_id=%s)\n", cfg.RPCListen, dataDir, cfg.NodeID)
 	if err := http.ListenAndServe(cfg.RPCListen, srv.Handler()); err != nil {
 		panic(err)
 	}
+}
+
+// startBlockProducer runs the automatic block-proposal loop on the single
+// designated sequencer. Enable it on exactly ONE validator via
+// SYNTHOS_BLOCK_PRODUCER=true; the others follow via HTTP peer catch-up. It
+// proposes and finalizes a block whenever transactions are waiting, so the
+// chain advances on its own -- no manual /proposeBlock call needed. Running
+// this on more than one node at once would fork the chain.
+//
+// Env:
+//   SYNTHOS_BLOCK_PRODUCER=true          enable the loop on this node
+//   SYNTHOS_BLOCK_INTERVAL_SECONDS=10    how often to check/produce (default 10)
+//   SYNTHOS_PRODUCE_EMPTY_BLOCKS=true    also produce empty blocks for liveness
+func startBlockProducer(n *node.Node, ch *chain.Chain) {
+	if os.Getenv("SYNTHOS_BLOCK_PRODUCER") != "true" {
+		return
+	}
+	interval := 10 * time.Second
+	if v := os.Getenv("SYNTHOS_BLOCK_INTERVAL_SECONDS"); v != "" {
+		if secs, err := strconv.Atoi(v); err == nil && secs > 0 {
+			interval = time.Duration(secs) * time.Second
+		}
+	}
+	produceEmpty := os.Getenv("SYNTHOS_PRODUCE_EMPTY_BLOCKS") == "true"
+	log.Printf("Block producer enabled: interval=%s produce_empty=%v (single-sequencer)", interval, produceEmpty)
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for range ticker.C {
+			if !produceEmpty && len(ch.MempoolSnapshot()) == 0 {
+				continue
+			}
+			if _, err := n.ProposeBlockHash(); err != nil {
+				log.Printf("auto-propose failed: %v", err)
+				continue
+			}
+			log.Printf("auto-proposed block: height=%d", ch.Height())
+		}
+	}()
 }
 
 func startRegistryHeartbeat(nodeID string, chainID string, publicKey ed25519.PublicKey) {
