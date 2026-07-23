@@ -597,11 +597,16 @@ func (s *server) handleAPIEarlyAccessConfig(w http.ResponseWriter, r *http.Reque
 	chainID := os.Getenv("SYNTHOS_EARLY_ACCESS_CHAIN_ID")
 	assets := earlyAccessAssetsFromEnv()
 	distributor := earlyAccessDistributorConfig()
+	// SYNTHOS is a public testnet; the token sale is on hold and CLOSED by
+	// default. No payments are taken unless SYNTHOS_EARLY_ACCESS_SALE_OPEN=true.
+	saleOpen := os.Getenv("SYNTHOS_EARLY_ACCESS_SALE_OPEN") == "true"
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":                 true,
-		"configured":         saleContract != "" && complianceRegistry != "" && chainID != "",
-		"paymentRails":       true,
+		"saleOpen":           saleOpen,
+		"saleStatus":         map[bool]string{true: "open", false: "closed — public testnet, sale on hold"}[saleOpen],
+		"configured":         saleOpen && saleContract != "" && complianceRegistry != "" && chainID != "",
+		"paymentRails":       saleOpen,
 		"paymentIntentUrl":   "/api/early-access/payment-intents",
 		"chainId":            chainID,
 		"chainName":          env("SYNTHOS_EARLY_ACCESS_CHAIN_NAME", "SYNTHOS"),
@@ -631,6 +636,14 @@ func (s *server) handleAPIEarlyAccessConfig(w http.ResponseWriter, r *http.Reque
 func (s *server) handleAPIEarlyAccessPaymentIntents(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	// Sale is CLOSED by default. SYNTHOS is a public testnet; no public token
+	// sale runs until deliberately opened (real mainnet + legal clearance) by
+	// setting SYNTHOS_EARLY_ACCESS_SALE_OPEN=true. This prevents any payment
+	// from being taken while the sale is on hold.
+	if os.Getenv("SYNTHOS_EARLY_ACCESS_SALE_OPEN") != "true" {
+		http.Error(w, "the SYNTHOS early access sale is not open", http.StatusForbidden)
 		return
 	}
 	var body struct {
