@@ -16,6 +16,7 @@ type Engine struct {
 	mu sync.Mutex
 
 	totalValidators int
+	validators      map[string]struct{}
 
 	// proposalsByHeight[height] = proposal block for that height.
 	// v0.1 only allows a single canonical proposal per height.
@@ -32,15 +33,44 @@ type voteRecord struct {
 }
 
 var (
-	ErrUnknownProposal = errors.New("unknown proposal")
+	ErrUnknownProposal  = errors.New("unknown proposal")
+	ErrUnknownValidator = errors.New("unknown validator")
 )
 
 func NewEngine(totalValidators int) *Engine {
 	return &Engine{
 		totalValidators:   totalValidators,
+		validators:        make(map[string]struct{}),
 		proposalsByHeight: make(map[uint64]*chain.Block),
 		votes:             make(map[uint64]map[string]voteRecord),
 	}
+}
+
+// SetValidators replaces the active validator registry used by consensus.
+// Once configured, votes from identities outside this registry are rejected.
+func (e *Engine) SetValidators(validators []string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	e.validators = make(map[string]struct{}, len(validators))
+	for _, validatorID := range validators {
+		if validatorID == "" {
+			continue
+		}
+		e.validators[validatorID] = struct{}{}
+	}
+	e.totalValidators = len(e.validators)
+}
+
+func (e *Engine) isRegisteredValidator(voterID string) bool {
+	// Preserve compatibility for standalone engines that have not yet been
+	// configured with concrete validator identities. Production nodes call
+	// SetValidators through node.SetValidators before processing votes.
+	if len(e.validators) == 0 {
+		return true
+	}
+	_, ok := e.validators[voterID]
+	return ok
 }
 
 func (e *Engine) RequiredForFinality() int {
@@ -119,6 +149,10 @@ func (e *Engine) FinalityStatus(blockHash string) (finalized bool, votesFor int,
 func (e *Engine) OnVote(v BlockVote) (finalized bool, votesFor int, required int, err error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+
+	if !e.isRegisteredValidator(v.VoterID) {
+		return false, 0, e.RequiredForFinality(), ErrUnknownValidator
+	}
 
 	h := v.Height
 	if _, ok := e.votes[h]; !ok {
