@@ -68,6 +68,9 @@ func (n *Node) SetValidators(validators []string) {
 	for _, v := range validators {
 		n.Validators[v] = true
 	}
+	if n.Consensus != nil {
+		n.Consensus.SetValidators(validators)
+	}
 }
 
 func (n *Node) AddPeer(agentID string, pubKeyHex string) error {
