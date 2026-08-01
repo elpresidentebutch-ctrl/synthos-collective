@@ -15,7 +15,10 @@ type BlockHeader struct {
 	Timestamp  time.Time `json:"timestamp,omitempty"`
 	ProposerID string    `json:"proposer_id"`
 
-	// StateRoot commits to balances/nonces after applying all txs.
+	// TxMerkleRoot commits to the exact ordered transaction list.
+	TxMerkleRoot string `json:"tx_merkle_root"`
+
+	// StateRoot commits to the complete post-block state, including fees.
 	StateRoot string `json:"state_root"`
 
 	// Optional: commit to the proposer’s PoC history.
@@ -30,7 +33,8 @@ type Block struct {
 	Finalized      bool           `json:"finalized"`
 }
 
-func (b *Block) ComputeHash() (string, error) {
+// CalculateHash returns the canonical block hash without mutating the block.
+func (b *Block) CalculateHash() (string, error) {
 	tmp := struct {
 		Header BlockHeader `json:"header"`
 		Tx     []Tx        `json:"tx"`
@@ -43,6 +47,14 @@ func (b *Block) ComputeHash() (string, error) {
 		return "", err
 	}
 	sum := sha256.Sum256(data)
-	b.Hash = "0x" + hex.EncodeToString(sum[:])
-	return b.Hash, nil
+	return "0x" + hex.EncodeToString(sum[:]), nil
+}
+
+func (b *Block) ComputeHash() (string, error) {
+	hash, err := b.CalculateHash()
+	if err != nil {
+		return "", err
+	}
+	b.Hash = hash
+	return hash, nil
 }
