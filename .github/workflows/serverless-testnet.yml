@@ -1,0 +1,37 @@
+name: Serverless Testnet
+
+on:
+  push:
+    branches: [main, codex/serverless-six-validator-testnet]
+    paths:
+      - "serverless-testnet/**"
+      - ".github/workflows/serverless-testnet.yml"
+  pull_request:
+    paths:
+      - "serverless-testnet/**"
+      - ".github/workflows/serverless-testnet.yml"
+
+jobs:
+  protocol:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Check shared and Deno code
+        run: deno check --unstable-kv serverless-testnet/core.ts serverless-testnet/deno/main.ts
+      - name: Run six-validator finality test
+        run: deno test --allow-env --allow-net --unstable-kv serverless-testnet/core_test.ts
+
+  cloudflare-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - working-directory: serverless-testnet/cloudflare
+        run: npm install
+      - working-directory: serverless-testnet/cloudflare
+        run: npx wrangler deploy --dry-run
