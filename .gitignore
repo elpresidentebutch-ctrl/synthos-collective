@@ -51,8 +51,7 @@ dist/
 .dev.vars
 wrangler.toml.bak
 .synthos/early-access-keys/
-.synthos/collectivecoin-wallets/
-.synthos/senthedcoins-wallets/
+.synthos/syn-coins-wallets/
 .synthos/open-network/
 .synthos/mainnet-secrets/
 contracts/.env.mainnet.local

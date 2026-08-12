@@ -11,14 +11,14 @@
     "0x66a0c64a9ff8d5187715b1fefed6b0ccc883b702": 2000
   },
   "metadata": {
-    "symbol": "COLLECTIVE",
+    "symbol": "SYN",
     "decimals": 0,
     "network": "SYNTHOS Collective",
     "public_rpc_url": "https://rpc.ishamwilliamsblockchains.com",
     "founder_allocation": 99999978940,
-    "coin_name": "collectivecoin",
-    "display_name": "collectivecoin",
+    "coin_name": "syn coins",
+    "display_name": "syn coins",
     "named_wallet_allocation": 21060,
-    "named_wallets_file": ".synthos/collectivecoin-wallets/public-wallets.json"
+    "named_wallets_file": ".synthos/syn-coins-wallets/public-wallets.json"
   }
 }
