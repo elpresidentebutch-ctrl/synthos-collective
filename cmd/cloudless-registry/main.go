@@ -181,6 +181,8 @@ func main() {
 	mux.HandleFunc("/api/explorer/status", s.handleAPIExplorerStatus)
 	mux.HandleFunc("/api/explorer/blocks", s.handleAPIExplorerBlocks)
 	mux.HandleFunc("/api/explorer/mempool", s.handleAPIExplorerMempool)
+	mux.HandleFunc("/api/bridge/status", s.handleAPIBridgeStatus)
+	mux.HandleFunc("/api/bridge/events", s.handleAPIBridgeEvents)
 	mux.HandleFunc("/api/nodes", s.handleAPINodes)
 	mux.HandleFunc("/api/nodes/register", s.handleAPINodeRegister)
 	mux.HandleFunc("/api/nodes/heartbeat", s.handleAPINodeHeartbeat)
@@ -196,6 +198,8 @@ func main() {
 	mux.HandleFunc("/chain.html", s.handleWebsitePage)
 	mux.HandleFunc("/explorer", s.handleWebsitePage)
 	mux.HandleFunc("/explorer.html", s.handleWebsitePage)
+	mux.HandleFunc("/bridge", s.handleWebsitePage)
+	mux.HandleFunc("/bridge.html", s.handleWebsitePage)
 	mux.HandleFunc("/dex.html", s.handleWebsitePage)
 	mux.HandleFunc("/api.html", s.handleWebsitePage)
 	mux.HandleFunc("/early-access", s.handleEarlyAccessPage)
@@ -234,6 +238,8 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 			"GET /api/explorer/status",
 			"GET /api/explorer/blocks",
 			"GET /api/explorer/mempool",
+			"GET /api/bridge/status",
+			"GET /api/bridge/events",
 			"GET /api/nodes",
 			"POST /api/nodes/register",
 			"POST /api/nodes/heartbeat",
@@ -613,6 +619,43 @@ func (s *server) handleAPIExplorerMempool(w http.ResponseWriter, r *http.Request
 		"source":       "registry_only",
 		"rpc_attached": false,
 		"note":         "Mempool requires an attached SYNTHOS RPC node.",
+	})
+}
+
+func (s *server) handleAPIBridgeStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if proxied := s.proxyRPCJSON(w, r, "/bridge/status"); proxied {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":           false,
+		"rpc_attached": false,
+		"bridge": map[string]any{
+			"native_locks":       0,
+			"native_releases":    0,
+			"processed_messages": 0,
+		},
+		"note": "Set SYNTHOS_RPC_URL on the backend to expose native bridge status.",
+	})
+}
+
+func (s *server) handleAPIBridgeEvents(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if proxied := s.proxyRPCJSON(w, r, "/bridge/events"); proxied {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":           false,
+		"rpc_attached": false,
+		"events":       []any{},
+		"count":        0,
+		"note":         "Set SYNTHOS_RPC_URL on the backend to expose native bridge events.",
 	})
 }
 
@@ -1150,6 +1193,9 @@ func (s *server) handleWebsitePage(w http.ResponseWriter, r *http.Request) {
 	}
 	if name == "nodes" {
 		name = "nodes.html"
+	}
+	if name == "bridge" {
+		name = "bridge.html"
 	}
 	if name == "" || strings.Contains(name, "/") || !strings.HasSuffix(name, ".html") {
 		http.Error(w, "not found", http.StatusNotFound)

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SYNTHOS Bridge</title>
+  <meta name="description" content="SYNTHOS testnet bridge dashboard and guarded bridge lock UI." />
+  <link rel="stylesheet" href="./assets/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./index.html" aria-label="SYNTHOS Collective">
+      <span class="brand-mark"></span>
+      <span>SYNTHOS Collective</span>
+    </a>
+    <nav aria-label="Primary">
+      <a href="./nodes.html">Nodes</a>
+      <a href="./explorer.html">Explorer</a>
+      <a href="./bridge.html">Bridge</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="band">
+      <div class="section-head">
+        <p class="eyebrow">Cross-chain bridge</p>
+        <h1>SYNTHOS Bridge</h1>
+        <p class="lede">Lock ERC20 SYN on an EVM testnet and route proof through SYNTHOS validator-threshold bridge verification.</p>
+      </div>
+
+      <p class="notice">Bridge is testnet/devnet infrastructure. Do not send production value until rate limits, emergency delay, monitoring, and audit are complete.</p>
+
+      <div class="metrics explorer-metrics" aria-label="Bridge status">
+        <div><span id="bridgeLocks">-</span><small>Native Locks</small></div>
+        <div><span id="bridgeReleases">-</span><small>Native Releases</small></div>
+        <div><span id="bridgeProcessed">-</span><small>Processed Messages</small></div>
+        <div><span id="bridgeRPC">-</span><small>Native RPC</small></div>
+      </div>
+
+      <div class="explorer-grid">
+        <section class="operator-panel explorer-detail" aria-labelledby="lockTitle">
+          <p class="label">EVM to SYNTHOS</p>
+          <h2 id="lockTitle">Lock ERC20 SYN</h2>
+          <div class="explorer-controls bridge-form">
+            <label><span>EVM bridge vault</span><input id="vaultAddress" placeholder="0x..." spellcheck="false" /></label>
+            <label><span>ERC20 SYN token</span><input id="tokenAddress" placeholder="0x..." spellcheck="false" /></label>
+            <label><span>Destination SYNTHOS chain ID</span><input id="destinationChain" value="20260702" /></label>
+            <label><span>Native recipient</span><input id="nativeRecipient" placeholder="0x..." spellcheck="false" /></label>
+            <label><span>Amount</span><input id="bridgeAmount" type="number" min="0" step="1" placeholder="10000" /></label>
+          </div>
+          <div class="actions">
+            <button id="connectWallet" class="button secondary" type="button">Connect Wallet</button>
+            <button id="approveToken" class="button secondary" type="button">Approve</button>
+            <button id="lockToken" class="button primary" type="button">Lock</button>
+          </div>
+          <p id="walletStatus" class="muted">Wallet not connected.</p>
+          <pre id="bridgeOutput" class="code-block"></pre>
+        </section>
+
+        <section class="network-board explorer-panel" aria-labelledby="eventsTitle">
+          <div class="board-head">
+            <div>
+              <p class="label">Native bridge receipts</p>
+              <h2 id="eventsTitle">Waiting for events</h2>
+            </div>
+            <button id="refreshBridge" class="button secondary" type="button">Refresh</button>
+          </div>
+          <div id="bridgeEvents" class="block-list"></div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>SYNTHOS Collective</span>
+    <span id="bridgeUpdated">Bridge UI loaded</span>
+  </footer>
+
+  <script src="./assets/bridge.js"></script>
+</body>
+</html>
