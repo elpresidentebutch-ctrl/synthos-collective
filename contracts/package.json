@@ -11,6 +11,7 @@
     "wbtc:enable": "hardhat run scripts/enable-wbtc-payment.js",
     "bitcoin-sale:deploy": "hardhat run scripts/deploy-bitcoin-sale.js",
     "bitcoin-sale:confirm": "hardhat run scripts/confirm-bitcoin-payment.js",
+    "bridge:deploy": "hardhat run scripts/deploy-bridge-vault.js",
     "postdeploy:check": "hardhat run scripts/post-deploy-check.js",
     "readiness:contracts": "hardhat compile && hardhat test && hardhat run scripts/readiness-check.js --network hardhat",
     "merkle:adopters": "node scripts/build-adopter-merkle.js",
