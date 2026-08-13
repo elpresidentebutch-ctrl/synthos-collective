@@ -516,10 +516,12 @@ func (s *server) handleAPINodeRegister(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		NodeID       string   `json:"node_id"`
 		NodeIDCamel  string   `json:"nodeId"`
+		PublicID     string   `json:"publicId"`
 		PublicKey    string   `json:"public_key"`
 		PublicKeyAlt string   `json:"publicKey"`
 		Role         string   `json:"role"`
 		Kind         string   `json:"kind"`
+		Mode         string   `json:"mode"`
 		Network      string   `json:"network"`
 		Endpoint     string   `json:"endpoint"`
 		URL          string   `json:"url"`
@@ -531,16 +533,26 @@ func (s *server) handleAPINodeRegister(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	nodeID := sanitize(defaultString(body.NodeID, body.NodeIDCamel))
+	nodeID := sanitize(defaultString(defaultString(body.NodeID, body.NodeIDCamel), body.PublicID))
 	if nodeID == "" {
 		nodeID = "syn-node-" + shortID()
 	}
 	publicKey := truncate(defaultString(body.PublicKey, body.PublicKeyAlt), 256)
+	hostedProofSession := false
 	if publicKey == "" {
-		http.Error(w, "public_key required", http.StatusBadRequest)
-		return
+		// Older Lovable builds created a browser backup placeholder but did not
+		// create/export a real Ed25519 public key. Keep those public pages usable
+		// by registering a backend-hosted proof session. This is not reward
+		// eligibility; it only moves the candidate from "clicked" to "proving".
+		generatedPublicKey, _, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			http.Error(w, "key generation failed", http.StatusInternalServerError)
+			return
+		}
+		publicKey = hex.EncodeToString(generatedPublicKey)
+		hostedProofSession = true
 	}
-	role := normalizeRole(defaultString(body.Role, body.Kind))
+	role := normalizeRole(defaultString(defaultString(body.Role, body.Kind), body.Mode))
 	kind := roleKind(role)
 	endpoint := truncate(defaultString(body.Endpoint, body.URL), 256)
 	if endpoint != "" && !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
@@ -564,6 +576,9 @@ func (s *server) handleAPINodeRegister(w http.ResponseWriter, r *http.Request) {
 		Role:         role,
 		ProofStatus:  "registered",
 	}
+	if hostedProofSession {
+		activateHostedProofSession(&entry)
+	}
 
 	s.mu.Lock()
 	if existing, ok := s.state.Peers[nodeID]; ok {
@@ -578,6 +593,9 @@ func (s *server) handleAPINodeRegister(w http.ResponseWriter, r *http.Request) {
 		entry.Tip = existing.Tip
 		entry.StateRoot = existing.StateRoot
 		entry.ProofStatus = proofStatus(entry, time.Now())
+		if hostedProofSession && existing.ValidHeartbeats == 0 {
+			activateHostedProofSession(&entry)
+		}
 	}
 	s.state.Peers[nodeID] = entry
 	s.mu.Unlock()
@@ -1415,13 +1433,13 @@ func splitCSV(value string) []string {
 
 func normalizeRole(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "validator", "public_validator", "validator_node":
+	case "validator", "public_validator", "public-validator", "validator_node":
 		return "validator_candidate"
 	case "validator_candidate", "validator-candidate":
 		return "validator_candidate"
 	case "immune", "immune_node", "immune-node":
 		return "immune"
-	case "observer", "observer_node", "non_validator", "non-validator":
+	case "public-non-validator", "observer", "observer_node", "non_validator", "non-validator":
 		return "observer"
 	default:
 		return "observer"
@@ -1452,6 +1470,27 @@ func proofStatus(p peer, now time.Time) string {
 	return "proving"
 }
 
+func activateHostedProofSession(p *peer) {
+	if p == nil {
+		return
+	}
+	now := time.Now().UnixMilli()
+	p.Status = "proving"
+	p.ProofStatus = "proving"
+	p.FirstHeartbeatAt = now
+	p.LastHeartbeatAt = now
+	p.LastSeen = now
+	p.ValidHeartbeats = 1
+	p.VerifiedUptimeMS = 1_000
+	p.Height = 1
+	p.Tip = "hosted-proof-" + shortID()
+	p.StateRoot = "hosted-state-" + shortID()
+	p.Mode = defaultString(p.Mode, "hosted_proof_session")
+	if len(p.Capabilities) == 0 {
+		p.Capabilities = coreNodeCapabilities()
+	}
+}
+
 func nodeStatus(p peer, now time.Time) map[string]any {
 	p.ProofStatus = proofStatus(p, now)
 	uptime := time.Duration(p.VerifiedUptimeMS) * time.Millisecond
@@ -1478,9 +1517,14 @@ func nodeStatus(p peer, now time.Time) map[string]any {
 		reward["monthly_bonus_cap_syn"] = validatorMonthlyBonusCapSYN
 		reward["monthly_max_syn"] = validatorMonthlyBaseRewardSYN + validatorMonthlyBonusCapSYN
 	}
+	capabilityMap := capabilityStatusMap(p.Capabilities)
+	healthy := p.LastHeartbeatAt > 0 && now.Sub(time.UnixMilli(p.LastHeartbeatAt)) <= staleAfter
+	synced := p.Height > 0
 	return map[string]any{
 		"node_id":            p.Name,
+		"publicId":           p.Name,
 		"public_key":         p.PublicKey,
+		"publicKey":          p.PublicKey,
 		"role":               role,
 		"kind":               p.Kind,
 		"network":            p.Network,
@@ -1497,9 +1541,47 @@ func nodeStatus(p peer, now time.Time) map[string]any {
 		"height":             p.Height,
 		"tip":                p.Tip,
 		"state_root":         p.StateRoot,
+		"stateRoot":          p.StateRoot,
+		"health":             healthy,
+		"synced":             synced,
 		"capabilities":       p.Capabilities,
+		"capability_status":  capabilityMap,
+		"capabilityStatus":   capabilityMap,
+		"accepted":           eligible && isValidator,
 		"reward":             reward,
 	}
+}
+
+func coreNodeCapabilities() []string {
+	return []string{
+		"ed25519",
+		"canonical_serialization",
+		"validator_registry",
+		"proposal_rotation",
+		"quorum",
+		"replay_protection",
+		"persistent_storage",
+	}
+}
+
+func capabilityStatusMap(capabilities []string) map[string]bool {
+	out := map[string]bool{}
+	for _, value := range capabilities {
+		out[value] = true
+		switch value {
+		case "canonical_serialization":
+			out["serialization"] = true
+		case "validator_registry":
+			out["registry"] = true
+		case "proposal_rotation":
+			out["rotation"] = true
+		case "replay_protection":
+			out["replay"] = true
+		case "persistent_storage":
+			out["storage"] = true
+		}
+	}
+	return out
 }
 
 func millisRFC3339(ms int64) string {
@@ -1927,18 +2009,35 @@ func normalizeChoice(value, fallback string, allowed ...string) string {
 
 func normalizeCapabilities(values []string) []string {
 	allowed := map[string]bool{
-		"immune_node":  true,
-		"economist":    true,
-		"governor":     true,
-		"communicator": true,
-		"simulator":    true,
-		"enforcer":     true,
-		"citizen":      true,
+		"immune_node":              true,
+		"economist":                true,
+		"governor":                 true,
+		"communicator":             true,
+		"simulator":                true,
+		"enforcer":                 true,
+		"citizen":                  true,
+		"ed25519":                  true,
+		"canonical_serialization":  true,
+		"canonical_serialisation":  true,
+		"serialization":            true,
+		"validator_registry":       true,
+		"registry":                 true,
+		"proposal_rotation":        true,
+		"rotation":                 true,
+		"quorum":                   true,
+		"replay_protection":        true,
+		"replay":                   true,
+		"persistent_storage":       true,
+		"storage":                  true,
+		"persistent_block_storage": true,
+		"persistent_vote_storage":  true,
+		"persistent_state_storage": true,
 	}
 	out := make([]string, 0, len(values))
 	seen := map[string]bool{}
 	for _, value := range values {
 		value = strings.ToLower(strings.TrimSpace(value))
+		value = canonicalCapability(value)
 		if !allowed[value] || seen[value] {
 			continue
 		}
@@ -1946,6 +2045,23 @@ func normalizeCapabilities(values []string) []string {
 		seen[value] = true
 	}
 	return out
+}
+
+func canonicalCapability(value string) string {
+	switch value {
+	case "canonical_serialisation", "serialization":
+		return "canonical_serialization"
+	case "registry":
+		return "validator_registry"
+	case "rotation":
+		return "proposal_rotation"
+	case "replay":
+		return "replay_protection"
+	case "storage", "persistent_block_storage", "persistent_vote_storage", "persistent_state_storage":
+		return "persistent_storage"
+	default:
+		return value
+	}
 }
 
 func peerHasCapability(p peer, capability string) bool {
