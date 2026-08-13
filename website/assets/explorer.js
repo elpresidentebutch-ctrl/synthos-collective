@@ -1,4 +1,4 @@
-const DEFAULT_RPC_URL = window.SYNTHOS_RPC_URL || "https://rpc.ishamwilliamsblockchains.com";
+const DEFAULT_RPC_URL = window.SYNTHOS_RPC_URL || window.location.origin;
 const requestTimeoutMs = 9000;
 
 const state = {
@@ -6,6 +6,7 @@ const state = {
   mempool: [],
   selectedHash: "",
   status: null,
+  network: null,
 };
 
 const els = {
@@ -15,8 +16,12 @@ const els = {
   search: document.getElementById("explorerSearch"),
   chainId: document.getElementById("explorerChainId"),
   height: document.getElementById("explorerHeight"),
+  activeNodes: document.getElementById("explorerActiveNodes"),
+  validators: document.getElementById("explorerValidators"),
   mempoolCount: document.getElementById("explorerMempool"),
   finalized: document.getElementById("explorerFinalized"),
+  nodeTitle: document.getElementById("nodeTitle"),
+  nodeList: document.getElementById("nodeList"),
   blocksTitle: document.getElementById("blocksTitle"),
   blockList: document.getElementById("blockList"),
   detailTitle: document.getElementById("detailTitle"),
@@ -109,8 +114,33 @@ function renderMetrics() {
   const latest = state.blocks[0];
   els.chainId.textContent = status.chain_id || "-";
   els.height.textContent = status.height ?? "-";
+  els.activeNodes.textContent = status.active_nodes ?? status.total ?? "-";
+  els.validators.textContent = status.validators_running ?? "-";
   els.mempoolCount.textContent = state.mempool.length || status.mempool || 0;
   els.finalized.textContent = latest?.finalized ? "yes" : latest ? "pending" : "-";
+}
+
+function renderNodes() {
+  const checkpoints = state.status?.latest_reported_checkpoints || [];
+  const active = state.status?.active_nodes ?? 0;
+  const registered = state.status?.registered_nodes ?? 0;
+  els.nodeTitle.textContent = `${active} active / ${registered} registered`;
+  els.nodeList.innerHTML = checkpoints.map((node) => `
+    <article class="block-row">
+      <span>
+        <strong>${html(node.node_id || "-")}</strong>
+        <small>${html(node.role || node.kind || "node")}</small>
+      </span>
+      <span>
+        <strong>${html(node.height ?? "-")}</strong>
+        <small>height</small>
+      </span>
+      <span>
+        <strong>${node.real_signed_heartbeat ? "Signed" : "Bootstrap"}</strong>
+        <small>${html(formatTime(node.last_seen))}</small>
+      </span>
+    </article>
+  `).join("") || `<p class="empty-state">No active heartbeat checkpoints yet.</p>`;
 }
 
 function renderBlocks() {
@@ -204,15 +234,16 @@ async function refreshExplorer() {
 
   try {
     const [status, mempool, blocks] = await Promise.all([
-      fetchJSON("/status"),
-      fetchJSON("/mempool").catch(() => ({ tx: [] })),
-      fetchJSON(`/blocks?from=${from}`),
+      fetchJSON("/api/explorer/status"),
+      fetchJSON("/api/explorer/mempool").catch(() => ({ tx: [] })),
+      fetchJSON(`/api/explorer/blocks?from=${from}`),
     ]);
 
     state.status = status;
     state.blocks = normalizeBlocks(blocks);
     state.mempool = Array.isArray(mempool?.tx) ? mempool.tx : [];
     renderMetrics();
+    renderNodes();
     selectBlock(state.selectedHash);
     renderMempool();
     els.updated.textContent = `Updated ${new Date().toLocaleTimeString()}`;
@@ -223,6 +254,7 @@ async function refreshExplorer() {
     state.blocks = [];
     state.mempool = [];
     renderMetrics();
+    renderNodes();
     selectBlock("");
     renderMempool();
   } finally {

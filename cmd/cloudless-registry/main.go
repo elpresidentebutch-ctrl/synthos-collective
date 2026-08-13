@@ -58,6 +58,7 @@ type peer struct {
 	ValidHeartbeats    uint64   `json:"valid_heartbeats,omitempty"`
 	VerifiedUptimeMS   int64    `json:"verified_uptime_ms,omitempty"`
 	LastNonce          string   `json:"last_nonce,omitempty"`
+	HostedProofSession bool     `json:"hosted_proof_session,omitempty"`
 }
 
 type mailboxMessage struct {
@@ -127,6 +128,21 @@ type server struct {
 	maxMailbox int
 }
 
+type networkSnapshot struct {
+	Peers           []peer
+	ActiveTotal     int
+	RegisteredTotal int
+	Reachable       int
+	Fresh           int
+	Validators      int
+	Immune          int
+	Agents          int
+	HighestHeight   int64
+	Tip             string
+	StateRoot       string
+	Checkpoints     []map[string]any
+}
+
 func main() {
 	var listen string
 	var stateFile string
@@ -162,6 +178,9 @@ func main() {
 	mux.HandleFunc("/mailbox", s.handleMailbox)
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/network/status", s.handleAPINetworkStatus)
+	mux.HandleFunc("/api/explorer/status", s.handleAPIExplorerStatus)
+	mux.HandleFunc("/api/explorer/blocks", s.handleAPIExplorerBlocks)
+	mux.HandleFunc("/api/explorer/mempool", s.handleAPIExplorerMempool)
 	mux.HandleFunc("/api/nodes", s.handleAPINodes)
 	mux.HandleFunc("/api/nodes/register", s.handleAPINodeRegister)
 	mux.HandleFunc("/api/nodes/heartbeat", s.handleAPINodeHeartbeat)
@@ -212,6 +231,9 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 			"GET /mailbox?name=NODE",
 			"POST /mailbox",
 			"GET /api/network/status",
+			"GET /api/explorer/status",
+			"GET /api/explorer/blocks",
+			"GET /api/explorer/mempool",
 			"GET /api/nodes",
 			"POST /api/nodes/register",
 			"POST /api/nodes/heartbeat",
@@ -502,6 +524,98 @@ func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+func (s *server) handleAPIExplorerStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	snapshot := s.networkSnapshot(time.Now())
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":                          true,
+		"chain_id":                    env("SYNTHOS_CHAIN_ID", "synthos-mainnet-1"),
+		"height":                      snapshot.HighestHeight,
+		"tip":                         snapshot.Tip,
+		"state_root":                  snapshot.StateRoot,
+		"mode":                        "registry_checkpoint_explorer",
+		"source":                      "signed_node_heartbeats",
+		"rpc_attached":                strings.TrimSpace(os.Getenv("SYNTHOS_RPC_URL")) != "",
+		"active_nodes":                snapshot.ActiveTotal,
+		"registered_nodes":            snapshot.RegisteredTotal,
+		"validators_running":          snapshot.Validators,
+		"immune_nodes_running":        snapshot.Immune,
+		"fresh_heartbeats":            snapshot.Fresh,
+		"heartbeat_target_s":          15,
+		"latest_reported_checkpoints": snapshot.Checkpoints,
+		"updated_at":                  time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
+func (s *server) handleAPIExplorerBlocks(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if proxied := s.proxyRPCJSON(w, r, "/blocks"); proxied {
+		return
+	}
+	from := 0
+	if raw := r.URL.Query().Get("from"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			from = parsed
+		}
+	}
+	snapshot := s.networkSnapshot(time.Now())
+	blocks := make([]map[string]any, 0, len(snapshot.Checkpoints))
+	for _, checkpoint := range snapshot.Checkpoints {
+		height, _ := checkpoint["height"].(int64)
+		if int(height) < from {
+			continue
+		}
+		tip, _ := checkpoint["tip"].(string)
+		stateRoot, _ := checkpoint["state_root"].(string)
+		nodeID, _ := checkpoint["node_id"].(string)
+		lastSeen, _ := checkpoint["last_seen"].(string)
+		blocks = append(blocks, map[string]any{
+			"hash":      tip,
+			"tx":        []any{},
+			"finalized": false,
+			"source":    "reported_heartbeat_checkpoint",
+			"header": map[string]any{
+				"height":      height,
+				"parent_hash": "",
+				"timestamp":   lastSeen,
+				"proposer_id": nodeID,
+				"state_root":  stateRoot,
+			},
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":           true,
+		"blocks":       blocks,
+		"source":       "signed_node_heartbeats",
+		"rpc_attached": false,
+		"note":         "Attach SYNTHOS_RPC_URL to this backend to show canonical RPC blocks and transactions.",
+	})
+}
+
+func (s *server) handleAPIExplorerMempool(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if proxied := s.proxyRPCJSON(w, r, "/mempool"); proxied {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":           true,
+		"size":         0,
+		"tx":           []any{},
+		"source":       "registry_only",
+		"rpc_attached": false,
+		"note":         "Mempool requires an attached SYNTHOS RPC node.",
+	})
+}
+
 func (s *server) handleAPINodes(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -591,6 +705,7 @@ func (s *server) handleAPINodeRegister(w http.ResponseWriter, r *http.Request) {
 		entry.ValidHeartbeats = existing.ValidHeartbeats
 		entry.VerifiedUptimeMS = existing.VerifiedUptimeMS
 		entry.LastNonce = existing.LastNonce
+		entry.HostedProofSession = existing.HostedProofSession
 		entry.Height = existing.Height
 		entry.Tip = existing.Tip
 		entry.StateRoot = existing.StateRoot
@@ -684,6 +799,7 @@ func (s *server) handleAPINodeHeartbeat(w http.ResponseWriter, r *http.Request) 
 	entry.LastSeen = nowMS
 	entry.ValidHeartbeats++
 	entry.LastNonce = truncate(body.Nonce, 128)
+	entry.HostedProofSession = false
 	entry.Status = "proving"
 	entry.ProofStatus = proofStatus(entry, now)
 	entry.Height = body.Height
@@ -1307,6 +1423,100 @@ func (s *server) writePeerList(w http.ResponseWriter, activeOnly bool) {
 	})
 }
 
+func (s *server) networkSnapshot(now time.Time) networkSnapshot {
+	s.mu.RLock()
+	peers := make([]peer, 0, len(s.state.Peers))
+	for _, p := range s.state.Peers {
+		p.Stale = p.LastSeen == 0 || now.Sub(time.UnixMilli(p.LastSeen)) > staleAfter
+		peers = append(peers, p)
+	}
+	s.mu.RUnlock()
+	sort.Slice(peers, func(i, j int) bool {
+		if peers[i].Height == peers[j].Height {
+			return peers[i].Name < peers[j].Name
+		}
+		return peers[i].Height > peers[j].Height
+	})
+	out := networkSnapshot{
+		Peers:           peers,
+		RegisteredTotal: len(peers),
+		Checkpoints:     []map[string]any{},
+	}
+	for _, p := range peers {
+		if p.Stale {
+			continue
+		}
+		out.ActiveTotal++
+		out.Reachable++
+		out.Fresh++
+		if peerHasCapability(p, "immune_node") || p.Kind == "immune" {
+			out.Immune++
+		}
+		if p.Kind == "" || p.Kind == "validator" {
+			out.Validators++
+		}
+		if len(p.Capabilities) > 0 {
+			out.Agents++
+		}
+		if p.Height > out.HighestHeight {
+			out.HighestHeight = p.Height
+			out.Tip = p.Tip
+			out.StateRoot = p.StateRoot
+		}
+		if p.Height > 0 && p.Tip != "" {
+			out.Checkpoints = append(out.Checkpoints, map[string]any{
+				"node_id":                  p.Name,
+				"role":                     defaultString(p.Role, normalizeRole(p.Kind)),
+				"kind":                     p.Kind,
+				"height":                   p.Height,
+				"tip":                      p.Tip,
+				"state_root":               p.StateRoot,
+				"last_seen":                millisRFC3339(p.LastSeen),
+				"valid_heartbeats":         p.ValidHeartbeats,
+				"hosted_proof_session":     p.HostedProofSession,
+				"real_signed_heartbeat":    !p.HostedProofSession && p.LastNonce != "",
+				"reward_eligible_possible": !p.HostedProofSession && p.LastNonce != "",
+			})
+		}
+	}
+	if len(out.Checkpoints) > 25 {
+		out.Checkpoints = out.Checkpoints[:25]
+	}
+	sort.Slice(out.Peers, func(i, j int) bool { return out.Peers[i].Name < out.Peers[j].Name })
+	return out
+}
+
+func (s *server) proxyRPCJSON(w http.ResponseWriter, r *http.Request, rpcPath string) bool {
+	rpcURL := strings.TrimRight(os.Getenv("SYNTHOS_RPC_URL"), "/")
+	if rpcURL == "" {
+		return false
+	}
+	target := rpcURL + rpcPath
+	if r.URL.RawQuery != "" {
+		target += "?" + r.URL.RawQuery
+	}
+	client := &http.Client{Timeout: 8 * time.Second}
+	resp, err := client.Get(target)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]any{
+			"ok":     false,
+			"error":  err.Error(),
+			"source": "synthos_rpc",
+		})
+		return true
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if resp.Header.Get("Content-Type") != "" {
+		w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+	} else {
+		w.Header().Set("Content-Type", "application/json")
+	}
+	w.WriteHeader(resp.StatusCode)
+	_, _ = w.Write(body)
+	return true
+}
+
 func (s *server) authorized(r *http.Request) bool {
 	if s.secret == "" {
 		return true
@@ -1487,6 +1697,7 @@ func activateHostedProofSession(p *peer) {
 	p.LastSeen = now
 	p.ValidHeartbeats = 1
 	p.VerifiedUptimeMS = 1_000
+	p.HostedProofSession = true
 	p.Height = 1
 	p.Tip = "hosted-proof-" + shortID()
 	p.StateRoot = "hosted-state-" + shortID()
@@ -1506,16 +1717,25 @@ func nodeStatus(p peer, now time.Time) map[string]any {
 	eligible := p.ProofStatus == "eligible"
 	role := defaultString(p.Role, normalizeRole(p.Kind))
 	isValidator := role == "validator_candidate" || role == "validator"
+	rewardEligible := eligible && isValidator && !p.HostedProofSession
+	rewardStatus := "proving_uptime"
+	if p.HostedProofSession {
+		rewardStatus = "hosted_bootstrap_not_reward_eligible"
+	} else if rewardEligible {
+		rewardStatus = "eligible_next_payout"
+	}
 	reward := map[string]any{
-		"eligible":                   eligible && isValidator,
-		"status":                     map[bool]string{true: "eligible_next_payout", false: "proving_uptime"}[eligible && isValidator],
-		"paid_in":                    "SYN",
-		"monthly_base_syn":           0,
-		"monthly_bonus_cap_syn":      0,
-		"monthly_max_syn":            0,
-		"paid_monthly_in_arrears":    true,
-		"requires_full_month_uptime": true,
-		"first_reward_eligibility":   firstEligible,
+		"eligible":                          rewardEligible,
+		"status":                            rewardStatus,
+		"paid_in":                           "SYN",
+		"monthly_base_syn":                  0,
+		"monthly_bonus_cap_syn":             0,
+		"monthly_max_syn":                   0,
+		"paid_monthly_in_arrears":           true,
+		"requires_full_month_uptime":        true,
+		"requires_real_signed_heartbeats":   true,
+		"hosted_bootstrap_sessions_qualify": false,
+		"first_reward_eligibility":          firstEligible,
 	}
 	if isValidator {
 		reward["monthly_base_syn"] = validatorMonthlyBaseRewardSYN
@@ -1526,34 +1746,36 @@ func nodeStatus(p peer, now time.Time) map[string]any {
 	healthy := p.LastHeartbeatAt > 0 && now.Sub(time.UnixMilli(p.LastHeartbeatAt)) <= staleAfter
 	synced := p.Height > 0
 	return map[string]any{
-		"node_id":            p.Name,
-		"publicId":           p.Name,
-		"public_key":         p.PublicKey,
-		"publicKey":          p.PublicKey,
-		"role":               role,
-		"kind":               p.Kind,
-		"network":            p.Network,
-		"endpoint":           p.URL,
-		"status":             p.Status,
-		"proof_status":       p.ProofStatus,
-		"registered_at":      millisRFC3339(p.RegisteredAt),
-		"first_heartbeat_at": millisRFC3339(p.FirstHeartbeatAt),
-		"last_heartbeat_at":  millisRFC3339(p.LastHeartbeatAt),
-		"valid_heartbeats":   p.ValidHeartbeats,
-		"verified_uptime_s":  int64(uptime.Seconds()),
-		"verified_days":      uptime.Hours() / 24,
-		"uptime_required_s":  int64(rewardEpoch.Seconds()),
-		"height":             p.Height,
-		"tip":                p.Tip,
-		"state_root":         p.StateRoot,
-		"stateRoot":          p.StateRoot,
-		"health":             healthy,
-		"synced":             synced,
-		"capabilities":       p.Capabilities,
-		"capability_status":  capabilityMap,
-		"capabilityStatus":   capabilityMap,
-		"accepted":           eligible && isValidator,
-		"reward":             reward,
+		"node_id":               p.Name,
+		"publicId":              p.Name,
+		"public_key":            p.PublicKey,
+		"publicKey":             p.PublicKey,
+		"role":                  role,
+		"kind":                  p.Kind,
+		"network":               p.Network,
+		"endpoint":              p.URL,
+		"status":                p.Status,
+		"proof_status":          p.ProofStatus,
+		"hosted_proof_session":  p.HostedProofSession,
+		"real_signed_heartbeat": !p.HostedProofSession && p.LastNonce != "",
+		"registered_at":         millisRFC3339(p.RegisteredAt),
+		"first_heartbeat_at":    millisRFC3339(p.FirstHeartbeatAt),
+		"last_heartbeat_at":     millisRFC3339(p.LastHeartbeatAt),
+		"valid_heartbeats":      p.ValidHeartbeats,
+		"verified_uptime_s":     int64(uptime.Seconds()),
+		"verified_days":         uptime.Hours() / 24,
+		"uptime_required_s":     int64(rewardEpoch.Seconds()),
+		"height":                p.Height,
+		"tip":                   p.Tip,
+		"state_root":            p.StateRoot,
+		"stateRoot":             p.StateRoot,
+		"health":                healthy,
+		"synced":                synced,
+		"capabilities":          p.Capabilities,
+		"capability_status":     capabilityMap,
+		"capabilityStatus":      capabilityMap,
+		"accepted":              rewardEligible,
+		"reward":                reward,
 	}
 }
 

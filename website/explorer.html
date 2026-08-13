@@ -26,7 +26,7 @@
       <div class="section-head">
         <p class="eyebrow">Block Explorer</p>
         <h1>SYNTHOS ledger</h1>
-        <p class="lede">Browse the live SYNTHOS chain from the public RPC endpoint.</p>
+        <p class="lede">Browse live SYNTHOS node activity now, and canonical blocks/transactions when a full RPC node is attached.</p>
       </div>
 
       <div class="explorer-controls" aria-label="Explorer controls">
@@ -44,9 +44,21 @@
       <div class="metrics explorer-metrics" aria-label="Chain facts">
         <div><span id="explorerChainId">-</span><small>Chain ID</small></div>
         <div><span id="explorerHeight">-</span><small>Height</small></div>
+        <div><span id="explorerActiveNodes">-</span><small>Active Nodes</small></div>
+        <div><span id="explorerValidators">-</span><small>Validators</small></div>
         <div><span id="explorerMempool">-</span><small>Mempool</small></div>
         <div><span id="explorerFinalized">-</span><small>Finalized</small></div>
       </div>
+
+      <section class="network-board explorer-panel" aria-labelledby="nodeTitle">
+        <div class="board-head">
+          <div>
+            <p class="label">Network Status</p>
+            <h2 id="nodeTitle">Waiting for live nodes</h2>
+          </div>
+        </div>
+        <div id="nodeList" class="block-list"></div>
+      </section>
 
       <div class="explorer-grid">
         <section class="network-board explorer-panel" aria-labelledby="blocksTitle">

@@ -1,5 +1,16 @@
 # SYNTHOS Cloudless Network
 
+## Proof-of-Operation definition
+
+Proof-of-Operation is a SYNTHOS-specific bootstrap eligibility system. It is not
+the consensus algorithm and should not be presented as a generic industry term.
+It proves that an operator registered a node identity, controls the node key,
+and keeps sending valid signed heartbeat proofs over time.
+
+The public push-button node flow starts onboarding. It does not by itself create
+reward eligibility. Validator rewards require real Ed25519 signed heartbeats and
+one full month of verified uptime.
+
 SYNTHOS currently runs through a bootstrap network path:
 
 1. Self-hosted SYNTHOS registry for peer discovery.

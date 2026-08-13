@@ -201,13 +201,27 @@ export async function getNetworkStatus() {
   return response.json();
 }
 
-export async function provisionNode(input) {
-  const response = await fetch(`${API_BASE}/api/nodes/provision`, {
+export async function registerNodeCandidate(input) {
+  const response = await fetch(`${API_BASE}/api/nodes/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
   if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}
+
+export async function getNodeStatus(nodeId) {
+  const response = await fetch(`${API_BASE}/api/nodes/${encodeURIComponent(nodeId)}/status`, {
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}
+
+export async function getExplorerStatus() {
+  const response = await fetch(`${API_BASE}/api/explorer/status`, { cache: "no-store" });
+  if (!response.ok) throw new Error(`status ${response.status}`);
   return response.json();
 }
 
@@ -242,3 +256,9 @@ For this same-domain setup, the `www` host must route `/api/*` and
 `/assets/early-access-sale.js` to the SYNTHOS backend.
 
 The current deployed Lovable app uses Supabase auth and generated server functions. Keep Supabase auth if you want site login, but route SYNTHOS-specific node provisioning and status data through this backend.
+
+`POST /api/nodes/provision` remains available only for old compatibility flows.
+New website code should use `/api/nodes/register`, local/client-side key
+generation, `/api/nodes/:id/status`, and signed `/api/nodes/heartbeat`.
+Compatibility sessions that do not prove a real Ed25519 key are not reward
+eligible.

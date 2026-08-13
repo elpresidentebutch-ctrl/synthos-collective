@@ -6,6 +6,12 @@ up.
 
 ## 1. Relay / R2 / cloudless contradiction
 
+Definition to include prominently in the whitepaper:
+
+> Proof-of-Operation is a SYNTHOS-specific bootstrap eligibility system. It is
+> not the consensus algorithm. It proves that an operator registered a node,
+> controls the node key, and kept sending valid heartbeat proofs over time.
+
 If any design uses Cloudflare R2, a single Worker, one Render service, one
 Supabase project, or any other single managed provider as the required message
 path, it must be described as bootstrap infrastructure.
@@ -51,6 +57,19 @@ Minimum rule:
 Public language should avoid suggesting that anyone can spin up unlimited immune
 nodes and receive unlimited SYN.
 
+Verified operation should be described mechanically:
+
+- node keys are Ed25519;
+- production private keys are generated locally or client-side;
+- the backend registers only public keys;
+- heartbeat messages use canonical `SYNTHOS_HEARTBEAT_V1` serialization;
+- each heartbeat is signed by the node key;
+- replayed or non-increasing nonces are rejected;
+- stale heartbeat gaps do not count as uninterrupted operation;
+- reward eligibility requires a complete reward epoch, currently one month;
+- hosted bootstrap/provisioning sessions are onboarding aids only and do not
+  qualify for rewards until rotated to real signed node operation.
+
 ## 4. Tokenomics
 
 The public whitepaper should reference `docs/TOKENOMICS.md` and include, at
@@ -88,8 +107,10 @@ local node software. The public backend should register public keys and verify
 signed heartbeats. It should not ask operators to paste production private keys
 or rely on server-side key generation for public validator custody.
 
-Any legacy endpoint that generates keys must be labeled development/bootstrap
-only.
+Any legacy endpoint or compatibility path that generated keys server-side must
+be labeled development/bootstrap only. Existing candidates from that path should
+be flagged for key rotation before they can receive operator or validator
+rewards.
 
 ## 7. Missing diligence materials
 
