@@ -444,6 +444,25 @@ func (s *State) applyImmuneMetadata(tx Tx) error {
 	return nil
 }
 
+func (s *State) EnsureImmuneNode(address Address, hardwareHash string, activatedAt int64) bool {
+	if address == "" || hardwareHash == "" {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, exists := s.ImmuneNodes[address]; exists {
+		return false
+	}
+	s.ImmuneNodes[address] = ImmuneNodeRecord{
+		Address:           address,
+		HardwareHash:      hardwareHash,
+		ActivatedAt:       activatedAt,
+		OptInLocalOnly:    true,
+		CryptographicMode: "absolute_silence",
+	}
+	return true
+}
+
 func metadataValue(items []KeyValuePair, key string) string {
 	for _, kv := range items {
 		if kv.Key == key {

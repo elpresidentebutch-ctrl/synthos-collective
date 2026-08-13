@@ -105,6 +105,7 @@ func main() {
 	n.OnFinalize = func(c *chain.Chain) error {
 		return st.Save(c)
 	}
+	bootstrapImmuneNode(cfg, ch, st, a, keys.Public)
 
 	if len(validators) > 0 {
 		n.SetValidators(validators)
@@ -217,6 +218,28 @@ func startRegistryHeartbeat(nodeID string, chainID string, publicKey ed25519.Pub
 			post()
 		}
 	}()
+}
+
+func bootstrapImmuneNode(cfg *config.NodeConfig, ch *chain.Chain, st *storage.Store, a *agent.Agent, publicKey ed25519.PublicKey) {
+	if cfg == nil || ch == nil || st == nil || a == nil || !cfg.IsValidator {
+		return
+	}
+	if os.Getenv("SYNTHOS_BOOTSTRAP_IMMUNE_NODE") != "true" {
+		return
+	}
+	hardwareHash := a.Identity.HardwareID
+	if hardwareHash == "" {
+		hardwareHash = "synthos-hw-" + cfg.NodeID
+	}
+	addr := chain.AddressFromPublicKey(publicKey)
+	if !ch.State.EnsureImmuneNode(addr, hardwareHash, time.Now().UTC().Unix()) {
+		return
+	}
+	if err := st.Save(ch); err != nil {
+		log.Printf("immune node bootstrap save failed: %v", err)
+		return
+	}
+	log.Printf("immune node bootstrapped: node_id=%s address=%s", cfg.NodeID, addr)
 }
 
 func shouldRefreshHeightZeroSnapshot(snap *storage.Snapshot, genesisChain *chain.Chain) bool {

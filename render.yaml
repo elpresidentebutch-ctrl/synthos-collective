@@ -11,6 +11,8 @@ services:
         value: /config/render-node.json
       - key: SYNTHOS_DATA_DIR
         value: /data
+      - key: SYNTHOS_BOOTSTRAP_IMMUNE_NODE
+        value: "true"
     disk:
       name: synthos-rpc-data
       mountPath: /data
@@ -34,6 +36,8 @@ services:
         value: https://synthos-validator-11.onrender.com
       - key: SYNTHOS_REGISTRY_URL
         value: https://synthos-www.onrender.com
+      - key: SYNTHOS_BOOTSTRAP_IMMUNE_NODE
+        value: "true"
       # Single designated sequencer: only this validator auto-produces blocks.
       # The other validators (12-15) follow via HTTP peer catch-up. Enabling
       # this on more than one node would fork the chain.
@@ -68,6 +72,8 @@ services:
         value: https://synthos-validator-12.onrender.com
       - key: SYNTHOS_REGISTRY_URL
         value: https://synthos-www.onrender.com
+      - key: SYNTHOS_BOOTSTRAP_IMMUNE_NODE
+        value: "true"
       - key: SYNTHOS_PRIVATE_KEY
         sync: false
     disk:
@@ -93,6 +99,8 @@ services:
         value: https://synthos-validator-13.onrender.com
       - key: SYNTHOS_REGISTRY_URL
         value: https://synthos-www.onrender.com
+      - key: SYNTHOS_BOOTSTRAP_IMMUNE_NODE
+        value: "true"
       - key: SYNTHOS_PRIVATE_KEY
         sync: false
     disk:
@@ -118,6 +126,8 @@ services:
         value: https://synthos-validator-14.onrender.com
       - key: SYNTHOS_REGISTRY_URL
         value: https://synthos-www.onrender.com
+      - key: SYNTHOS_BOOTSTRAP_IMMUNE_NODE
+        value: "true"
       - key: SYNTHOS_PRIVATE_KEY
         sync: false
     disk:
@@ -143,6 +153,8 @@ services:
         value: https://synthos-validator-15.onrender.com
       - key: SYNTHOS_REGISTRY_URL
         value: https://synthos-www.onrender.com
+      - key: SYNTHOS_BOOTSTRAP_IMMUNE_NODE
+        value: "true"
       - key: SYNTHOS_PRIVATE_KEY
         sync: false
     disk:
