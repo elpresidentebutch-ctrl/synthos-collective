@@ -35,16 +35,17 @@ type bridgeEvent struct {
 }
 
 type externalLockProof struct {
-	SourceChainID      string        `json:"source_chain_id"`
-	SourceEventID      string        `json:"source_event_id"`
-	Recipient          chain.Address `json:"recipient"`
-	Amount             uint64        `json:"amount"`
-	AssetID            string        `json:"asset_id,omitempty"`
-	Confirmations      uint64        `json:"confirmations,omitempty"`
-	MinConfirmations   uint64        `json:"min_confirmations,omitempty"`
-	ObservedBlock      uint64        `json:"observed_block,omitempty"`
-	ObservedTxHash     string        `json:"observed_tx_hash,omitempty"`
-	DestinationChainID string        `json:"destination_chain_id,omitempty"`
+	SourceChainID       string                           `json:"source_chain_id"`
+	SourceEventID       string                           `json:"source_event_id"`
+	Recipient           chain.Address                    `json:"recipient"`
+	Amount              uint64                           `json:"amount"`
+	AssetID             string                           `json:"asset_id,omitempty"`
+	Confirmations       uint64                           `json:"confirmations,omitempty"`
+	MinConfirmations    uint64                           `json:"min_confirmations,omitempty"`
+	ObservedBlock       uint64                           `json:"observed_block,omitempty"`
+	ObservedTxHash      string                           `json:"observed_tx_hash,omitempty"`
+	DestinationChainID  string                           `json:"destination_chain_id,omitempty"`
+	ValidatorSignatures []chain.BridgeValidatorSignature `json:"validator_signatures,omitempty"`
 }
 
 type evmLog struct {
@@ -222,6 +223,16 @@ func submitNativeReleaseProof(rpcURL string, proof externalLockProof, privHex st
 	if assetID == "" {
 		assetID = "syn"
 	}
+	metadata := []chain.KeyValuePair{
+		{Key: "type", Value: "bridge_release_native"},
+		{Key: "source_chain_id", Value: proof.SourceChainID},
+		{Key: "source_event_id", Value: proof.SourceEventID},
+		{Key: "observed_tx_hash", Value: proof.ObservedTxHash},
+	}
+	if len(proof.ValidatorSignatures) > 0 {
+		signatureJSON, _ := json.Marshal(proof.ValidatorSignatures)
+		metadata = append(metadata, chain.KeyValuePair{Key: "validator_signatures", Value: string(signatureJSON)})
+	}
 	tx := chain.Tx{
 		ChainID:   status.TxChainID,
 		From:      from,
@@ -231,12 +242,7 @@ func submitNativeReleaseProof(rpcURL string, proof externalLockProof, privHex st
 		Nonce:     account.Nonce,
 		PublicKey: pubHex,
 		AssetID:   map[bool]string{true: "", false: assetID}[assetID == "syn"],
-		Metadata: []chain.KeyValuePair{
-			{Key: "type", Value: "bridge_release_native"},
-			{Key: "source_chain_id", Value: proof.SourceChainID},
-			{Key: "source_event_id", Value: proof.SourceEventID},
-			{Key: "observed_tx_hash", Value: proof.ObservedTxHash},
-		},
+		Metadata:  metadata,
 		Timestamp: time.Now().UTC().Unix(),
 	}
 	if err := tx.Sign(w.Private); err != nil {

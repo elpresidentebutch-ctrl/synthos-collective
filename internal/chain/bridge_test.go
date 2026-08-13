@@ -3,6 +3,8 @@ package chain
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -121,6 +123,109 @@ func TestBridgeReleaseRejectsSourceReplay(t *testing.T) {
 	}
 	if len(replayBlock.Tx) != 0 {
 		t.Fatalf("expected replayed bridge source event to be excluded, got %d txs", len(replayBlock.Tx))
+	}
+}
+
+func TestBridgeReleaseRequiresValidatorQuorumWhenConfigured(t *testing.T) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v1pub, v1priv, _ := ed25519.GenerateKey(rand.Reader)
+	v2pub, v2priv, _ := ed25519.GenerateKey(rand.Reader)
+	v3pub, _, _ := ed25519.GenerateKey(rand.Reader)
+	bridgeAuthority := AddressFromPublicKey(pub)
+	recipient := Address("0x3333333333333333333333333333333333333333")
+	sourceChainID := "84532"
+	sourceEventID := "0xsource-lock-quorum"
+	amount := uint64(10_000)
+	c, err := NewChain(Genesis{
+		ChainID:   "synthos-test",
+		TxChainID: 20260702,
+		Alloc: map[Address]uint64{
+			bridgeAuthority: 1_000_000,
+		},
+		Metadata: map[string]any{
+			"bridge_quorum": float64(2),
+			"bridge_validators": []any{
+				map[string]any{"id": "validator-1", "public_key": "0x" + hex.EncodeToString(v1pub)},
+				map[string]any{"id": "validator-2", "public_key": "0x" + hex.EncodeToString(v2pub)},
+				map[string]any{"id": "validator-3", "public_key": "0x" + hex.EncodeToString(v3pub)},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	noProof := signedBridgeTx(t, c, priv, bridgeAuthority, recipient, amount, releaseMetadata(sourceChainID, sourceEventID, nil))
+	if err := c.SubmitTx(noProof); err != nil {
+		t.Fatalf("submit no-proof release: %v", err)
+	}
+	noProofBlock, err := c.BuildBlock("validator-1", "proof", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(noProofBlock.Tx) != 0 {
+		t.Fatalf("expected no-proof release excluded, got %d tx", len(noProofBlock.Tx))
+	}
+
+	oneSig := []BridgeValidatorSignature{
+		signBridgeRelease("validator-1", v1priv, sourceChainID, sourceEventID, recipient, "syn", amount),
+	}
+	oneProof := signedBridgeTx(t, c, priv, bridgeAuthority, recipient, amount, releaseMetadata(sourceChainID, sourceEventID, oneSig))
+	if err := c.SubmitTx(oneProof); err != nil {
+		t.Fatalf("submit one-proof release: %v", err)
+	}
+	oneProofBlock, err := c.BuildBlock("validator-1", "proof", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(oneProofBlock.Tx) != 0 {
+		t.Fatalf("expected one-signature release excluded, got %d tx", len(oneProofBlock.Tx))
+	}
+
+	twoSigs := []BridgeValidatorSignature{
+		signBridgeRelease("validator-1", v1priv, sourceChainID, sourceEventID, recipient, "syn", amount),
+		signBridgeRelease("validator-2", v2priv, sourceChainID, sourceEventID, recipient, "syn", amount),
+	}
+	valid := signedBridgeTx(t, c, priv, bridgeAuthority, recipient, amount, releaseMetadata(sourceChainID, sourceEventID, twoSigs))
+	if err := c.SubmitTx(valid); err != nil {
+		t.Fatalf("submit valid release: %v", err)
+	}
+	validBlock, err := c.BuildBlock("validator-1", "proof", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(validBlock.Tx) != 1 {
+		t.Fatalf("expected quorum release included, got %d tx", len(validBlock.Tx))
+	}
+	if err := c.FinalizeBlock(validBlock); err != nil {
+		t.Fatal(err)
+	}
+	if got := c.State.Get(recipient).Balance; got != amount {
+		t.Fatalf("recipient balance=%d want %d", got, amount)
+	}
+}
+
+func releaseMetadata(sourceChainID string, sourceEventID string, signatures []BridgeValidatorSignature) []KeyValuePair {
+	out := []KeyValuePair{
+		{Key: "type", Value: "bridge_release_native"},
+		{Key: "source_chain_id", Value: sourceChainID},
+		{Key: "source_event_id", Value: sourceEventID},
+	}
+	if signatures != nil {
+		data, _ := json.Marshal(signatures)
+		out = append(out, KeyValuePair{Key: "validator_signatures", Value: string(data)})
+	}
+	return out
+}
+
+func signBridgeRelease(id string, priv ed25519.PrivateKey, sourceChainID string, sourceEventID string, recipient Address, assetID string, amount uint64) BridgeValidatorSignature {
+	message := BridgeReleaseSigningMessage(sourceChainID, sourceEventID, string(recipient), assetID, amount)
+	return BridgeValidatorSignature{
+		ValidatorID: id,
+		Signature:   "0x" + hex.EncodeToString(ed25519.Sign(priv, message)),
 	}
 }
 

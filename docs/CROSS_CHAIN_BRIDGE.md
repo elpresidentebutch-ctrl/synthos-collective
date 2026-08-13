@@ -26,6 +26,8 @@ The native SYNTHOS L1 now records bridge receipts in chain state:
 - source event IDs are replay-protected in native state;
 - bridge receipts are included in the state root;
 - bridge receipts survive node snapshots;
+- if bridge validators are configured in genesis, native releases require
+  validator-threshold Ed25519 signatures;
 - RPC exposes `/bridge/status` and `/bridge/events`.
 
 `cmd/bridgerelayer` provides the first automated relayer service:
@@ -73,9 +75,11 @@ The native SYNTHOS L1 now records bridge receipts in chain state:
    - `amount`;
    - confirmation count;
    - observed EVM transaction hash.
-4. `cmd/bridgerelayer -mode submit-native-release` signs and submits a native
+4. Bridge validators sign the canonical release message.
+5. `cmd/bridgerelayer -mode submit-native-release` signs and submits a native
    `bridge_release_native` transaction.
-5. Native state rejects the same source event if it is submitted again.
+6. Native state verifies validator quorum and rejects the same source event if it
+   is submitted again.
 
 ## Safety model
 
@@ -95,7 +99,6 @@ The minimum production posture should be:
 
 This phase does not yet include:
 
-- validator-signed bridge proofs from SYNTHOS consensus;
 - rate limits;
 - emergency withdrawal delay;
 - Merkle/light-client verification;
@@ -182,7 +185,17 @@ Example `bridge-proof.json`:
   "asset_id": "syn",
   "confirmations": 12,
   "min_confirmations": 12,
-  "observed_tx_hash": "0xevm-transaction-hash"
+  "observed_tx_hash": "0xevm-transaction-hash",
+  "validator_signatures": [
+    {
+      "validator_id": "validator-1",
+      "signature": "0x..."
+    },
+    {
+      "validator_id": "validator-2",
+      "signature": "0x..."
+    }
+  ]
 }
 ```
 
@@ -215,3 +228,45 @@ go run ./cmd/bridgerelayer \
 For production, run multiple independent relayers and do not use
 `-auto-submit-native` until the validator-threshold proof layer and rate limits
 are enabled.
+
+## Native bridge validator genesis config
+
+Bridge validator keys are configured in genesis metadata so every validator
+verifies the same release proofs.
+
+```json
+{
+  "metadata": {
+    "bridge_quorum": 2,
+    "bridge_validators": [
+      {
+        "id": "validator-1",
+        "public_key": "0x..."
+      },
+      {
+        "id": "validator-2",
+        "public_key": "0x..."
+      },
+      {
+        "id": "validator-3",
+        "public_key": "0x..."
+      }
+    ]
+  }
+}
+```
+
+The canonical message each bridge validator signs is:
+
+```text
+SYNTHOS_BRIDGE_RELEASE_V1
+source_chain_id=<source_chain_id>
+source_event_id=<source_event_id>
+recipient=<native_recipient>
+asset_id=<asset_id>
+amount=<amount>
+```
+
+If `bridge_validators` is absent, old local/dev networks keep accepting bridge
+release transactions without validator proofs. For launch networks, always
+configure bridge validators before unpausing bridge liquidity.

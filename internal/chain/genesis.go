@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 )
 
 // Genesis defines initial state distribution for the SYNTHOS L1.
@@ -49,9 +50,61 @@ func (g Genesis) ToState() (*State, error) {
 	for addr, bal := range g.Alloc {
 		s.Set(addr, Account{Balance: bal, Nonce: 0})
 	}
+	if validators, ok := g.Metadata["bridge_validators"]; ok {
+		parsed, err := parseBridgeValidators(validators)
+		if err != nil {
+			return nil, err
+		}
+		s.BridgeValidators = parsed
+	}
+	if quorum, ok := g.Metadata["bridge_quorum"]; ok {
+		parsed, err := parseMetadataUint64(quorum)
+		if err != nil {
+			return nil, fmt.Errorf("invalid bridge_quorum: %w", err)
+		}
+		s.BridgeQuorum = parsed
+	}
 	return s, nil
 }
 
 func (g Genesis) Bytes() ([]byte, error) {
 	return json.MarshalIndent(g, "", "  ")
+}
+
+func parseBridgeValidators(raw any) (map[string]string, error) {
+	out := map[string]string{}
+	items, ok := raw.([]any)
+	if !ok {
+		return nil, fmt.Errorf("bridge_validators must be an array")
+	}
+	for _, item := range items {
+		obj, ok := item.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("bridge validator must be an object")
+		}
+		id, _ := obj["id"].(string)
+		if id == "" {
+			id, _ = obj["validator_id"].(string)
+		}
+		pub, _ := obj["public_key"].(string)
+		if id == "" || pub == "" {
+			return nil, fmt.Errorf("bridge validator requires id and public_key")
+		}
+		out[id] = pub
+	}
+	return out, nil
+}
+
+func parseMetadataUint64(raw any) (uint64, error) {
+	switch v := raw.(type) {
+	case float64:
+		if v < 0 || v != float64(uint64(v)) {
+			return 0, fmt.Errorf("not a uint64")
+		}
+		return uint64(v), nil
+	case string:
+		return strconv.ParseUint(v, 10, 64)
+	default:
+		return 0, fmt.Errorf("unsupported type")
+	}
 }

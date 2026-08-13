@@ -218,6 +218,11 @@ type BridgeRecord struct {
 	Timestamp            int64   `json:"timestamp"`
 }
 
+type BridgeValidatorSignature struct {
+	ValidatorID string `json:"validator_id"`
+	Signature   string `json:"signature"`
+}
+
 type ImmuneStats struct {
 	ActiveImmuneNodes    int    `json:"active_immune_nodes"`
 	SovereignProofs      uint64 `json:"sovereign_proofs"`
@@ -258,6 +263,8 @@ type State struct {
 	SovereignProofs       map[string]SovereignProofRecord
 	BridgeEvents          map[string]BridgeRecord
 	ProcessedBridgeEvents map[string]bool
+	BridgeValidators      map[string]string
+	BridgeQuorum          uint64
 	LastSovereignProofID  string
 	LastBridgeEventID     string
 	mu                    sync.RWMutex
@@ -271,6 +278,7 @@ func NewState() *State {
 		SovereignProofs:       make(map[string]SovereignProofRecord),
 		BridgeEvents:          make(map[string]BridgeRecord),
 		ProcessedBridgeEvents: make(map[string]bool),
+		BridgeValidators:      make(map[string]string),
 		TotalSupply:           MAX_SUPPLY,
 	}
 }
@@ -476,6 +484,9 @@ func (s *State) applyBridgeMetadata(tx Tx) error {
 		if sourceEventID == "" {
 			return errors.New("missing source_event_id for bridge release")
 		}
+		if err := s.verifyBridgeReleaseProofLocked(tx, sourceChainID, sourceEventID, assetID); err != nil {
+			return err
+		}
 		messageID := bridgeMessageID(sourceChainID, sourceEventID, string(tx.To), assetID, tx.Amount)
 		if s.ProcessedBridgeEvents[messageID] {
 			return errors.New("bridge source event already processed")
@@ -493,6 +504,55 @@ func (s *State) applyBridgeMetadata(tx Tx) error {
 			Timestamp:     tx.Timestamp,
 		}
 		s.LastBridgeEventID = messageID
+	}
+	return nil
+}
+
+func (s *State) verifyBridgeReleaseProofLocked(tx Tx, sourceChainID, sourceEventID, assetID string) error {
+	if len(s.BridgeValidators) == 0 {
+		return nil
+	}
+	raw := metadataValue(tx.Metadata, "validator_signatures")
+	if raw == "" {
+		return errors.New("missing validator_signatures for bridge release")
+	}
+	var signatures []BridgeValidatorSignature
+	if err := json.Unmarshal([]byte(raw), &signatures); err != nil {
+		return errors.New("invalid validator_signatures")
+	}
+	required := s.BridgeQuorum
+	if required == 0 {
+		required = uint64((2*len(s.BridgeValidators) + 2) / 3)
+	}
+	if required == 0 || required > uint64(len(s.BridgeValidators)) {
+		return errors.New("invalid bridge quorum")
+	}
+	message := BridgeReleaseSigningMessage(sourceChainID, sourceEventID, string(tx.To), assetID, tx.Amount)
+	seen := map[string]bool{}
+	var valid uint64
+	for _, item := range signatures {
+		if item.ValidatorID == "" || seen[item.ValidatorID] {
+			continue
+		}
+		pubHex, ok := s.BridgeValidators[item.ValidatorID]
+		if !ok {
+			continue
+		}
+		pub, err := hex.DecodeString(strings.TrimPrefix(pubHex, "0x"))
+		if err != nil || len(pub) != ed25519.PublicKeySize {
+			return errors.New("invalid bridge validator public key")
+		}
+		sig, err := hex.DecodeString(strings.TrimPrefix(item.Signature, "0x"))
+		if err != nil || len(sig) != ed25519.SignatureSize {
+			continue
+		}
+		if ed25519.Verify(ed25519.PublicKey(pub), message, sig) {
+			seen[item.ValidatorID] = true
+			valid++
+		}
+	}
+	if valid < required {
+		return fmt.Errorf("bridge validator quorum not met: got %d required %d", valid, required)
 	}
 	return nil
 }
@@ -553,6 +613,20 @@ func bridgeMessageID(sourceChainID, sourceEventID, recipient, assetID string, am
 	payload := fmt.Sprintf("SYNTHOS_BRIDGE_NATIVE_RELEASE_V1|%s|%s|%s|%s|%d", sourceChainID, sourceEventID, strings.ToLower(recipient), assetID, amount)
 	sum := sha256.Sum256([]byte(payload))
 	return "0x" + hex.EncodeToString(sum[:])
+}
+
+func BridgeReleaseSigningMessage(sourceChainID, sourceEventID, recipient, assetID string, amount uint64) []byte {
+	if assetID == "" {
+		assetID = "syn"
+	}
+	return []byte(fmt.Sprintf(
+		"SYNTHOS_BRIDGE_RELEASE_V1\nsource_chain_id=%s\nsource_event_id=%s\nrecipient=%s\nasset_id=%s\namount=%d",
+		sourceChainID,
+		sourceEventID,
+		strings.ToLower(recipient),
+		assetID,
+		amount,
+	))
 }
 
 func (s *State) BridgeStatus() BridgeStats {
@@ -679,6 +753,8 @@ func (s *State) Root() string {
 		LastSovereignProofID  string                          `json:"last_sovereign_proof_id"`
 		BridgeEvents          map[string]BridgeRecord         `json:"bridge_events"`
 		ProcessedBridgeEvents map[string]bool                 `json:"processed_bridge_events"`
+		BridgeValidators      map[string]string               `json:"bridge_validators"`
+		BridgeQuorum          uint64                          `json:"bridge_quorum"`
 		LastBridgeEventID     string                          `json:"last_bridge_event_id"`
 	}{
 		ImmuneNodes:           s.ImmuneNodes,
@@ -686,6 +762,8 @@ func (s *State) Root() string {
 		LastSovereignProofID:  s.LastSovereignProofID,
 		BridgeEvents:          s.BridgeEvents,
 		ProcessedBridgeEvents: s.ProcessedBridgeEvents,
+		BridgeValidators:      s.BridgeValidators,
+		BridgeQuorum:          s.BridgeQuorum,
 		LastBridgeEventID:     s.LastBridgeEventID,
 	}
 	immuneData, _ := json.Marshal(immunePayload)
@@ -740,6 +818,10 @@ func (s *State) Clone() *State {
 	for k, v := range s.ProcessedBridgeEvents {
 		out.ProcessedBridgeEvents[k] = v
 	}
+	for k, v := range s.BridgeValidators {
+		out.BridgeValidators[k] = v
+	}
+	out.BridgeQuorum = s.BridgeQuorum
 	out.LastSovereignProofID = s.LastSovereignProofID
 	out.LastBridgeEventID = s.LastBridgeEventID
 	out.TotalSupply = s.TotalSupply
