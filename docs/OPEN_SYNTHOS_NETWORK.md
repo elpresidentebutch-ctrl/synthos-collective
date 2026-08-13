@@ -65,6 +65,54 @@ Invoke-RestMethod http://127.0.0.1:8080/blocks
 Invoke-RestMethod http://127.0.0.1:8090/api/early-access/config
 ```
 
+## Start Validators 11-15 Locally
+
+To run the current five-validator cloudless test network from the repo root:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\scripts\start-validator-11-15.ps1
+```
+
+This command generates private network material under:
+
+```text
+.synthos/open-network-11-15/
+```
+
+That folder is ignored by Git because it contains validator private keys.
+
+The launcher starts validators 11 through 15 with:
+
+- one shared genesis document;
+- five Ed25519 validator keys;
+- a validator registry containing all five public keys;
+- provider-neutral HTTP peer catch-up;
+- validator 11 producing empty heartbeat blocks every 15 seconds;
+- persistent Docker volumes for every validator; and
+- a verification step that confirms all five nodes are healthy, expose the seven core capabilities, and converge to the same height/tip/state root.
+
+Local RPC endpoints:
+
+```text
+http://127.0.0.1:8111
+http://127.0.0.1:8112
+http://127.0.0.1:8113
+http://127.0.0.1:8114
+http://127.0.0.1:8115
+```
+
+Re-run verification:
+
+```powershell
+node .\scripts\verify-validator-11-15.mjs
+```
+
+Stop the network:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\scripts\stop-validator-11-15.ps1
+```
+
 ## Open Public RPC
 
 Run the generated Docker Compose stack on a server. Put an HTTPS reverse proxy

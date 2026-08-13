@@ -22,6 +22,7 @@ type nodeConfig struct {
 	RPCListen   string            `json:"rpc_listen"`
 	GenesisPath string            `json:"genesis_path"`
 	Peers       []string          `json:"peers"`
+	HTTPPeers   []string          `json:"http_peers"`
 	ListenAddr  string            `json:"listen_addr"`
 	PrivateKey  string            `json:"private_key"`
 	Validators  []string          `json:"validators"`
@@ -51,16 +52,23 @@ func main() {
 	var chainID string
 	var txChainID uint64
 	var validators int
+	var startIndex int
+	var localBaseRPCPort int
 	var publicRPCURL string
 	flag.StringVar(&outDir, "out", ".synthos/open-network", "output directory for generated open-network files")
 	flag.StringVar(&chainID, "chain-id", "synthos-mainnet-1", "human-readable chain ID")
 	flag.Uint64Var(&txChainID, "tx-chain-id", 20260702, "numeric transaction chain ID")
 	flag.IntVar(&validators, "validators", 4, "validator count")
+	flag.IntVar(&startIndex, "start-index", 1, "first validator number")
+	flag.IntVar(&localBaseRPCPort, "local-base-rpc-port", 8080, "local RPC port for the first validator")
 	flag.StringVar(&publicRPCURL, "public-rpc", "https://rpc.ishamwilliamsblockchains.com", "public RPC URL")
 	flag.Parse()
 
 	if validators < 1 {
 		panic("validators must be at least 1")
+	}
+	if startIndex < 1 {
+		panic("start-index must be at least 1")
 	}
 	if err := os.MkdirAll(outDir, 0o700); err != nil {
 		panic(err)
@@ -70,8 +78,8 @@ func main() {
 	validatorKeys := make([]generatedKey, 0, validators)
 	validatorIDs := make([]string, 0, validators)
 	peerKeys := make(map[string]string, validators)
-	for i := 1; i <= validators; i++ {
-		name := fmt.Sprintf("validator-%d", i)
+	for i := 0; i < validators; i++ {
+		name := fmt.Sprintf("validator-%d", startIndex+i)
 		key := mustKey(name)
 		validatorKeys = append(validatorKeys, key)
 		validatorIDs = append(validatorIDs, name)
@@ -98,16 +106,18 @@ func main() {
 	writeJSON(filepath.Join(outDir, "genesis.json"), genesis, 0o600)
 	writeJSON(filepath.Join(outDir, "founder-wallet.private.json"), founder, 0o600)
 	writeJSON(filepath.Join(outDir, "validator-wallets.private.json"), validatorKeys, 0o600)
-	writeEarlyAccessEnv(filepath.Join(outDir, "early-access.env"), founder, publicRPCURL)
+	writeEarlyAccessEnv(filepath.Join(outDir, "early-access.env"), founder, publicRPCURL, validatorIDs[0])
 
 	for i, key := range validatorKeys {
 		nodeID := key.Name
 		peers := make([]string, 0, validators-1)
+		httpPeers := make([]string, 0, validators-1)
 		for _, peerID := range validatorIDs {
 			if peerID == nodeID {
 				continue
 			}
 			peers = append(peers, fmt.Sprintf("%s@%s:9001", peerID, peerID))
+			httpPeers = append(httpPeers, fmt.Sprintf("http://%s:8080", peerID))
 		}
 		cfg := nodeConfig{
 			NodeID:      nodeID,
@@ -116,6 +126,7 @@ func main() {
 			RPCListen:   ":8080",
 			GenesisPath: "/config/genesis.json",
 			Peers:       peers,
+			HTTPPeers:   httpPeers,
 			ListenAddr:  ":9001",
 			PrivateKey:  key.PrivateKey,
 			Validators:  validatorIDs,
@@ -125,22 +136,25 @@ func main() {
 
 		localCfg := cfg
 		localCfg.DataDir = filepath.Join(outDir, nodeID+"-data")
-		localCfg.RPCListen = fmt.Sprintf(":%d", 8080+i)
+		localCfg.RPCListen = fmt.Sprintf(":%d", localBaseRPCPort+i)
 		localCfg.ListenAddr = fmt.Sprintf(":%d", 9001+i)
 		localCfg.GenesisPath = filepath.Join(outDir, "genesis.json")
 		localPeers := make([]string, 0, validators-1)
+		localHTTPPeers := make([]string, 0, validators-1)
 		for j, peerID := range validatorIDs {
 			if peerID == nodeID {
 				continue
 			}
 			localPeers = append(localPeers, fmt.Sprintf("%s@127.0.0.1:%d", peerID, 9001+j))
+			localHTTPPeers = append(localHTTPPeers, fmt.Sprintf("http://127.0.0.1:%d", localBaseRPCPort+j))
 		}
 		localCfg.Peers = localPeers
+		localCfg.HTTPPeers = localHTTPPeers
 		writeJSON(filepath.Join(outDir, fmt.Sprintf("%s.local.json", nodeID)), localCfg, 0o600)
 	}
 
-	writeCompose(filepath.Join(outDir, "docker-compose.yml"), validators)
-	writeReadme(filepath.Join(outDir, "README.md"), chainID, txChainID, publicRPCURL)
+	writeCompose(filepath.Join(outDir, "docker-compose.yml"), validatorIDs, localBaseRPCPort)
+	writeReadme(filepath.Join(outDir, "README.md"), chainID, txChainID, publicRPCURL, validatorIDs, localBaseRPCPort)
 
 	m := manifest{
 		ChainID:       chainID,
@@ -160,10 +174,7 @@ func main() {
 			"validator_keys": "validator-wallets.private.json",
 			"backend_env":    "early-access.env",
 			"validator_configs": []string{
-				"validator-1.json",
-				"validator-2.json",
-				"validator-3.json",
-				"validator-4.json",
+				"validator configs are named after the generated validator IDs",
 			},
 		},
 		NextSteps: []string{
@@ -177,7 +188,7 @@ func main() {
 	writeJSON(filepath.Join(outDir, "manifest.public.json"), m, 0o644)
 	fmt.Printf("SYNTHOS open-network files generated in %s\n", outDir)
 	fmt.Printf("Founder address: %s\n", founder.Address)
-	fmt.Printf("Local RPC after start: http://127.0.0.1:8080\n")
+	fmt.Printf("Local RPC after start: http://127.0.0.1:%d\n", localBaseRPCPort)
 }
 
 func mustKey(name string) generatedKey {
@@ -216,24 +227,31 @@ func writeJSON(path string, value any, perm os.FileMode) {
 	}
 }
 
-func writeCompose(path string, validators int) {
+func writeCompose(path string, validatorIDs []string, localBaseRPCPort int) {
 	content := "services:\n"
-	for i := 1; i <= validators; i++ {
-		name := fmt.Sprintf("validator-%d", i)
+	for i, name := range validatorIDs {
+		env := fmt.Sprintf("      SYNTHOS_CONFIG: /config/%s.json\n", name)
+		if i == 0 {
+			env += "      SYNTHOS_BLOCK_PRODUCER: \"true\"\n"
+			env += "      SYNTHOS_BLOCK_INTERVAL_SECONDS: \"15\"\n"
+			env += "      SYNTHOS_PRODUCE_EMPTY_BLOCKS: \"true\"\n"
+		}
 		content += fmt.Sprintf(`  %s:
     build:
       context: ../..
       dockerfile: Dockerfile
     entrypoint: ["/usr/local/bin/synthosd"]
     environment:
-      SYNTHOS_CONFIG: /config/%s.json
+%s
     volumes:
       - ./:/config:ro
       - %s-data:/data
     ports:
       - "%d:8080"
+    expose:
+      - "9001"
 
-`, name, name, name, 8079+i)
+`, name, env, name, localBaseRPCPort+i)
 	}
 	content += `  early-access-backend:
     build:
@@ -248,12 +266,12 @@ func writeCompose(path string, validators int) {
     ports:
       - "8090:8090"
     depends_on:
-      - validator-1
+      - ` + validatorIDs[0] + `
 
 `
 	content += "volumes:\n"
-	for i := 1; i <= validators; i++ {
-		content += fmt.Sprintf("  validator-%d-data:\n", i)
+	for _, name := range validatorIDs {
+		content += fmt.Sprintf("  %s-data:\n", name)
 	}
 	content += "  backend-data:\n"
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
@@ -261,9 +279,9 @@ func writeCompose(path string, validators int) {
 	}
 }
 
-func writeEarlyAccessEnv(path string, founder generatedKey, publicRPCURL string) {
+func writeEarlyAccessEnv(path string, founder generatedKey, publicRPCURL string, nativeRPCService string) {
 	assets := `[{"symbol":"ETH","network":"Ethereum","chainId":"1","rpcUrl":"https://eth.llamarpc.com","treasuryAddress":"0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2","native":true,"decimals":18,"usdPrice":"2000.00","enabled":true},{"symbol":"USDC","network":"Ethereum","chainId":"1","rpcUrl":"https://eth.llamarpc.com","address":"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48","treasuryAddress":"0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2","decimals":6,"usdPrice":"1.00","enabled":true},{"symbol":"USDT","network":"Ethereum","chainId":"1","rpcUrl":"https://eth.llamarpc.com","address":"0xdAC17F958D2ee523a2206206994597C13D831ec7","treasuryAddress":"0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2","decimals":6,"usdPrice":"1.00","enabled":true}]`
-	content := fmt.Sprintf(`SYNTHOS_NATIVE_RPC_URL=http://validator-1:8080
+	content := fmt.Sprintf(`SYNTHOS_NATIVE_RPC_URL=http://%s:8080
 SYNTHOS_DISTRIBUTION_AGENT_ID=synthos-early-adopter-distributor
 SYNTHOS_DISTRIBUTION_AGENT_PRIVATE_KEY=%s
 SYNTHOS_EARLY_ACCESS_ALLOCATION_PRIVATE_KEY=%s
@@ -276,13 +294,13 @@ SYNTHOS_EARLY_ACCESS_RPC_URLS=%s
 SYNTHOS_CORS_ORIGINS=https://www.ishamwilliamsblockchains.com,https://ishamwilliamsblockchains.com,https://lovable.dev
 SYNTHOS_EARLY_ACCESS_WIDGET_PATH=/website/assets/early-access-sale.js
 SYNTHOS_EARLY_ACCESS_ASSETS_JSON=%s
-`, founder.PrivateKey, founder.PrivateKey, publicRPCURL, assets)
+`, nativeRPCService, founder.PrivateKey, founder.PrivateKey, publicRPCURL, assets)
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		panic(err)
 	}
 }
 
-func writeReadme(path string, chainID string, txChainID uint64, publicRPCURL string) {
+func writeReadme(path string, chainID string, txChainID uint64, publicRPCURL string, validatorIDs []string, localBaseRPCPort int) {
 	content := fmt.Sprintf(`# SYNTHOS Open Network
 
 This folder was generated locally and contains private validator keys.
@@ -292,7 +310,8 @@ Network:
 - Chain ID: %s
 - Transaction chain ID: %d
 - Public RPC target: %s
-- Local RPC after Docker start: http://127.0.0.1:8080
+- Validators: %v
+- Local RPC after Docker start: http://127.0.0.1:%d
 
 Start the founder-operated validator set:
 
@@ -303,15 +322,15 @@ docker compose up --build
 Health checks:
 
 `+"```bash"+`
-curl http://127.0.0.1:8080/health
-curl http://127.0.0.1:8080/status
+curl http://127.0.0.1:%d/health
+curl http://127.0.0.1:%d/status
 `+"```"+`
 
 To make the public RPC live, run this stack on a server, terminate HTTPS at a
 reverse proxy, and point DNS for rpc.ishamwilliamsblockchains.com to it.
 
 Do not commit this folder. It contains private keys.
-`, chainID, txChainID, publicRPCURL)
+`, chainID, txChainID, publicRPCURL, validatorIDs, localBaseRPCPort, localBaseRPCPort, localBaseRPCPort)
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		panic(err)
 	}

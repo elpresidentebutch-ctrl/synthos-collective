@@ -55,6 +55,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/status", s.handleStatus)
+	mux.HandleFunc("/sync/status", s.handleSyncStatus)
 	mux.HandleFunc("/account", s.handleAccount)
 	mux.HandleFunc("/balance", s.handleBalance)
 	mux.HandleFunc("/mempool", s.handleMempool)
@@ -125,6 +126,20 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		}
 		body["capabilities"] = s.Node.Agent.CoreCapabilities()
 		body["immune_capable"] = true
+	}
+	writeJSON(w, body)
+}
+
+func (s *Server) handleSyncStatus(w http.ResponseWriter, r *http.Request) {
+	body := map[string]any{
+		"chain_id":   s.Chain.ChainID,
+		"height":     s.Chain.Height(),
+		"tip":        s.Chain.Tip().Hash,
+		"state_root": s.Chain.State.Root(),
+	}
+	if s.Node != nil && s.Node.Agent != nil {
+		body["capabilities"] = s.Node.Agent.CoreCapabilities()
+		body["immune_capable"] = hasCapability(s.Node.Agent.CoreCapabilities(), "immune_node")
 	}
 	writeJSON(w, body)
 }
@@ -512,7 +527,7 @@ func (s *Server) peerStatus(peer string) (peerStatus, error) {
 func (s *Server) probePeerStatus(peer string, timeout time.Duration) (peerStatus, error) {
 	var out peerStatus
 	client := &http.Client{Timeout: timeout}
-	resp, err := client.Get(strings.TrimRight(peer, "/") + "/status")
+	resp, err := client.Get(strings.TrimRight(peer, "/") + "/sync/status")
 	if err != nil {
 		return out, err
 	}
