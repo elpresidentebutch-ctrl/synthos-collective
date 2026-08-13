@@ -179,6 +179,10 @@ func main() {
 }
 
 func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet && wantsHTML(r) {
+		s.serveWebsiteFile(w, r, "index.html")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"service": "synthos-cloudless-registry",
 		"endpoints": []string{
@@ -203,6 +207,14 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 			"DELETE /peers/NODE",
 		},
 	})
+}
+
+func wantsHTML(r *http.Request) bool {
+	if r.URL.Path != "/" {
+		return false
+	}
+	accept := r.Header.Get("Accept")
+	return accept == "" || strings.Contains(accept, "text/html") || strings.Contains(accept, "*/*")
 }
 
 func (s *server) handleHealth(w http.ResponseWriter, r *http.Request) {
