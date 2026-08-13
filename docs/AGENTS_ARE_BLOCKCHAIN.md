@@ -246,10 +246,15 @@ Round 1:
 - State root verified by all agents
 - No state divergence between agents
 
-### 6. P2P Coordination (No Central Node)
-- Agents connect peer-to-peer
-- No single point of failure
-- Network resilience through redundancy
+### 6. P2P Coordination Roadmap
+- Agents should connect peer-to-peer for production consensus.
+- The current bootstrap registry/relay helps with discovery, outbound-only
+  participation, and website status, but it is not itself a fully decentralized
+  gossip layer.
+- "No single point of failure" is a target architecture, not a claim about a
+  single hosted registry or relay.
+- Network resilience requires multiple independent relays and direct
+  validator-to-validator gossip.
 
 ---
 

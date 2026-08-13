@@ -1,20 +1,44 @@
 # SYNTHOS Cloudless Network
 
-SYNTHOS runs through the self-hosted network path:
+SYNTHOS currently runs through a bootstrap network path:
 
 1. Self-hosted SYNTHOS registry for peer discovery.
 2. `synthosd` validator nodes connected over TCP.
 3. Optional HTTP relay compatibility for outbound-only nodes.
 4. Public websites and dashboards pointed at self-hosted RPC endpoints.
 
-Managed edge adapters have been removed from the launch path.
+Managed edge adapters have been removed from the current launch path. Earlier
+experiments used provider-managed relays/object storage. Those experiments are
+not the permanent trust model and must not be described as fully cloudless,
+un-DDoSable, or censorship-proof.
+
+## Current maturity statement
+
+The current registry/relay layer is bootstrap infrastructure for discovery,
+operator onboarding, outbound-only nodes, and website status. It is not a
+production decentralized gossip layer by itself.
+
+Until SYNTHOS has multiple independently operated relays plus direct validator
+peer gossip, the project should say:
+
+- nodes can run without inbound ports;
+- node messages and heartbeats are signed and independently verifiable;
+- the registry/relay does not own private keys or chain state; and
+- relay/registry hosting remains an operational dependency during bootstrap.
+
+The project should not claim:
+
+- no single point of failure;
+- no address to attack;
+- permanent censorship resistance at the transport layer; or
+- an un-DDoSable network.
 
 ## Self-hosted components
 
 | Component | Self-hosted implementation |
 | --- | --- |
-| Worker peer registry | `go run ./cmd/cloudless-registry` |
-| Worker validator endpoints | `go run ./cmd/synthosd` or built `synthosd` binaries |
+| Peer registry / relay | `go run ./cmd/cloudless-registry` |
+| Validator endpoints | `go run ./cmd/synthosd` or built `synthosd` binaries |
 | Block relay | Self-hosted RPC `/status`, `/blocks`, and peer registry |
 | Public site backend | Static site pointed at self-hosted RPC URLs |
 | Message/state storage | Local registry JSON state plus node disk state |
@@ -117,14 +141,19 @@ X-Registry-Secret: change-me
 
 ## Migration plan
 
-1. Keep Worker code frozen as legacy.
+1. Keep provider-specific Worker/R2 code frozen as legacy bootstrap material.
 2. Run `go run ./cmd/l1netcheck` on every release.
 3. Start at least one self-hosted registry.
-4. Start at least four `synthosd` validators using static TCP peers.
-5. Register public RPC endpoints with the cloudless registry.
-6. Point website config at self-hosted RPC endpoints.
-7. Remove Worker URLs from public pages.
-8. Archive Worker deployment docs after the self-hosted site is verified.
+4. Add at least two more independently operated registries/relays on different
+   providers or community hosts.
+5. Start at least four `synthosd` validators using static TCP peers.
+6. Add direct validator-to-validator gossip as the primary consensus transport.
+7. Treat relays as discovery/mailbox fallbacks only.
+8. Register public RPC endpoints with more than one registry.
+9. Point website config at a multi-relay backend list, not a single vendor URL.
+10. Remove Worker/R2 URLs from public pages.
+11. Archive Worker deployment docs after the multi-relay/self-hosted path is
+    verified.
 
 ## Operator reward language
 

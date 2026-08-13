@@ -26,20 +26,64 @@ GET /api/nodes
 
 Returns all registered nodes in the peer registry.
 
-### Provision Node
+### Register Node Candidate
 
 ```http
-POST /api/nodes/provision
+POST /api/nodes/register
 Content-Type: application/json
 
 {
-  "kind": "validator",
-  "network": "testnet",
-  "label": "genesis-01"
+  "node_id": "syn-node-example",
+  "public_key": "32-byte-ed25519-public-key-hex",
+  "role": "validator_candidate",
+  "endpoint": "https://node.example.com",
+  "network": "mainnet"
 }
 ```
 
-Returns an Ed25519 node identity and a ready-to-save node config. The private key is returned once and is not persisted by the registry.
+Registers a node candidate. The backend does not need and should not receive the
+operator's private key. Client-side or local node software should generate and
+store the node key, then submit signed heartbeat proofs.
+
+### Submit Heartbeat Proof
+
+```http
+POST /api/nodes/heartbeat
+Content-Type: application/json
+
+{
+  "node_id": "syn-node-example",
+  "height": 123,
+  "tip": "0xabc",
+  "state_root": "0xdef",
+  "timestamp": "2026-08-13T12:00:00Z",
+  "nonce": "0000000001",
+  "signature": "64-byte-ed25519-signature-hex",
+  "capabilities": [
+    "ed25519",
+    "canonical_serialization",
+    "validator_registry",
+    "proposal_rotation",
+    "quorum",
+    "replay_protection",
+    "persistent_storage"
+  ]
+}
+```
+
+The signature is over the canonical heartbeat message described in
+`docs/PROOF_OF_OPERATION_BACKEND.md`.
+
+### Legacy Provision Node
+
+```http
+POST /api/nodes/provision
+```
+
+This endpoint is retained for compatibility only. It prepares a node candidate
+record and returns public metadata. Production key custody should be client-side
+or local CLI based; backend-generated private keys must not be used for public
+validator custody.
 
 ### Contact
 
