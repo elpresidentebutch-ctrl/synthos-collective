@@ -115,6 +115,22 @@ powershell.exe -ExecutionPolicy Bypass -File .\scripts\stop-validator-11-15.ps1
 
 ## Start A Push-Button Node
 
+For a website button or one-line install, use the GitLab-hosted bootstrap
+script. This free path does not require Render, a VPS, or Cloudflare:
+
+```powershell
+irm https://gitlab.com/synthos-collective-group/synthos-collective/-/raw/main/scripts/install-push-button-node.ps1 | iex
+```
+
+That command clones or updates the repo under:
+
+```text
+%USERPROFILE%\Documents\SYNTHOS\synthos-collective
+```
+
+Then it starts the local validator network if needed and starts the local
+push-button node.
+
 After validators 11 through 15 are running, start a local non-validator
 SYNTHOS node with one command:
 

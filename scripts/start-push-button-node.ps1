@@ -44,6 +44,17 @@ if (Test-Path $pidFile) {
   }
 }
 
+try {
+  $existing = Invoke-WebRequest -Uri "http://127.0.0.1:8120/health" -UseBasicParsing -TimeoutSec 2
+  if ($existing.StatusCode -eq 200) {
+    Write-Host "A SYNTHOS node is already responding on http://127.0.0.1:8120"
+    node .\scripts\verify-push-button-node.mjs
+    exit $LASTEXITCODE
+  }
+} catch {
+  # Port is not serving a SYNTHOS health endpoint; start our node below.
+}
+
 Write-Host "Starting local push-button node"
 $process = Start-Process `
   -FilePath (Resolve-Path $nodeExe) `
@@ -60,4 +71,3 @@ node .\scripts\verify-push-button-node.mjs
 if ($LASTEXITCODE -ne 0) {
   throw "push-button node did not verify."
 }
-
