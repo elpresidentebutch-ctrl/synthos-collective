@@ -1,0 +1,48 @@
+stages:
+  - test
+  - build
+  - deploy
+
+variables:
+  GOFLAGS: "-mod=mod"
+  DOCKER_TLS_CERTDIR: "/certs"
+
+go-test:
+  stage: test
+  image: golang:1.25
+  script:
+    - go test -count=1 ./...
+
+solidity-test:
+  stage: test
+  image: node:20-bookworm
+  cache:
+    key:
+      files:
+        - contracts/package-lock.json
+    paths:
+      - contracts/.npm/
+  before_script:
+    - cd contracts
+    - npm ci --legacy-peer-deps --cache .npm --prefer-offline
+  script:
+    - npm run compile
+    - npm test
+
+docker-build:
+  stage: build
+  image: docker:27
+  services:
+    - docker:27-dind
+  script:
+    - docker build -t synthos-collective:$CI_COMMIT_SHORT_SHA .
+
+render-deploy:
+  stage: deploy
+  image: curlimages/curl:8.10.1
+  rules:
+    - if: '$RENDER_DEPLOY_HOOK_URL'
+      when: manual
+    - when: never
+  script:
+    - curl --fail --request POST "$RENDER_DEPLOY_HOOK_URL"
