@@ -18,6 +18,24 @@ foundation, not a mainnet-ready autonomous bridge.
 - the owner can pause/unpause, add chains, add assets, add relayers, and set the
   relayer threshold.
 
+The native SYNTHOS L1 now records bridge receipts in chain state:
+
+- `bridge_lock_native` transactions record native SYN locks for outbound bridge
+  movement;
+- `bridge_release_native` transactions record inbound bridge releases;
+- source event IDs are replay-protected in native state;
+- bridge receipts are included in the state root;
+- bridge receipts survive node snapshots;
+- RPC exposes `/bridge/status` and `/bridge/events`.
+
+`cmd/bridgerelayer` provides the first automated relayer service:
+
+- `watch-native` polls native `/bridge/events` and writes bridge locks to a JSONL
+  outbox;
+- `submit-native-release` reads an external lock proof JSON file, signs a native
+  release transaction with the bridge authority key, submits it to native RPC,
+  and asks the node to propose a block.
+
 ## Intended SYN bridge flow
 
 ### EVM to SYNTHOS native
@@ -32,13 +50,29 @@ foundation, not a mainnet-ready autonomous bridge.
 
 ### SYNTHOS native to EVM
 
-1. User burns or locks native SYN on SYNTHOS.
-2. SYNTHOS emits or records a final source event.
-3. Independent relayers observe the finalized source event.
+1. User locks native SYN on SYNTHOS with transaction metadata
+   `type=bridge_lock_native`.
+2. SYNTHOS records a final bridge event in native chain state.
+3. Independent relayers observe `/bridge/events`.
 4. Relayers call `approveRelease(...)` on the EVM bridge vault.
 5. Once quorum is reached, the bridge vault releases pre-funded ERC20 SYN to the
    recipient.
 6. The source event is marked processed forever.
+
+### EVM to SYNTHOS native
+
+1. User locks ERC20 SYN in `SYNTHOSBridgeVault`.
+2. Independent relayers wait for the configured EVM confirmations.
+3. A relayer produces an external lock proof JSON containing:
+   - `source_chain_id`;
+   - `source_event_id`;
+   - `recipient`;
+   - `amount`;
+   - confirmation count;
+   - observed EVM transaction hash.
+4. `cmd/bridgerelayer -mode submit-native-release` signs and submits a native
+   `bridge_release_native` transaction.
+5. Native state rejects the same source event if it is submitted again.
 
 ## Safety model
 
@@ -58,8 +92,7 @@ The minimum production posture should be:
 
 This phase does not yet include:
 
-- native SYNTHOS-side burn/lock module;
-- automated relayer service;
+- automated EVM log scanning from `SYNTHOSBridgeVault`;
 - validator-signed bridge proofs from SYNTHOS consensus;
 - rate limits;
 - emergency withdrawal delay;
@@ -82,6 +115,12 @@ On Windows PowerShell, use `npm.cmd` if script execution blocks `npm.ps1`:
 
 ```powershell
 npm.cmd test -- --grep SYNTHOSBridgeVault
+```
+
+For native bridge tests:
+
+```bash
+go test ./internal/chain ./internal/rpc ./cmd/bridgerelayer
 ```
 
 ## Deployment rehearsal
@@ -108,3 +147,39 @@ npm.cmd run bridge:deploy -- --network baseSepolia
 
 Do not unpause a deployed bridge until the token address, relayers, threshold,
 remote chain ID, and monitoring are verified.
+
+## Native relayer commands
+
+Watch native bridge lock receipts:
+
+```bash
+go run ./cmd/bridgerelayer \
+  -mode watch-native \
+  -rpc http://127.0.0.1:8080 \
+  -outbox .synthos/bridge-outbox.jsonl
+```
+
+Submit an EVM-to-native release from a verified external proof:
+
+```bash
+go run ./cmd/bridgerelayer \
+  -mode submit-native-release \
+  -rpc http://127.0.0.1:8080 \
+  -proof ./bridge-proof.json \
+  -priv "$SYNTHOS_BRIDGE_AUTHORITY_PRIVATE_KEY"
+```
+
+Example `bridge-proof.json`:
+
+```json
+{
+  "source_chain_id": "84532",
+  "source_event_id": "0xevm-lock-event-id",
+  "recipient": "0x2222222222222222222222222222222222222222",
+  "amount": 10000,
+  "asset_id": "syn",
+  "confirmations": 12,
+  "min_confirmations": 12,
+  "observed_tx_hash": "0xevm-transaction-hash"
+}
+```

@@ -64,6 +64,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/dex/quote", s.handleDEXQuote)
 	mux.HandleFunc("/dex/swap", s.handleDEXSwap)
 	mux.HandleFunc("/immune/status", s.handleImmuneStatus)
+	mux.HandleFunc("/bridge/status", s.handleBridgeStatus)
+	mux.HandleFunc("/bridge/events", s.handleBridgeEvents)
 	mux.HandleFunc("/aen/status", s.handleAENStatus)
 	mux.HandleFunc("/capabilities", s.handleCapabilities)
 	mux.HandleFunc("/peers", s.handlePeers)
@@ -110,13 +112,14 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		immune.ActiveImmuneNodes = live.ImmuneCapableNodes
 	}
 	body := map[string]any{
-		"chain_id":   s.Chain.ChainID,
-		"height":     s.Chain.Height(),
-		"tip":        s.Chain.Tip().Hash,
-		"state_root": s.Chain.State.Root(),
-		"immune":     immune,
-		"peers":      s.PeerURLs,
-		"live":       live,
+		"chain_id":    s.Chain.ChainID,
+		"tx_chain_id": s.Chain.TxChainID,
+		"height":      s.Chain.Height(),
+		"tip":         s.Chain.Tip().Hash,
+		"state_root":  s.Chain.State.Root(),
+		"immune":      immune,
+		"peers":       s.PeerURLs,
+		"live":        live,
 	}
 	if s.Node != nil && s.Node.Agent != nil {
 		body["agent"] = map[string]any{
@@ -355,6 +358,52 @@ func (s *Server) handleDEXSwap(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleImmuneStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.Chain.State.ImmuneStatus())
+}
+
+func (s *Server) handleBridgeStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	writeJSON(w, map[string]any{
+		"ok":      true,
+		"chain":   s.Chain.ChainID,
+		"height":  s.Chain.Height(),
+		"bridge":  s.Chain.State.BridgeStatus(),
+		"updated": time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
+func (s *Server) handleBridgeEvents(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	limit := 50
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 && parsed <= 500 {
+			limit = parsed
+		}
+	}
+	eventType := strings.TrimSpace(r.URL.Query().Get("type"))
+	events := s.Chain.State.BridgeEventsSnapshot()
+	filtered := make([]chain.BridgeRecord, 0, len(events))
+	for _, event := range events {
+		if eventType != "" && event.Type != eventType {
+			continue
+		}
+		filtered = append(filtered, event)
+		if len(filtered) >= limit {
+			break
+		}
+	}
+	writeJSON(w, map[string]any{
+		"ok":     true,
+		"chain":  s.Chain.ChainID,
+		"height": s.Chain.Height(),
+		"events": filtered,
+		"count":  len(filtered),
+	})
 }
 
 func (s *Server) handleSubmitTx(w http.ResponseWriter, r *http.Request) {

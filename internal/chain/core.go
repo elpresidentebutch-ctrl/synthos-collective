@@ -204,12 +204,33 @@ type SovereignProofRecord struct {
 	Timestamp     int64   `json:"timestamp"`
 }
 
+type BridgeRecord struct {
+	ID                   string  `json:"id"`
+	Type                 string  `json:"type"`
+	Address              Address `json:"address"`
+	Amount               uint64  `json:"amount"`
+	AssetID              string  `json:"asset_id,omitempty"`
+	SourceChainID        string  `json:"source_chain_id,omitempty"`
+	DestinationChainID   string  `json:"destination_chain_id,omitempty"`
+	SourceEventID        string  `json:"source_event_id,omitempty"`
+	DestinationRecipient string  `json:"destination_recipient,omitempty"`
+	TxID                 string  `json:"tx_id"`
+	Timestamp            int64   `json:"timestamp"`
+}
+
 type ImmuneStats struct {
 	ActiveImmuneNodes    int    `json:"active_immune_nodes"`
 	SovereignProofs      uint64 `json:"sovereign_proofs"`
 	LastProofHash        string `json:"last_proof_hash,omitempty"`
 	CryptographicSilence bool   `json:"cryptographic_silence"`
 	InboundPortsRequired int    `json:"inbound_ports_required"`
+}
+
+type BridgeStats struct {
+	NativeLocks       int    `json:"native_locks"`
+	NativeReleases    int    `json:"native_releases"`
+	ProcessedMessages int    `json:"processed_messages"`
+	LastBridgeEventID string `json:"last_bridge_event_id,omitempty"`
 }
 
 type AccountLeaf struct {
@@ -232,20 +253,25 @@ func (a *Account) LeafHash(addr Address) []byte {
 }
 
 type State struct {
-	Accounts             map[Address]Account
-	ImmuneNodes          map[Address]ImmuneNodeRecord
-	SovereignProofs      map[string]SovereignProofRecord
-	LastSovereignProofID string
-	mu                   sync.RWMutex
-	TotalSupply          uint64
+	Accounts              map[Address]Account
+	ImmuneNodes           map[Address]ImmuneNodeRecord
+	SovereignProofs       map[string]SovereignProofRecord
+	BridgeEvents          map[string]BridgeRecord
+	ProcessedBridgeEvents map[string]bool
+	LastSovereignProofID  string
+	LastBridgeEventID     string
+	mu                    sync.RWMutex
+	TotalSupply           uint64
 }
 
 func NewState() *State {
 	return &State{
-		Accounts:        make(map[Address]Account),
-		ImmuneNodes:     make(map[Address]ImmuneNodeRecord),
-		SovereignProofs: make(map[string]SovereignProofRecord),
-		TotalSupply:     MAX_SUPPLY,
+		Accounts:              make(map[Address]Account),
+		ImmuneNodes:           make(map[Address]ImmuneNodeRecord),
+		SovereignProofs:       make(map[string]SovereignProofRecord),
+		BridgeEvents:          make(map[string]BridgeRecord),
+		ProcessedBridgeEvents: make(map[string]bool),
+		TotalSupply:           MAX_SUPPLY,
 	}
 }
 
@@ -381,6 +407,9 @@ func (s *State) ApplyTx(tx Tx) error {
 	if err := s.applyImmuneMetadata(tx); err != nil {
 		return err
 	}
+	if err := s.applyBridgeMetadata(tx); err != nil {
+		return err
+	}
 
 	if !isInnerCircle {
 		s.Set(tx.To, nextRecipient)
@@ -389,6 +418,82 @@ func (s *State) ApplyTx(tx Tx) error {
 		s.Set(founderAddr, nextFounder)
 	}
 	s.Set(tx.From, from)
+	return nil
+}
+
+func (s *State) applyBridgeMetadata(tx Tx) error {
+	txType := metadataValue(tx.Metadata, "type")
+	if txType != "bridge_lock_native" && txType != "bridge_release_native" {
+		return nil
+	}
+	assetID := tx.AssetID
+	if assetID == "" {
+		assetID = "syn"
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.BridgeEvents == nil {
+		s.BridgeEvents = make(map[string]BridgeRecord)
+	}
+	if s.ProcessedBridgeEvents == nil {
+		s.ProcessedBridgeEvents = make(map[string]bool)
+	}
+	switch txType {
+	case "bridge_lock_native":
+		destinationChainID := metadataValue(tx.Metadata, "destination_chain_id")
+		destinationRecipient := metadataValue(tx.Metadata, "destination_recipient")
+		if destinationChainID == "" {
+			return errors.New("missing destination_chain_id for bridge lock")
+		}
+		if destinationRecipient == "" {
+			return errors.New("missing destination_recipient for bridge lock")
+		}
+		eventID := metadataValue(tx.Metadata, "bridge_event_id")
+		if eventID == "" {
+			eventID = tx.ID
+		}
+		if _, exists := s.BridgeEvents[eventID]; exists {
+			return errors.New("duplicate bridge event")
+		}
+		s.BridgeEvents[eventID] = BridgeRecord{
+			ID:                   eventID,
+			Type:                 txType,
+			Address:              tx.From,
+			Amount:               tx.Amount,
+			AssetID:              assetID,
+			DestinationChainID:   destinationChainID,
+			DestinationRecipient: destinationRecipient,
+			TxID:                 tx.ID,
+			Timestamp:            tx.Timestamp,
+		}
+		s.LastBridgeEventID = eventID
+	case "bridge_release_native":
+		sourceChainID := metadataValue(tx.Metadata, "source_chain_id")
+		sourceEventID := metadataValue(tx.Metadata, "source_event_id")
+		if sourceChainID == "" {
+			return errors.New("missing source_chain_id for bridge release")
+		}
+		if sourceEventID == "" {
+			return errors.New("missing source_event_id for bridge release")
+		}
+		messageID := bridgeMessageID(sourceChainID, sourceEventID, string(tx.To), assetID, tx.Amount)
+		if s.ProcessedBridgeEvents[messageID] {
+			return errors.New("bridge source event already processed")
+		}
+		s.ProcessedBridgeEvents[messageID] = true
+		s.BridgeEvents[messageID] = BridgeRecord{
+			ID:            messageID,
+			Type:          txType,
+			Address:       tx.To,
+			Amount:        tx.Amount,
+			AssetID:       assetID,
+			SourceChainID: sourceChainID,
+			SourceEventID: sourceEventID,
+			TxID:          tx.ID,
+			Timestamp:     tx.Timestamp,
+		}
+		s.LastBridgeEventID = messageID
+	}
 	return nil
 }
 
@@ -442,6 +547,49 @@ func (s *State) applyImmuneMetadata(tx Tx) error {
 		s.LastSovereignProofID = tx.ID
 	}
 	return nil
+}
+
+func bridgeMessageID(sourceChainID, sourceEventID, recipient, assetID string, amount uint64) string {
+	payload := fmt.Sprintf("SYNTHOS_BRIDGE_NATIVE_RELEASE_V1|%s|%s|%s|%s|%d", sourceChainID, sourceEventID, strings.ToLower(recipient), assetID, amount)
+	sum := sha256.Sum256([]byte(payload))
+	return "0x" + hex.EncodeToString(sum[:])
+}
+
+func (s *State) BridgeStatus() BridgeStats {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var locks int
+	var releases int
+	for _, event := range s.BridgeEvents {
+		switch event.Type {
+		case "bridge_lock_native":
+			locks++
+		case "bridge_release_native":
+			releases++
+		}
+	}
+	return BridgeStats{
+		NativeLocks:       locks,
+		NativeReleases:    releases,
+		ProcessedMessages: len(s.ProcessedBridgeEvents),
+		LastBridgeEventID: s.LastBridgeEventID,
+	}
+}
+
+func (s *State) BridgeEventsSnapshot() []BridgeRecord {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	events := make([]BridgeRecord, 0, len(s.BridgeEvents))
+	for _, event := range s.BridgeEvents {
+		events = append(events, event)
+	}
+	sort.Slice(events, func(i, j int) bool {
+		if events[i].Timestamp == events[j].Timestamp {
+			return events[i].ID < events[j].ID
+		}
+		return events[i].Timestamp > events[j].Timestamp
+	})
+	return events
 }
 
 func (s *State) EnsureImmuneNode(address Address, hardwareHash string, activatedAt int64) bool {
@@ -526,13 +674,19 @@ func (s *State) Root() string {
 		leaves = append(leaves, acc.LeafHash(Address(a)))
 	}
 	immunePayload := struct {
-		ImmuneNodes          map[Address]ImmuneNodeRecord    `json:"immune_nodes"`
-		SovereignProofs      map[string]SovereignProofRecord `json:"sovereign_proofs"`
-		LastSovereignProofID string                          `json:"last_sovereign_proof_id"`
+		ImmuneNodes           map[Address]ImmuneNodeRecord    `json:"immune_nodes"`
+		SovereignProofs       map[string]SovereignProofRecord `json:"sovereign_proofs"`
+		LastSovereignProofID  string                          `json:"last_sovereign_proof_id"`
+		BridgeEvents          map[string]BridgeRecord         `json:"bridge_events"`
+		ProcessedBridgeEvents map[string]bool                 `json:"processed_bridge_events"`
+		LastBridgeEventID     string                          `json:"last_bridge_event_id"`
 	}{
-		ImmuneNodes:          s.ImmuneNodes,
-		SovereignProofs:      s.SovereignProofs,
-		LastSovereignProofID: s.LastSovereignProofID,
+		ImmuneNodes:           s.ImmuneNodes,
+		SovereignProofs:       s.SovereignProofs,
+		LastSovereignProofID:  s.LastSovereignProofID,
+		BridgeEvents:          s.BridgeEvents,
+		ProcessedBridgeEvents: s.ProcessedBridgeEvents,
+		LastBridgeEventID:     s.LastBridgeEventID,
 	}
 	immuneData, _ := json.Marshal(immunePayload)
 	immuneHash := sha256.Sum256(immuneData)
@@ -580,7 +734,14 @@ func (s *State) Clone() *State {
 	for k, v := range s.SovereignProofs {
 		out.SovereignProofs[k] = v
 	}
+	for k, v := range s.BridgeEvents {
+		out.BridgeEvents[k] = v
+	}
+	for k, v := range s.ProcessedBridgeEvents {
+		out.ProcessedBridgeEvents[k] = v
+	}
 	out.LastSovereignProofID = s.LastSovereignProofID
+	out.LastBridgeEventID = s.LastBridgeEventID
 	out.TotalSupply = s.TotalSupply
 	return out
 }
