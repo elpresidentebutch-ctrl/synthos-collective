@@ -1,5 +1,6 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
+const { time } = require("@nomicfoundation/hardhat-network-helpers");
 
 describe("SYNTHOSBridgeVault", function () {
   const DESTINATION_CHAIN_ID = 20260702n;
@@ -248,6 +249,118 @@ describe("SYNTHOSBridgeVault", function () {
     await expect(bridge.setRelayer(relayerB.address, false)).to.be.revertedWith(
       "threshold exceeds relayers"
     );
+  });
+
+  it("enforces per-lock and per-release limits", async function () {
+    const { bridge, token, user, relayerA, relayerB, recipient } =
+      await deployBridgeFixture();
+    await bridge.setBridgeLimits(
+      ethers.parseEther("10"),
+      ethers.parseEther("20"),
+      0,
+      0,
+      0
+    );
+    await bridge.unpause();
+
+    await token.connect(user).approve(await bridge.getAddress(), ethers.parseEther("25"));
+    await expect(
+      bridge
+        .connect(user)
+        .lock(
+          await token.getAddress(),
+          ethers.parseEther("11"),
+          DESTINATION_CHAIN_ID,
+          ethers.toUtf8Bytes("syn1receiver")
+        )
+    ).to.be.revertedWith("lock amount exceeds limit");
+
+    const sourceEventId = ethers.keccak256(ethers.toUtf8Bytes("limited-release"));
+    await expect(
+      bridge
+        .connect(relayerA)
+        .approveRelease(
+          sourceEventId,
+          SOURCE_CHAIN_ID,
+          await token.getAddress(),
+          recipient.address,
+          ethers.parseEther("21")
+        )
+    ).to.be.revertedWith("release amount exceeds limit");
+  });
+
+  it("queues releases during the emergency delay window", async function () {
+    const { bridge, token, relayerA, relayerB, recipient } =
+      await deployBridgeFixture();
+    await bridge.setBridgeLimits(0, 0, 0, 0, 3600);
+    await bridge.unpause();
+
+    const sourceEventId = ethers.keccak256(ethers.toUtf8Bytes("delayed-release"));
+    const amount = ethers.parseEther("50");
+    const messageId = await bridge.releaseMessageId(
+      sourceEventId,
+      SOURCE_CHAIN_ID,
+      await token.getAddress(),
+      recipient.address,
+      amount
+    );
+
+    await bridge
+      .connect(relayerA)
+      .approveRelease(
+        sourceEventId,
+        SOURCE_CHAIN_ID,
+        await token.getAddress(),
+        recipient.address,
+        amount
+      );
+    await expect(
+      bridge
+        .connect(relayerB)
+        .approveRelease(
+          sourceEventId,
+          SOURCE_CHAIN_ID,
+          await token.getAddress(),
+          recipient.address,
+          amount
+        )
+    ).to.emit(bridge, "BridgeReleaseQueued");
+
+    await expect(bridge.executeQueuedRelease(messageId)).to.be.revertedWith(
+      "release delay active"
+    );
+    await time.increase(3600);
+    await expect(bridge.executeQueuedRelease(messageId)).to.emit(
+      bridge,
+      "BridgeReleased"
+    );
+    expect(await token.balanceOf(recipient.address)).to.equal(amount);
+  });
+
+  it("enforces epoch release limits", async function () {
+    const { bridge, token, relayerA, relayerB, recipient } =
+      await deployBridgeFixture();
+    await bridge.setBridgeLimits(0, 0, ethers.parseEther("75"), 86400, 0);
+    await bridge.unpause();
+
+    const first = ethers.keccak256(ethers.toUtf8Bytes("epoch-release-1"));
+    const second = ethers.keccak256(ethers.toUtf8Bytes("epoch-release-2"));
+
+    await bridge
+      .connect(relayerA)
+      .approveRelease(first, SOURCE_CHAIN_ID, await token.getAddress(), recipient.address, ethers.parseEther("50"));
+    await bridge
+      .connect(relayerB)
+      .approveRelease(first, SOURCE_CHAIN_ID, await token.getAddress(), recipient.address, ethers.parseEther("50"));
+
+    await bridge
+      .connect(relayerA)
+      .approveRelease(second, SOURCE_CHAIN_ID, await token.getAddress(), recipient.address, ethers.parseEther("50"));
+    await expect(
+      bridge
+        .connect(relayerB)
+        .approveRelease(second, SOURCE_CHAIN_ID, await token.getAddress(), recipient.address, ethers.parseEther("50"))
+    ).to.be.revertedWith("epoch release limit exceeded");
   });
 });
 

@@ -34,21 +34,47 @@ contract SYNTHOSBridgeVault is Ownable, Pausable, ReentrancyGuard {
         uint64 minConfirmations;
     }
 
+    struct PendingRelease {
+        bool queued;
+        bytes32 sourceEventId;
+        uint256 sourceChainId;
+        address asset;
+        address recipient;
+        uint256 amount;
+        uint256 executableAt;
+    }
+
     mapping(uint256 => ChainConfig) public chains;
     mapping(address => bool) public supportedAssets;
     mapping(address => bool) public relayers;
     mapping(bytes32 => bool) public processedMessages;
+    mapping(bytes32 => bool) public queuedMessages;
+    mapping(bytes32 => PendingRelease) public pendingReleases;
     mapping(bytes32 => uint256) public approvalCount;
     mapping(bytes32 => mapping(address => bool)) public approvedBy;
 
     uint256 public outboundNonce;
     uint256 public relayerCount;
     uint256 public threshold;
+    uint256 public maxLockAmount;
+    uint256 public maxReleaseAmount;
+    uint256 public epochReleaseLimit;
+    uint256 public epochDuration;
+    uint256 public currentEpochStart;
+    uint256 public releasedThisEpoch;
+    uint256 public releaseDelay;
 
     event ChainUpdated(uint256 indexed chainId, bool enabled, uint64 minConfirmations);
     event AssetSupportUpdated(address indexed asset, bool supported);
     event RelayerUpdated(address indexed relayer, bool enabled);
     event ThresholdUpdated(uint256 previousThreshold, uint256 newThreshold);
+    event BridgeLimitsUpdated(
+        uint256 maxLockAmount,
+        uint256 maxReleaseAmount,
+        uint256 epochReleaseLimit,
+        uint256 epochDuration,
+        uint256 releaseDelay
+    );
     event BridgePaused(address indexed account);
     event BridgeUnpaused(address indexed account);
 
@@ -80,6 +106,12 @@ contract SYNTHOSBridgeVault is Ownable, Pausable, ReentrancyGuard {
         uint256 amount
     );
 
+    event BridgeReleaseQueued(
+        bytes32 indexed messageId,
+        bytes32 indexed sourceEventId,
+        uint256 executableAt
+    );
+
     modifier onlyRelayer() {
         require(relayers[msg.sender], "not relayer");
         _;
@@ -103,6 +135,7 @@ contract SYNTHOSBridgeVault is Ownable, Pausable, ReentrancyGuard {
         require(supportedAssets[asset], "unsupported asset");
         require(chains[destinationChainId].enabled, "destination chain disabled");
         require(amount > 0, "amount required");
+        require(maxLockAmount == 0 || amount <= maxLockAmount, "lock amount exceeds limit");
         require(destinationRecipient.length > 0, "recipient required");
 
         outboundNonce++;
@@ -145,9 +178,11 @@ contract SYNTHOSBridgeVault is Ownable, Pausable, ReentrancyGuard {
         require(supportedAssets[asset], "unsupported asset");
         require(recipient != address(0), "invalid recipient");
         require(amount > 0, "amount required");
+        require(maxReleaseAmount == 0 || amount <= maxReleaseAmount, "release amount exceeds limit");
 
         messageId = releaseMessageId(sourceEventId, sourceChainId, asset, recipient, amount);
         require(!processedMessages[messageId], "already processed");
+        require(!queuedMessages[messageId], "already queued");
         require(!approvedBy[messageId][msg.sender], "already approved");
 
         approvedBy[messageId][msg.sender] = true;
@@ -162,10 +197,38 @@ contract SYNTHOSBridgeVault is Ownable, Pausable, ReentrancyGuard {
         );
 
         if (approvalCount[messageId] >= threshold) {
-            processedMessages[messageId] = true;
-            IERC20(asset).safeTransfer(recipient, amount);
-            emit BridgeReleased(messageId, sourceEventId, sourceChainId, asset, recipient, amount);
+            if (releaseDelay == 0) {
+                _executeRelease(messageId, sourceEventId, sourceChainId, asset, recipient, amount);
+            } else {
+                queuedMessages[messageId] = true;
+                uint256 executableAt = block.timestamp + releaseDelay;
+                pendingReleases[messageId] = PendingRelease({
+                    queued: true,
+                    sourceEventId: sourceEventId,
+                    sourceChainId: sourceChainId,
+                    asset: asset,
+                    recipient: recipient,
+                    amount: amount,
+                    executableAt: executableAt
+                });
+                emit BridgeReleaseQueued(messageId, sourceEventId, executableAt);
+            }
         }
+    }
+
+    function executeQueuedRelease(bytes32 messageId) external whenNotPaused nonReentrant {
+        PendingRelease memory pending = pendingReleases[messageId];
+        require(pending.queued, "release not queued");
+        require(block.timestamp >= pending.executableAt, "release delay active");
+        delete pendingReleases[messageId];
+        _executeRelease(
+            messageId,
+            pending.sourceEventId,
+            pending.sourceChainId,
+            pending.asset,
+            pending.recipient,
+            pending.amount
+        );
     }
 
     function releaseMessageId(
@@ -217,6 +280,31 @@ contract SYNTHOSBridgeVault is Ownable, Pausable, ReentrancyGuard {
         _setThreshold(newThreshold);
     }
 
+    function setBridgeLimits(
+        uint256 newMaxLockAmount,
+        uint256 newMaxReleaseAmount,
+        uint256 newEpochReleaseLimit,
+        uint256 newEpochDuration,
+        uint256 newReleaseDelay
+    ) external onlyOwner {
+        require(newEpochReleaseLimit == 0 || newEpochDuration > 0, "epoch duration required");
+        maxLockAmount = newMaxLockAmount;
+        maxReleaseAmount = newMaxReleaseAmount;
+        epochReleaseLimit = newEpochReleaseLimit;
+        epochDuration = newEpochDuration;
+        releaseDelay = newReleaseDelay;
+        if (currentEpochStart == 0 && newEpochDuration > 0) {
+            currentEpochStart = block.timestamp;
+        }
+        emit BridgeLimitsUpdated(
+            newMaxLockAmount,
+            newMaxReleaseAmount,
+            newEpochReleaseLimit,
+            newEpochDuration,
+            newReleaseDelay
+        );
+    }
+
     function pause() external onlyOwner {
         _pause();
         emit BridgePaused(msg.sender);
@@ -247,5 +335,33 @@ contract SYNTHOSBridgeVault is Ownable, Pausable, ReentrancyGuard {
         uint256 previousThreshold = threshold;
         threshold = newThreshold;
         emit ThresholdUpdated(previousThreshold, newThreshold);
+    }
+
+    function _executeRelease(
+        bytes32 messageId,
+        bytes32 sourceEventId,
+        uint256 sourceChainId,
+        address asset,
+        address recipient,
+        uint256 amount
+    ) internal {
+        require(!processedMessages[messageId], "already processed");
+        _consumeEpochReleaseCapacity(amount);
+        processedMessages[messageId] = true;
+        queuedMessages[messageId] = false;
+        IERC20(asset).safeTransfer(recipient, amount);
+        emit BridgeReleased(messageId, sourceEventId, sourceChainId, asset, recipient, amount);
+    }
+
+    function _consumeEpochReleaseCapacity(uint256 amount) internal {
+        if (epochReleaseLimit == 0) {
+            return;
+        }
+        if (currentEpochStart == 0 || block.timestamp >= currentEpochStart + epochDuration) {
+            currentEpochStart = block.timestamp;
+            releasedThisEpoch = 0;
+        }
+        require(releasedThisEpoch + amount <= epochReleaseLimit, "epoch release limit exceeded");
+        releasedThisEpoch += amount;
     }
 }

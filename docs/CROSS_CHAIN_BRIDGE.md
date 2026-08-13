@@ -15,6 +15,9 @@ foundation, not a mainnet-ready autonomous bridge.
 - duplicate relayer approvals are rejected;
 - unsupported assets and disabled chains are rejected;
 - the bridge starts paused by default;
+- owner-configurable per-lock and per-release caps;
+- owner-configurable epoch release cap;
+- optional emergency delay between quorum approval and release execution;
 - the owner can pause/unpause, add chains, add assets, add relayers, and set the
   relayer threshold.
 
@@ -99,8 +102,6 @@ The minimum production posture should be:
 
 This phase does not yet include:
 
-- rate limits;
-- emergency withdrawal delay;
 - Merkle/light-client verification;
 - website bridge UI;
 - production deployment scripts.
@@ -152,6 +153,26 @@ npm.cmd run bridge:deploy -- --network baseSepolia
 
 Do not unpause a deployed bridge until the token address, relayers, threshold,
 remote chain ID, and monitoring are verified.
+
+Recommended before any public test bridge:
+
+```solidity
+setBridgeLimits(
+  maxLockAmount,
+  maxReleaseAmount,
+  epochReleaseLimit,
+  epochDuration,
+  releaseDelay
+)
+```
+
+Use non-zero limits for public testing. Example policy:
+
+- maximum lock: small enough that a UI mistake is survivable;
+- maximum release: equal to or lower than maximum lock;
+- epoch release limit: the total bridge value you are willing to risk per day;
+- epoch duration: `86400` seconds;
+- release delay: long enough for monitoring to catch bad proofs before payout.
 
 ## Native relayer commands
 
