@@ -54,6 +54,7 @@ wrangler.toml.bak
 .synthos/syn-coins-wallets/
 .synthos/open-network/
 .synthos/open-network-11-15/
+.synthos/push-button-node/
 .synthos/mainnet-secrets/
 contracts/.env.mainnet.local
 contracts/.env.mainnet.generated

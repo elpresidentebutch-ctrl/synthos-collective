@@ -113,6 +113,52 @@ Stop the network:
 powershell.exe -ExecutionPolicy Bypass -File .\scripts\stop-validator-11-15.ps1
 ```
 
+## Start A Push-Button Node
+
+After validators 11 through 15 are running, start a local non-validator
+SYNTHOS node with one command:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\scripts\start-push-button-node.ps1
+```
+
+If the validator network is not already running, use:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\scripts\start-push-button-node.ps1 -StartValidators
+```
+
+The push-button node creates local private material under:
+
+```text
+.synthos/push-button-node/
+```
+
+That folder is ignored by Git. It contains the node's Ed25519 private key,
+local config, persistent data, and process logs.
+
+The node:
+
+- generates or reuses its own Ed25519 identity;
+- keeps the private key local;
+- connects to validators 11 through 15 over provider-neutral HTTP peer sync;
+- exposes local RPC on `http://127.0.0.1:8120`;
+- exposes `/health`, `/status`, `/capabilities`, and `/aen/status`;
+- presents the seven core SYNTHOS capabilities; and
+- verifies that it reaches the same height, tip, and state root as the validator network.
+
+Verify it again:
+
+```powershell
+node .\scripts\verify-push-button-node.mjs
+```
+
+Stop only the push-button node:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\scripts\stop-push-button-node.ps1
+```
+
 ## Open Public RPC
 
 Run the generated Docker Compose stack on a server. Put an HTTPS reverse proxy
