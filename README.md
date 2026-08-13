@@ -176,6 +176,12 @@ Useful public URLs:
 
 If GitLab becomes the main repo host, update Render's connected repository to the GitLab project or continue deploying from the existing Render service until the host migration is complete.
 
+## Contributions
+
+SYNTHOS Collective is not accepting outside code contributions at this time.
+
+The repository is maintained as a founder-controlled project. Issues, merge requests, unsolicited patches, and third-party feature submissions may be closed without review until an official contribution process is announced.
+
 ## License
 
 SYNTHOS Collective source code is licensed under the Apache License, Version 2.0.
