@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SYNTHOS Push Button Node</title>
+  <meta name="description" content="Start, restore, and monitor a SYNTHOS Proof-of-Operation node candidate." />
+  <style>
+    :root{color-scheme:dark;--bg:#060912;--panel:#0d1422;--panel2:#111b2d;--text:#f4f8ff;--muted:#9ba9bc;--line:rgba(255,255,255,.14);--cyan:#72ddff;--green:#35d39b;--amber:#f2c45d;--red:#ff6b8a;--violet:#9c7cff;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    *{box-sizing:border-box} body{margin:0;background:radial-gradient(circle at 20% 0,rgba(114,221,255,.16),transparent 360px),radial-gradient(circle at 80% 20%,rgba(156,124,255,.14),transparent 420px),var(--bg);color:var(--text)}
+    a{color:inherit} header{position:sticky;top:0;z-index:10;border-bottom:1px solid var(--line);background:rgba(6,9,18,.86);backdrop-filter:blur(16px)}
+    .bar{width:min(1180px,calc(100% - 32px));margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 0}.brand{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:900;letter-spacing:.02em}.mark{width:24px;height:24px;border:2px solid var(--green);border-radius:50%;box-shadow:0 0 18px rgba(53,211,155,.35),inset 0 0 0 6px rgba(53,211,155,.12)} nav{display:flex;gap:8px;flex-wrap:wrap}nav a{font-size:.86rem;text-decoration:none;color:var(--muted);padding:8px 10px;border-radius:10px}nav a:hover{background:rgba(255,255,255,.07);color:var(--text)}
+    main{width:min(1180px,calc(100% - 32px));margin:0 auto;padding:34px 0 64px}.hero{display:grid;grid-template-columns:1.25fr .75fr;gap:22px;align-items:stretch}.panel{border:1px solid var(--line);background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.025));border-radius:24px;box-shadow:0 24px 80px rgba(0,0,0,.28)}.pad{padding:24px}.eyebrow{font-size:.72rem;color:var(--cyan);text-transform:uppercase;letter-spacing:.22em;font-weight:800}h1{font-size:clamp(2.2rem,6vw,5rem);line-height:.95;margin:12px 0 18px;letter-spacing:-.055em}h2{margin:0 0 10px;font-size:1.35rem}p{color:var(--muted);line-height:1.65}.hero p{max-width:760px}.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}.btn{appearance:none;border:1px solid var(--line);background:var(--panel2);color:var(--text);border-radius:14px;padding:12px 16px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;gap:8px}.btn:hover{border-color:rgba(114,221,255,.55)}.btn.primary{border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#031017}.btn.danger{border-color:rgba(255,107,138,.4);color:var(--red)}.btn:disabled{opacity:.5;cursor:not-allowed}code,.mono{font-family:"SFMono-Regular",Consolas,monospace}.grid{display:grid;gap:16px}.grid2{grid-template-columns:repeat(2,minmax(0,1fr))}.grid3{grid-template-columns:repeat(3,minmax(0,1fr))}.stat{border:1px solid var(--line);border-radius:18px;padding:16px;background:rgba(255,255,255,.035)}.stat b{display:block;font-size:1.45rem}.stat span{display:block;color:var(--muted);font-size:.82rem;margin-top:6px}.notice{border:1px solid rgba(242,196,93,.35);background:rgba(242,196,93,.08);color:#ffe0a0;border-radius:16px;padding:14px 16px}.ok{color:var(--green)}.pending{color:var(--amber)}.bad{color:var(--red)}.muted{color:var(--muted)}.steps{list-style:none;padding:0;margin:0;display:grid;gap:10px}.steps li{display:flex;justify-content:space-between;gap:12px;align-items:center;border:1px solid var(--line);background:rgba(255,255,255,.035);border-radius:14px;padding:12px 14px}.pill{font-size:.75rem;border:1px solid var(--line);border-radius:999px;padding:5px 9px;color:var(--muted)}.pill.ok{border-color:rgba(53,211,155,.38);background:rgba(53,211,155,.1);color:var(--green)}.pill.pending{border-color:rgba(242,196,93,.35);background:rgba(242,196,93,.08);color:var(--amber)}label{font-size:.86rem;color:var(--muted);display:block;margin:0 0 7px}input,select{width:100%;border:1px solid var(--line);background:#07101d;color:var(--text);border-radius:14px;padding:12px 13px}input[type=file]{padding:10px}.backup{word-break:break-all;border:1px dashed rgba(114,221,255,.35);background:rgba(114,221,255,.06);border-radius:16px;padding:14px}.footer{margin-top:24px;color:var(--muted);font-size:.88rem}.hidden{display:none!important}
+    @media (max-width:860px){.hero,.grid2,.grid3{grid-template-columns:1fr}.bar{align-items:flex-start;flex-direction:column}nav{width:100%}.pad{padding:18px}}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="bar">
+      <a class="brand" href="/nodes"><span class="mark"></span><span>SYNTHOS Push Button Node</span></a>
+      <nav><a href="/">Home</a><a href="/api/network/status">Network API</a><a href="/health">Backend Health</a></nav>
+    </div>
+  </header>
+  <main>
+    <section class="hero">
+      <div class="panel pad">
+        <div class="eyebrow">Proof-of-Operation onboarding</div>
+        <h1>Push the button. Become a node candidate.</h1>
+        <p>This page stores your node session in this browser and reloads live stats from the SYNTHOS backend. Refreshing the page should not erase your dashboard.</p>
+        <div class="row">
+          <button id="startBtn" class="btn primary">Start SYNTHOS Node</button>
+          <button id="downloadBtn" class="btn" disabled>Download backup</button>
+          <button id="clearBtn" class="btn danger">Clear local session</button>
+        </div>
+      </div>
+      <aside class="panel pad">
+        <h2>Validator reward rule</h2>
+        <p>Approved validator operators may earn <b class="ok">5,000 SYN/month</b> base, with up to <b class="ok">7,500 SYN/month</b> maximum after one full month of verified uptime.</p>
+        <p class="muted">No payment is made for clicking the button. Rewards stay pending until verified operation completes.</p>
+      </aside>
+    </section>
+
+    <section class="grid grid2" style="margin-top:16px">
+      <div class="panel pad">
+        <h2>Restore node backup</h2>
+        <p>Import a backup JSON to recover the node ID and reload the dashboard from the backend.</p>
+        <input id="restoreInput" type="file" accept="application/json,.json" />
+        <p id="restoreMsg" class="muted"></p>
+      </div>
+      <div class="panel pad">
+        <h2>Current node</h2>
+        <div id="nodeBox" class="backup muted">No node session yet.</div>
+        <div class="row" style="margin-top:12px">
+          <button id="copyBtn" class="btn" disabled>Copy node ID</button>
+          <button id="refreshBtn" class="btn" disabled>Refresh status</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid grid3" style="margin-top:16px">
+      <div class="stat"><b id="proofStatus">—</b><span>Proof status</span></div>
+      <div class="stat"><b id="heartbeats">0</b><span>Valid heartbeats</span></div>
+      <div class="stat"><b id="capCount">0/7</b><span>Capabilities verified</span></div>
+      <div class="stat"><b id="height">0</b><span>Network height</span></div>
+      <div class="stat"><b id="reward">Pending</b><span>Reward eligibility</span></div>
+      <div class="stat"><b id="backend">Checking</b><span>Backend</span></div>
+    </section>
+
+    <section class="panel pad" style="margin-top:16px">
+      <h2>Proof-of-Operation dashboard</h2>
+      <ul class="steps" id="steps"></ul>
+    </section>
+
+    <section class="panel pad" style="margin-top:16px">
+      <h2>Seven SYNTHOS capabilities</h2>
+      <ul class="steps" id="caps"></ul>
+    </section>
+
+    <p class="footer">Backend: <span id="backendUrl" class="mono"></span></p>
+  </main>
+
+  <script>
+    const API = window.location.origin;
+    const SESSION_KEY = "synthos_node_session_v1";
+    const CAPS = [
+      ["ed25519", "Real Ed25519 signatures"],
+      ["canonical_serialization", "Canonical block and vote serialization"],
+      ["validator_registry", "Validator registry"],
+      ["proposal_rotation", "Proposal rotation"],
+      ["quorum", "Five-of-six quorum calculation"],
+      ["replay_protection", "Replay and equivocation protection"],
+      ["persistent_storage", "Persistent block, vote, and finalized-state storage"],
+    ];
+    const STEP_LABELS = [
+      ["identity", "Identity created"],
+      ["backup", "Backup saved"],
+      ["registered", "Candidate registered"],
+      ["heartbeat", "Heartbeat proofs received"],
+      ["health", "Health check passed"],
+      ["sync", "Synced near network height"],
+      ["capabilities", "Seven capabilities verified"],
+      ["reward", "Reward eligibility"],
+      ["promotion", "Validator promotion"],
+    ];
+    let session = null;
+    let pollTimer = null;
+
+    document.getElementById("backendUrl").textContent = API;
+    document.getElementById("startBtn").onclick = startNode;
+    document.getElementById("downloadBtn").onclick = downloadBackup;
+    document.getElementById("copyBtn").onclick = copyNodeId;
+    document.getElementById("refreshBtn").onclick = () => refreshStatus(true);
+    document.getElementById("clearBtn").onclick = clearSession;
+    document.getElementById("restoreInput").onchange = restoreBackup;
+
+    function randomHex(bytes) {
+      const out = new Uint8Array(bytes);
+      crypto.getRandomValues(out);
+      return [...out].map((b) => b.toString(16).padStart(2, "0")).join("");
+    }
+    function save() {
+      if (session) localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    }
+    function load() {
+      try { session = JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); } catch { session = null; }
+    }
+    function backupFor(s) {
+      return {
+        format: "synthos-node-backup/v1",
+        backup_version: 1,
+        chain_id: "synthos-collective",
+        network: "mainnet",
+        node_id: s.node_id,
+        public_key: s.public_key,
+        role: s.role,
+        created_at: s.created_at,
+        warning: "Store offline. Anyone with a complete node backup may control that node identity.",
+      };
+    }
+    async function startNode() {
+      const nodeId = "syn-" + randomHex(6);
+      session = {
+        node_id: nodeId,
+        public_key: "",
+        role: "validator_candidate",
+        created_at: new Date().toISOString(),
+        backup_saved: false,
+        registered: false,
+      };
+      save();
+      render();
+      await registerCandidate();
+    }
+    async function registerCandidate() {
+      if (!session) return;
+      const res = await fetch(API + "/api/nodes/register", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          publicId: session.node_id,
+          public_key: session.public_key || undefined,
+          mode: "public-validator",
+          endpoint: "https://synthos-collective.onrender.com/nodes",
+          chain: "SYNTHOS Collective",
+          capabilities: CAPS.map(([id]) => id),
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      session.registered = true;
+      session.public_key = data.node?.public_key || data.node?.publicKey || session.public_key || "";
+      session.last_status = data.node;
+      save();
+      render(data.node);
+      startPolling();
+    }
+    async function refreshStatus(toast) {
+      if (!session?.node_id) return;
+      const res = await fetch(API + "/api/nodes/" + encodeURIComponent(session.node_id) + "/status");
+      if (!res.ok) return;
+      const data = await res.json();
+      session.last_status = data.node;
+      save();
+      render(data.node);
+      if (toast) flash("Status refreshed.");
+    }
+    function startPolling() {
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = setInterval(refreshStatus, 15000);
+    }
+    function downloadBackup() {
+      if (!session) return;
+      const blob = new Blob([JSON.stringify(backupFor(session), null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `synthos-node-backup-${session.node_id}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      session.backup_saved = true;
+      save();
+      render(session.last_status);
+    }
+    async function restoreBackup(event) {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      const msg = document.getElementById("restoreMsg");
+      try {
+        const data = JSON.parse(await file.text());
+        const nodeId = data.node_id || data.node?.publicId || data.node?.node_id;
+        const publicKey = data.public_key || data.node?.public_key || "";
+        if (!nodeId) throw new Error("Backup missing node_id.");
+        session = {
+          node_id: nodeId,
+          public_key: publicKey,
+          role: data.role || data.node?.mode || "validator_candidate",
+          created_at: data.created_at || data.node?.createdAt || new Date().toISOString(),
+          backup_saved: true,
+          registered: true,
+        };
+        save();
+        msg.textContent = "Backup restored. Reloading backend status.";
+        await registerCandidate();
+        await refreshStatus();
+      } catch (err) {
+        msg.textContent = "Restore failed: " + err.message;
+        msg.className = "bad";
+      }
+    }
+    function clearSession() {
+      localStorage.removeItem(SESSION_KEY);
+      session = null;
+      if (pollTimer) clearInterval(pollTimer);
+      render();
+    }
+    async function copyNodeId() {
+      if (!session?.node_id) return;
+      await navigator.clipboard.writeText(session.node_id);
+      flash("Node ID copied.");
+    }
+    function flash(text) {
+      const msg = document.getElementById("restoreMsg");
+      msg.textContent = text;
+      msg.className = "ok";
+      setTimeout(() => { msg.textContent = ""; msg.className = "muted"; }, 3000);
+    }
+    function render(status) {
+      const s = status || session?.last_status || null;
+      document.getElementById("downloadBtn").disabled = !session;
+      document.getElementById("copyBtn").disabled = !session;
+      document.getElementById("refreshBtn").disabled = !session;
+      document.getElementById("backend").textContent = "Live";
+      document.getElementById("backend").className = "ok";
+      document.getElementById("nodeBox").innerHTML = session
+        ? `<div class="mono">${session.node_id}</div><div class="muted">Role: ${session.role || "validator_candidate"}</div><div class="muted">Session saved in this browser.</div>`
+        : "No node session yet.";
+      const caps = new Set(s?.capabilities || []);
+      document.getElementById("proofStatus").textContent = s?.proof_status || (session ? "registered" : "—");
+      document.getElementById("proofStatus").className = s?.proof_status === "proving" || s?.proof_status === "eligible" ? "ok" : "pending";
+      document.getElementById("heartbeats").textContent = s?.valid_heartbeats || 0;
+      document.getElementById("capCount").textContent = `${CAPS.filter(([id]) => caps.has(id)).length}/7`;
+      document.getElementById("height").textContent = s?.height || 0;
+      document.getElementById("reward").textContent = s?.reward?.eligible ? "Eligible" : "Pending";
+      document.getElementById("reward").className = s?.reward?.eligible ? "ok" : "pending";
+      renderSteps(s, caps);
+      renderCaps(caps);
+    }
+    function renderSteps(s, caps) {
+      const done = {
+        identity: !!session,
+        backup: !!session?.backup_saved,
+        registered: !!session?.registered || !!s,
+        heartbeat: (s?.valid_heartbeats || 0) > 0,
+        health: !!s?.health,
+        sync: !!s?.synced || (s?.height || 0) > 0,
+        capabilities: CAPS.every(([id]) => caps.has(id)),
+        reward: !!s?.reward?.eligible,
+        promotion: !!s?.accepted,
+      };
+      document.getElementById("steps").innerHTML = STEP_LABELS.map(([id, label]) =>
+        `<li><span>${label}</span><span class="pill ${done[id] ? "ok" : "pending"}">${done[id] ? "complete" : "pending"}</span></li>`
+      ).join("");
+    }
+    function renderCaps(caps) {
+      document.getElementById("caps").innerHTML = CAPS.map(([id, label]) =>
+        `<li><span>${label}</span><span class="pill ${caps.has(id) ? "ok" : "pending"}">${caps.has(id) ? "verified" : "pending"}</span></li>`
+      ).join("");
+    }
+    load();
+    render();
+    if (session?.node_id) {
+      refreshStatus();
+      startPolling();
+    }
+  </script>
+</body>
+</html>

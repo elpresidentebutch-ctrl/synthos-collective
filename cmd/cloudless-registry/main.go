@@ -172,6 +172,8 @@ func main() {
 	mux.HandleFunc("/api/early-access/payment-intents", s.handleAPIEarlyAccessPaymentIntents)
 	mux.HandleFunc("/api/early-access/payment-intents/", s.handleAPIEarlyAccessPaymentIntentByID)
 	mux.HandleFunc("/index.html", s.handleWebsitePage)
+	mux.HandleFunc("/nodes", s.handleWebsitePage)
+	mux.HandleFunc("/nodes.html", s.handleWebsitePage)
 	mux.HandleFunc("/chain.html", s.handleWebsitePage)
 	mux.HandleFunc("/explorer", s.handleWebsitePage)
 	mux.HandleFunc("/explorer.html", s.handleWebsitePage)
@@ -1029,6 +1031,9 @@ func (s *server) handleWebsitePage(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimPrefix(r.URL.Path, "/")
 	if name == "explorer" {
 		name = "explorer.html"
+	}
+	if name == "nodes" {
+		name = "nodes.html"
 	}
 	if name == "" || strings.Contains(name, "/") || !strings.HasSuffix(name, ".html") {
 		http.Error(w, "not found", http.StatusNotFound)
