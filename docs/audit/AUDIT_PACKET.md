@@ -1,4 +1,4 @@
-## SYNTHOS Collective — Audit Packet (Go)
+﻿## SYNTHOS Collective â€” Audit Packet (Go)
 
 ### What this is
 
@@ -55,6 +55,7 @@ Out of scope (unless you explicitly choose otherwise):
 - `docs/audit/THREAT_MODEL.md`: assets, actors, trust assumptions, attack classes
 - `docs/audit/INVARIANTS.md`: intended safety properties
 - `docs/audit/REVIEW_CHECKLIST.md`: concrete reviewer checklist
+- `docs/audit/BRIDGE_AUDIT.md`: bridge-specific scope, invariants, and pre-launch controls
 
 ---
 
@@ -63,3 +64,4 @@ Out of scope (unless you explicitly choose otherwise):
 SYNTHOS Collective source code and repository materials covered by the root `LICENSE` file are licensed under the **Apache License, Version 2.0**. SYNTHOS Collective, SYNTHOS, and related names, marks, and logos remain reserved except as permitted by that license for describing the origin of the work.
 
 This document is informational only and is not legal, financial, or investment advice. The canonical legal notice is in **docs/LEGAL_NOTICE.md** in the SYNTHOS Collective repository.
+
