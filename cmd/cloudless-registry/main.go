@@ -605,6 +605,7 @@ func (s *server) handleAPIEarlyAccessConfig(w http.ResponseWriter, r *http.Reque
 		"ok":                 true,
 		"saleOpen":           saleOpen,
 		"saleStatus":         map[bool]string{true: "open", false: "closed — public testnet, sale on hold"}[saleOpen],
+		"walletOnboarding":   true,
 		"configured":         saleOpen && saleContract != "" && complianceRegistry != "" && chainID != "",
 		"paymentRails":       saleOpen,
 		"paymentIntentUrl":   "/api/early-access/payment-intents",

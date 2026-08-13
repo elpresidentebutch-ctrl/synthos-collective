@@ -43,6 +43,9 @@
     activeTrancheSyn: "250,000,000",
     maxTrancheUsd: "$25,000,000",
     communitySourceBucket: "COMMUNITY_EARLY_ADOPTER_CAMPAIGNS",
+    saleOpen: false,
+    saleStatus: "closed — public testnet, sale on hold",
+    walletOnboarding: true,
     paymentRails: false,
     paymentIntentUrl: "/api/early-access/payment-intents",
     disclosureText: "SYNTHOS early access disclosure v1",
@@ -164,7 +167,16 @@
     if (config.maxTrancheValueUsd && !config.maxTrancheUsd) {
       config.maxTrancheUsd = `$${Number(config.maxTrancheValueUsd).toLocaleString()}`;
     }
-    config.paymentRails = Boolean(config.paymentRails || config.paymentIntentUrl);
+    config.walletOnboarding = Boolean(config.walletOnboarding || config.paymentIntentUrl);
+    config.paymentRails = Boolean(config.paymentRails && config.saleOpen !== false && config.paymentIntentUrl);
+  }
+
+  function nativeWalletFlow() {
+    return Boolean(config.walletOnboarding && !validAddress(config.saleContract));
+  }
+
+  function nativePaymentOpen() {
+    return Boolean(nativeWalletFlow() && config.paymentRails && config.saleOpen !== false);
   }
 
   async function loadBackendConfig() {
@@ -191,7 +203,9 @@
         <div>
           <p class="synthos-eyebrow">Early Access</p>
           <h1>SYN early adopter tranche</h1>
-          <p>Automatic crypto-only purchase flow. Eligible wallets receive SYN in the same on-chain transaction.</p>
+          <p>${nativeWalletFlow()
+            ? "Create a SYNTHOS native wallet, save the private key, then unlock the early adopter payment flow when the sale is open."
+            : "Automatic crypto-only purchase flow. Eligible wallets receive SYN in the same on-chain transaction."}</p>
         </div>
         <dl class="synthos-sale-facts">
           <div><dt>Price</dt><dd>$${html(config.tokenPriceUsd)} per SYN</dd></div>
@@ -206,10 +220,10 @@
               ${config.assets.map((asset, index) => `<option value="${index}">${html(asset.symbol)}</option>`).join("")}
             </select>
           </label>
-          <label>${config.paymentRails && !validAddress(config.saleContract) ? "USD Amount To Spend" : "Amount To Spend"}
+          <label>${nativeWalletFlow() ? "USD Amount To Spend" : "Amount To Spend"}
             <input data-sale-amount inputmode="decimal" autocomplete="off" />
           </label>
-          ${config.paymentRails && !validAddress(config.saleContract) ? `
+          ${nativeWalletFlow() ? `
           <label>SYNTHOS Wallet Address
             <input data-synthos-address autocomplete="off" placeholder="0x..." value="${html(state.synthosWallet?.address || "")}" />
           </label>
@@ -221,16 +235,16 @@
           ` : ""}
           <div class="synthos-sale-quote" data-sale-quote>Connect wallet for quote.</div>
           <div class="synthos-sale-actions">
-            <button type="button" data-sale-connect>Connect Wallet</button>
+            ${nativeWalletFlow() ? "" : `<button type="button" data-sale-connect>Connect Wallet</button>`}
             <button type="button" data-sale-buy disabled>Create Payment Intent</button>
-            ${config.paymentRails && !validAddress(config.saleContract) ? `<button type="button" data-generate-synthos-wallet>Generate SYNTHOS Wallet</button>` : ""}
-            ${config.paymentRails && !validAddress(config.saleContract) ? `<button type="button" data-payment-verify>Verify Payment</button>` : ""}
+            ${nativeWalletFlow() ? `<button type="button" data-generate-synthos-wallet>Generate SYNTHOS Wallet</button>` : ""}
+            ${nativeWalletFlow() ? `<button type="button" data-payment-verify>Verify Payment</button>` : ""}
           </div>
           <p data-sale-status data-tone="muted">Sale contract is checking configuration.</p>
         </div>
       </section>
     `;
-    root.querySelector("[data-sale-connect]").addEventListener("click", connectWallet);
+    root.querySelector("[data-sale-connect]")?.addEventListener("click", connectWallet);
     root.querySelector("[data-sale-buy]").addEventListener("click", buySyn);
     root.querySelector("[data-sale-amount]").addEventListener("input", quote);
     root.querySelector("[data-sale-asset]").addEventListener("change", quote);
@@ -246,11 +260,21 @@
 
   function validateConfig() {
     const buy = root.querySelector("[data-sale-buy]");
-    if (config.paymentRails && !validAddress(config.saleContract)) {
+    if (nativeWalletFlow()) {
       const walletGate = nativeWalletGate();
-      buy.disabled = !walletGate.ok;
-      setStatus(walletGate.message, walletGate.ok ? "ok" : "warn");
-      return walletGate.ok;
+      if (!walletGate.ok) {
+        buy.disabled = true;
+        setStatus(walletGate.message, "warn");
+        return false;
+      }
+      if (!nativePaymentOpen()) {
+        buy.disabled = true;
+        setStatus(`Wallet backup confirmed. Payment is locked: ${config.saleStatus || "sale is closed"}.`, "warn");
+        return false;
+      }
+      buy.disabled = false;
+      setStatus("Wallet backup confirmed. You can create the payment intent.", "ok");
+      return true;
     }
     if (!validAddress(config.saleContract)) {
       setStatus("Early access contract is not deployed/configured yet.", "warn");
@@ -561,11 +585,11 @@
   }
 
   async function quote() {
-    if (config.paymentRails && !state.sale) {
+    if (nativeWalletFlow()) {
       const raw = root.querySelector("[data-sale-amount]").value.trim();
       const usd = Number(raw || 0);
       root.querySelector("[data-sale-quote]").textContent = usd > 0
-        ? `${(usd * 10).toLocaleString()} SYN at $0.10`
+        ? `${(usd * 10).toLocaleString()} SYN at $0.10${nativePaymentOpen() ? "" : " — payment locked"}`
         : "Enter a USD amount.";
       return;
     }
@@ -589,7 +613,11 @@
   }
 
   async function buySyn() {
-    if (config.paymentRails && !state.sale) {
+    if (nativeWalletFlow()) {
+      if (!nativePaymentOpen()) {
+        setStatus(`Payment is locked: ${config.saleStatus || "sale is closed"}.`, "warn");
+        return;
+      }
       await createPaymentIntent();
       return;
     }
@@ -644,6 +672,10 @@
     const walletGate = nativeWalletGate();
     if (!walletGate.ok) {
       setStatus(walletGate.message, "warn");
+      return;
+    }
+    if (!nativePaymentOpen()) {
+      setStatus(`Payment is locked: ${config.saleStatus || "sale is closed"}.`, "warn");
       return;
     }
     try {
