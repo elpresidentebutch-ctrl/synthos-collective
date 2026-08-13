@@ -32,6 +32,9 @@ The native SYNTHOS L1 now records bridge receipts in chain state:
 
 - `watch-native` polls native `/bridge/events` and writes bridge locks to a JSONL
   outbox;
+- `watch-evm` polls an EVM JSON-RPC endpoint for confirmed `BridgeLocked`
+  events from `SYNTHOSBridgeVault`, decodes them into native release proofs, and
+  can optionally submit native releases;
 - `submit-native-release` reads an external lock proof JSON file, signs a native
   release transaction with the bridge authority key, submits it to native RPC,
   and asks the node to propose a block.
@@ -92,7 +95,6 @@ The minimum production posture should be:
 
 This phase does not yet include:
 
-- automated EVM log scanning from `SYNTHOSBridgeVault`;
 - validator-signed bridge proofs from SYNTHOS consensus;
 - rate limits;
 - emergency withdrawal delay;
@@ -183,3 +185,33 @@ Example `bridge-proof.json`:
   "observed_tx_hash": "0xevm-transaction-hash"
 }
 ```
+
+Automatically scan EVM `BridgeLocked` events into a proof outbox:
+
+```bash
+go run ./cmd/bridgerelayer \
+  -mode watch-evm \
+  -evm-rpc https://sepolia.base.org \
+  -evm-vault 0xYourBridgeVault \
+  -from-block 123456 \
+  -min-confirmations 12 \
+  -proof-outbox .synthos/evm-bridge-proofs.jsonl
+```
+
+Scan EVM and auto-submit native releases after confirmation:
+
+```bash
+go run ./cmd/bridgerelayer \
+  -mode watch-evm \
+  -evm-rpc https://sepolia.base.org \
+  -evm-vault 0xYourBridgeVault \
+  -rpc http://127.0.0.1:8080 \
+  -from-block 123456 \
+  -min-confirmations 12 \
+  -auto-submit-native \
+  -priv "$SYNTHOS_BRIDGE_AUTHORITY_PRIVATE_KEY"
+```
+
+For production, run multiple independent relayers and do not use
+`-auto-submit-native` until the validator-threshold proof layer and rate limits
+are enabled.
