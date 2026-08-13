@@ -26,6 +26,10 @@ import (
 )
 
 const staleAfter = 5 * time.Minute
+const heartbeatFreshAfter = 2 * time.Minute
+const rewardEpoch = 30 * 24 * time.Hour
+const validatorMonthlyBaseRewardSYN = 5000
+const validatorMonthlyBonusCapSYN = 2500
 
 var safeName = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
 
@@ -44,6 +48,16 @@ type peer struct {
 	RegisteredAt       int64    `json:"registered_at"`
 	LastSeen           int64    `json:"last_seen"`
 	Stale              bool     `json:"stale,omitempty"`
+	Role               string   `json:"role,omitempty"`
+	ProofStatus        string   `json:"proof_status,omitempty"`
+	Height             int64    `json:"height,omitempty"`
+	Tip                string   `json:"tip,omitempty"`
+	StateRoot          string   `json:"state_root,omitempty"`
+	FirstHeartbeatAt   int64    `json:"first_heartbeat_at,omitempty"`
+	LastHeartbeatAt    int64    `json:"last_heartbeat_at,omitempty"`
+	ValidHeartbeats    uint64   `json:"valid_heartbeats,omitempty"`
+	VerifiedUptimeMS   int64    `json:"verified_uptime_ms,omitempty"`
+	LastNonce          string   `json:"last_nonce,omitempty"`
 }
 
 type mailboxMessage struct {
@@ -149,7 +163,10 @@ func main() {
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/network/status", s.handleAPINetworkStatus)
 	mux.HandleFunc("/api/nodes", s.handleAPINodes)
+	mux.HandleFunc("/api/nodes/register", s.handleAPINodeRegister)
+	mux.HandleFunc("/api/nodes/heartbeat", s.handleAPINodeHeartbeat)
 	mux.HandleFunc("/api/nodes/provision", s.handleAPIProvisionNode)
+	mux.HandleFunc("/api/nodes/", s.handleAPINodeByID)
 	mux.HandleFunc("/api/contact", s.handleAPIContact)
 	mux.HandleFunc("/api/early-access/config", s.handleAPIEarlyAccessConfig)
 	mux.HandleFunc("/api/early-access/payment-intents", s.handleAPIEarlyAccessPaymentIntents)
@@ -194,6 +211,9 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 			"POST /mailbox",
 			"GET /api/network/status",
 			"GET /api/nodes",
+			"POST /api/nodes/register",
+			"POST /api/nodes/heartbeat",
+			"GET /api/nodes/ID/status",
 			"POST /api/nodes/provision",
 			"POST /api/contact",
 			"GET /api/early-access/config",
@@ -428,6 +448,7 @@ func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) 
 	immune := 0
 	agents := 0
 	activeTotal := 0
+	var highestHeight int64
 	for i := range peers {
 		// A node only counts as "running" if it has heartbeated recently.
 		// Registered-but-never-run and long-dead nodes are excluded, so the
@@ -447,12 +468,18 @@ func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) 
 		if len(peers[i].Capabilities) > 0 {
 			agents++
 		}
+		if peers[i].Height > highestHeight {
+			highestHeight = peers[i].Height
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":                   len(peers) == 0 || reachable > 0,
 		"service":              "synthos-website-backend",
 		"network":              "synthos",
+		"chain":                "SYNTHOS Collective",
+		"mode":                 "Proof-of-Operation onboarding",
+		"heartbeat_target_s":   15,
 		"total":                activeTotal,
 		"registered_total":     len(peers),
 		"reachable":            reachable,
@@ -460,7 +487,7 @@ func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) 
 		"validators_running":   validators,
 		"immune_nodes_running": immune,
 		"agents_running":       agents,
-		"highest_height":       0,
+		"highest_height":       highestHeight,
 		"tip":                  "",
 		"state_root":           "",
 		"next_proposer":        nextProposer(peers),
@@ -468,6 +495,7 @@ func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) 
 		"converged_tip":        true,
 		"converged_state_root": true,
 		"validators":           peers,
+		"reward_policy":        validatorRewardPolicy(),
 		"updated_at":           time.Now().UTC().Format(time.RFC3339),
 	})
 }
@@ -478,6 +506,213 @@ func (s *server) handleAPINodes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.writePeerList(w, false)
+}
+
+func (s *server) handleAPINodeRegister(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		NodeID       string   `json:"node_id"`
+		NodeIDCamel  string   `json:"nodeId"`
+		PublicKey    string   `json:"public_key"`
+		PublicKeyAlt string   `json:"publicKey"`
+		Role         string   `json:"role"`
+		Kind         string   `json:"kind"`
+		Network      string   `json:"network"`
+		Endpoint     string   `json:"endpoint"`
+		URL          string   `json:"url"`
+		Capabilities []string `json:"capabilities"`
+		CreatedAt    string   `json:"created_at"`
+		ChainID      string   `json:"chain_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	nodeID := sanitize(defaultString(body.NodeID, body.NodeIDCamel))
+	if nodeID == "" {
+		nodeID = "syn-node-" + shortID()
+	}
+	publicKey := truncate(defaultString(body.PublicKey, body.PublicKeyAlt), 256)
+	if publicKey == "" {
+		http.Error(w, "public_key required", http.StatusBadRequest)
+		return
+	}
+	role := normalizeRole(defaultString(body.Role, body.Kind))
+	kind := roleKind(role)
+	endpoint := truncate(defaultString(body.Endpoint, body.URL), 256)
+	if endpoint != "" && !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
+		http.Error(w, "endpoint must start with http:// or https://", http.StatusBadRequest)
+		return
+	}
+	now := time.Now().UnixMilli()
+	entry := peer{
+		Name:         nodeID,
+		URL:          endpoint,
+		Kind:         kind,
+		Network:      normalizeChoice(body.Network, "mainnet", "testnet", "mainnet"),
+		Status:       "registered",
+		PublicKey:    publicKey,
+		Capabilities: normalizeCapabilities(body.Capabilities),
+		Cloud:        "operator",
+		Mode:         map[bool]string{true: "public_endpoint", false: "candidate"}[endpoint != ""],
+		InboundPorts: map[bool]int{true: 1, false: 0}[endpoint != ""],
+		RegisteredAt: now,
+		LastSeen:     0,
+		Role:         role,
+		ProofStatus:  "registered",
+	}
+
+	s.mu.Lock()
+	if existing, ok := s.state.Peers[nodeID]; ok {
+		entry.RegisteredAt = existing.RegisteredAt
+		entry.FirstHeartbeatAt = existing.FirstHeartbeatAt
+		entry.LastHeartbeatAt = existing.LastHeartbeatAt
+		entry.LastSeen = existing.LastSeen
+		entry.ValidHeartbeats = existing.ValidHeartbeats
+		entry.VerifiedUptimeMS = existing.VerifiedUptimeMS
+		entry.LastNonce = existing.LastNonce
+		entry.Height = existing.Height
+		entry.Tip = existing.Tip
+		entry.StateRoot = existing.StateRoot
+		entry.ProofStatus = proofStatus(entry, time.Now())
+	}
+	s.state.Peers[nodeID] = entry
+	s.mu.Unlock()
+	if err := s.persist(); err != nil {
+		log.Printf("persist warning: %v", err)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":            true,
+		"node":          nodeStatus(entry, time.Now()),
+		"message":       "node candidate registered; rewards require verified operation",
+		"reward_policy": validatorRewardPolicy(),
+	})
+}
+
+func (s *server) handleAPINodeHeartbeat(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		NodeID       string   `json:"node_id"`
+		NodeIDCamel  string   `json:"nodeId"`
+		Height       int64    `json:"height"`
+		Tip          string   `json:"tip"`
+		StateRoot    string   `json:"state_root"`
+		StateRootAlt string   `json:"stateRoot"`
+		Timestamp    string   `json:"timestamp"`
+		Nonce        string   `json:"nonce"`
+		Capabilities []string `json:"capabilities"`
+		Signature    string   `json:"signature"`
+		Endpoint     string   `json:"endpoint"`
+		URL          string   `json:"url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	nodeID := sanitize(defaultString(body.NodeID, body.NodeIDCamel))
+	if nodeID == "" {
+		http.Error(w, "node_id required", http.StatusBadRequest)
+		return
+	}
+	if body.Nonce == "" {
+		http.Error(w, "nonce required", http.StatusBadRequest)
+		return
+	}
+
+	s.mu.Lock()
+	entry, ok := s.state.Peers[nodeID]
+	if !ok {
+		s.mu.Unlock()
+		http.Error(w, "node is not registered", http.StatusNotFound)
+		return
+	}
+	if entry.LastNonce != "" && body.Nonce <= entry.LastNonce {
+		s.mu.Unlock()
+		http.Error(w, "replayed or non-increasing nonce", http.StatusBadRequest)
+		return
+	}
+	stateRoot := truncate(defaultString(body.StateRoot, body.StateRootAlt), 128)
+	message := canonicalHeartbeatMessage(nodeID, body.Height, truncate(body.Tip, 128), stateRoot, body.Timestamp, body.Nonce)
+	if err := verifyHeartbeatSignature(entry.PublicKey, body.Signature, message); err != nil {
+		s.mu.Unlock()
+		http.Error(w, "invalid heartbeat signature: "+err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	now := time.Now()
+	nowMS := now.UnixMilli()
+	if entry.FirstHeartbeatAt == 0 {
+		entry.FirstHeartbeatAt = nowMS
+	}
+	if entry.LastHeartbeatAt > 0 {
+		delta := nowMS - entry.LastHeartbeatAt
+		if delta > 0 {
+			maxDelta := int64(heartbeatFreshAfter / time.Millisecond)
+			if delta > maxDelta {
+				delta = maxDelta
+			}
+			entry.VerifiedUptimeMS += delta
+		}
+	}
+	entry.LastHeartbeatAt = nowMS
+	entry.LastSeen = nowMS
+	entry.ValidHeartbeats++
+	entry.LastNonce = truncate(body.Nonce, 128)
+	entry.Status = "proving"
+	entry.ProofStatus = proofStatus(entry, now)
+	entry.Height = body.Height
+	entry.Tip = truncate(body.Tip, 128)
+	entry.StateRoot = stateRoot
+	if endpoint := truncate(defaultString(body.Endpoint, body.URL), 256); endpoint != "" {
+		entry.URL = endpoint
+		entry.Mode = "public_endpoint"
+		entry.InboundPorts = 1
+	}
+	if len(body.Capabilities) > 0 {
+		entry.Capabilities = normalizeCapabilities(body.Capabilities)
+	}
+	s.state.Peers[nodeID] = entry
+	s.mu.Unlock()
+	if err := s.persist(); err != nil {
+		log.Printf("persist warning: %v", err)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":      true,
+		"node":    nodeStatus(entry, now),
+		"message": "signed heartbeat accepted",
+	})
+}
+
+func (s *server) handleAPINodeByID(w http.ResponseWriter, r *http.Request) {
+	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/nodes/"), "/")
+	parts := strings.Split(path, "/")
+	if len(parts) != 2 || parts[1] != "status" {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	nodeID := sanitize(parts[0])
+	s.mu.RLock()
+	entry, ok := s.state.Peers[nodeID]
+	s.mu.RUnlock()
+	if !ok {
+		http.Error(w, "node not found", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":            true,
+		"node":          nodeStatus(entry, time.Now()),
+		"reward_policy": validatorRewardPolicy(),
+	})
 }
 
 func (s *server) handleAPIProvisionNode(w http.ResponseWriter, r *http.Request) {
@@ -502,13 +737,12 @@ func (s *server) handleAPIProvisionNode(w http.ResponseWriter, r *http.Request) 
 		label = fmt.Sprintf("%s-%s", kind, shortID())
 	}
 	nodeID := fmt.Sprintf("synthos-%s-%s", kind, label)
-	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	publicKey, _, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		http.Error(w, "key generation failed", http.StatusInternalServerError)
 		return
 	}
 	publicHex := hex.EncodeToString(publicKey)
-	privateHex := hex.EncodeToString(privateKey.Seed())
 	endpoint := truncate(body.URL, 256)
 	if endpoint == "" {
 		endpoint = "outbound-only"
@@ -525,7 +759,9 @@ func (s *server) handleAPIProvisionNode(w http.ResponseWriter, r *http.Request) 
 		Mode:         "outbound_only",
 		InboundPorts: 0,
 		RegisteredAt: time.Now().UnixMilli(),
-		LastSeen:     time.Now().UnixMilli(),
+		LastSeen:     0,
+		Role:         map[string]string{"validator": "validator_candidate", "immune": "immune"}[kind],
+		ProofStatus:  "registered",
 	}
 
 	s.mu.Lock()
@@ -535,14 +771,6 @@ func (s *server) handleAPIProvisionNode(w http.ResponseWriter, r *http.Request) 
 		log.Printf("persist warning: %v", err)
 	}
 
-	configJSON := fmt.Sprintf(`{
-  "node_id": "%s",
-  "network": "%s",
-  "kind": "%s",
-  "registry_url": "http://127.0.0.1:8090",
-  "private_key": "%s"
-}`, nodeID, network, kind, privateHex)
-
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":            true,
 		"nodeId":        nodeID,
@@ -550,12 +778,13 @@ func (s *server) handleAPIProvisionNode(w http.ResponseWriter, r *http.Request) 
 		"network":       network,
 		"endpoint":      endpoint,
 		"publicKey":     publicHex,
-		"privateKey":    privateHex,
-		"nodeConfig":    configJSON,
-		"startCommand":  "go run ./cmd/synthosd",
+		"node":          nodeStatus(entry, time.Now()),
+		"nodeConfig":    "",
+		"startCommand":  "",
 		"workerName":    nodeID,
-		"deployCommand": "go run ./cmd/synthosd",
-		"warning":       "Private key is returned once and is not stored by this registry. Save it locally before closing the page.",
+		"deployCommand": "",
+		"warning":       "Provisioning only prepares a node candidate. Generate and store private keys client-side, then submit signed heartbeats to prove operation.",
+		"reward_policy": validatorRewardPolicy(),
 	})
 }
 
@@ -1182,6 +1411,151 @@ func splitCSV(value string) []string {
 		}
 	}
 	return out
+}
+
+func normalizeRole(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "validator", "public_validator", "validator_node":
+		return "validator_candidate"
+	case "validator_candidate", "validator-candidate":
+		return "validator_candidate"
+	case "immune", "immune_node", "immune-node":
+		return "immune"
+	case "observer", "observer_node", "non_validator", "non-validator":
+		return "observer"
+	default:
+		return "observer"
+	}
+}
+
+func roleKind(role string) string {
+	switch role {
+	case "validator_candidate", "validator":
+		return "validator"
+	case "immune":
+		return "immune"
+	default:
+		return "observer"
+	}
+}
+
+func proofStatus(p peer, now time.Time) string {
+	if p.LastHeartbeatAt == 0 {
+		return "registered"
+	}
+	if now.Sub(time.UnixMilli(p.LastHeartbeatAt)) > heartbeatFreshAfter {
+		return "stale"
+	}
+	if time.Duration(p.VerifiedUptimeMS)*time.Millisecond >= rewardEpoch {
+		return "eligible"
+	}
+	return "proving"
+}
+
+func nodeStatus(p peer, now time.Time) map[string]any {
+	p.ProofStatus = proofStatus(p, now)
+	uptime := time.Duration(p.VerifiedUptimeMS) * time.Millisecond
+	firstEligible := ""
+	if p.FirstHeartbeatAt > 0 {
+		firstEligible = time.UnixMilli(p.FirstHeartbeatAt).Add(rewardEpoch).UTC().Format(time.RFC3339)
+	}
+	eligible := p.ProofStatus == "eligible"
+	role := defaultString(p.Role, normalizeRole(p.Kind))
+	isValidator := role == "validator_candidate" || role == "validator"
+	reward := map[string]any{
+		"eligible":                   eligible && isValidator,
+		"status":                     map[bool]string{true: "eligible_next_payout", false: "proving_uptime"}[eligible && isValidator],
+		"paid_in":                    "SYN",
+		"monthly_base_syn":           0,
+		"monthly_bonus_cap_syn":      0,
+		"monthly_max_syn":            0,
+		"paid_monthly_in_arrears":    true,
+		"requires_full_month_uptime": true,
+		"first_reward_eligibility":   firstEligible,
+	}
+	if isValidator {
+		reward["monthly_base_syn"] = validatorMonthlyBaseRewardSYN
+		reward["monthly_bonus_cap_syn"] = validatorMonthlyBonusCapSYN
+		reward["monthly_max_syn"] = validatorMonthlyBaseRewardSYN + validatorMonthlyBonusCapSYN
+	}
+	return map[string]any{
+		"node_id":            p.Name,
+		"public_key":         p.PublicKey,
+		"role":               role,
+		"kind":               p.Kind,
+		"network":            p.Network,
+		"endpoint":           p.URL,
+		"status":             p.Status,
+		"proof_status":       p.ProofStatus,
+		"registered_at":      millisRFC3339(p.RegisteredAt),
+		"first_heartbeat_at": millisRFC3339(p.FirstHeartbeatAt),
+		"last_heartbeat_at":  millisRFC3339(p.LastHeartbeatAt),
+		"valid_heartbeats":   p.ValidHeartbeats,
+		"verified_uptime_s":  int64(uptime.Seconds()),
+		"verified_days":      uptime.Hours() / 24,
+		"uptime_required_s":  int64(rewardEpoch.Seconds()),
+		"height":             p.Height,
+		"tip":                p.Tip,
+		"state_root":         p.StateRoot,
+		"capabilities":       p.Capabilities,
+		"reward":             reward,
+	}
+}
+
+func millisRFC3339(ms int64) string {
+	if ms <= 0 {
+		return ""
+	}
+	return time.UnixMilli(ms).UTC().Format(time.RFC3339)
+}
+
+func validatorRewardPolicy() map[string]any {
+	return map[string]any{
+		"token":                          "SYN",
+		"validator_monthly_base_syn":     validatorMonthlyBaseRewardSYN,
+		"validator_monthly_bonus_cap":    validatorMonthlyBonusCapSYN,
+		"validator_monthly_max_syn":      validatorMonthlyBaseRewardSYN + validatorMonthlyBonusCapSYN,
+		"payment_timing":                 "monthly_in_arrears",
+		"first_payment_after":            "one full month of verified validator uptime",
+		"no_payment_for_button_click":    true,
+		"requires_signed_heartbeats":     true,
+		"requires_public_endpoint":       true,
+		"no_guaranteed_income":           true,
+		"source_bucket":                  "Validator / Security Rewards",
+		"source_bucket_amount_syn":       12_000_000_000,
+		"uptime_finality_bucket_syn":     5_000_000_000,
+		"target_validator_operators":     5_000,
+		"ten_year_max_per_validator_syn": 910_000,
+	}
+}
+
+func canonicalHeartbeatMessage(nodeID string, height int64, tip string, stateRoot string, timestamp string, nonce string) []byte {
+	return []byte(fmt.Sprintf(
+		"SYNTHOS_HEARTBEAT_V1\nnode_id=%s\nheight=%d\ntip=%s\nstate_root=%s\ntimestamp=%s\nnonce=%s",
+		nodeID,
+		height,
+		tip,
+		stateRoot,
+		strings.TrimSpace(timestamp),
+		strings.TrimSpace(nonce),
+	))
+}
+
+func verifyHeartbeatSignature(publicKeyHex string, signatureHex string, message []byte) error {
+	publicKeyHex = strings.TrimPrefix(strings.TrimSpace(publicKeyHex), "0x")
+	signatureHex = strings.TrimPrefix(strings.TrimSpace(signatureHex), "0x")
+	pub, err := hex.DecodeString(publicKeyHex)
+	if err != nil || len(pub) != ed25519.PublicKeySize {
+		return fmt.Errorf("registered public key is not a valid Ed25519 public key")
+	}
+	sig, err := hex.DecodeString(signatureHex)
+	if err != nil || len(sig) != ed25519.SignatureSize {
+		return fmt.Errorf("signature must be a 64-byte hex Ed25519 signature")
+	}
+	if !ed25519.Verify(ed25519.PublicKey(pub), message, sig) {
+		return fmt.Errorf("signature verification failed")
+	}
+	return nil
 }
 
 func earlyAccessAssetsFromEnv() []earlyAccessAsset {
