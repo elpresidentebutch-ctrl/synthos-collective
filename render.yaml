@@ -41,6 +41,8 @@ services:
         value: "true"
       - key: SYNTHOS_BLOCK_INTERVAL_SECONDS
         value: "10"
+      - key: SYNTHOS_PRODUCE_EMPTY_BLOCKS
+        value: "true"
       - key: SYNTHOS_PRIVATE_KEY
         sync: false
     disk:

@@ -103,13 +103,19 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
+	immune := s.Chain.State.ImmuneStatus()
+	live := s.liveStatusSnapshot()
+	if live.ImmuneCapableNodes > immune.ActiveImmuneNodes {
+		immune.ActiveImmuneNodes = live.ImmuneCapableNodes
+	}
 	body := map[string]any{
 		"chain_id":   s.Chain.ChainID,
 		"height":     s.Chain.Height(),
 		"tip":        s.Chain.Tip().Hash,
 		"state_root": s.Chain.State.Root(),
-		"immune":     s.Chain.State.ImmuneStatus(),
+		"immune":     immune,
 		"peers":      s.PeerURLs,
+		"live":       live,
 	}
 	if s.Node != nil && s.Node.Agent != nil {
 		body["agent"] = map[string]any{
@@ -121,6 +127,66 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		body["immune_capable"] = true
 	}
 	writeJSON(w, body)
+}
+
+type liveStatus struct {
+	SelfHeight         uint64            `json:"self_height"`
+	HighestHeight      uint64            `json:"highest_height"`
+	ReachablePeers     int               `json:"reachable_peers"`
+	ConfiguredPeers    int               `json:"configured_peers"`
+	ValidatorsLive     int               `json:"validators_live"`
+	ImmuneCapableNodes int               `json:"immune_capable_nodes"`
+	ConvergedHeight    bool              `json:"converged_height"`
+	PeerHeights        map[string]uint64 `json:"peer_heights"`
+}
+
+func (s *Server) liveStatusSnapshot() liveStatus {
+	selfHeight := s.Chain.Height()
+	out := liveStatus{
+		SelfHeight:      selfHeight,
+		HighestHeight:   selfHeight,
+		ConfiguredPeers: len(s.PeerURLs),
+		ConvergedHeight: true,
+		PeerHeights:     make(map[string]uint64),
+	}
+	if s.Node != nil && s.Node.Agent != nil {
+		if s.Node.IsValidator(s.Node.Agent.Identity.AgentID) {
+			out.ValidatorsLive++
+		}
+		if hasCapability(s.Node.Agent.CoreCapabilities(), "immune_node") {
+			out.ImmuneCapableNodes++
+		}
+	}
+
+	for _, peer := range s.PeerURLs {
+		status, err := s.probePeerStatus(peer, 1500*time.Millisecond)
+		if err != nil {
+			out.ConvergedHeight = false
+			continue
+		}
+		out.ReachablePeers++
+		out.ValidatorsLive++
+		out.PeerHeights[peer] = status.Height
+		if status.Height > out.HighestHeight {
+			out.HighestHeight = status.Height
+		}
+		if status.Height != selfHeight {
+			out.ConvergedHeight = false
+		}
+		if status.ImmuneCapable || hasCapability(status.Capabilities, "immune_node") {
+			out.ImmuneCapableNodes++
+		}
+	}
+	return out
+}
+
+func hasCapability(capabilities []string, want string) bool {
+	for _, capability := range capabilities {
+		if capability == want {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
@@ -431,12 +497,22 @@ func (s *Server) pushBlockToPeers(block *chain.Block) {
 }
 
 type peerStatus struct {
-	Height uint64 `json:"height"`
+	Height        uint64   `json:"height"`
+	ChainID       string   `json:"chain_id"`
+	Tip           string   `json:"tip"`
+	StateRoot     string   `json:"state_root"`
+	ImmuneCapable bool     `json:"immune_capable"`
+	Capabilities  []string `json:"capabilities"`
 }
 
 func (s *Server) peerStatus(peer string) (peerStatus, error) {
+	return s.probePeerStatus(peer, 10*time.Second)
+}
+
+func (s *Server) probePeerStatus(peer string, timeout time.Duration) (peerStatus, error) {
 	var out peerStatus
-	resp, err := s.client().Get(strings.TrimRight(peer, "/") + "/status")
+	client := &http.Client{Timeout: timeout}
+	resp, err := client.Get(strings.TrimRight(peer, "/") + "/status")
 	if err != nil {
 		return out, err
 	}
