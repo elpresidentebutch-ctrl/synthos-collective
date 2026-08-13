@@ -1003,7 +1003,7 @@ func (s *server) handleWindowsInstaller(w http.ResponseWriter, r *http.Request) 
 }
 
 // handleWindowsInstallerBat serves a double-clickable .bat wrapper that runs
-// the PowerShell installer above -- the true "push button" for non-technical
+// the installation command above -- the simple path for non-technical
 // users: download this one file, double-click, done.
 func (s *server) handleWindowsInstallerBat(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
