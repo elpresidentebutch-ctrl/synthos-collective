@@ -20,12 +20,12 @@ Current approved supply plan:
 | Founder Vesting | 17,000,000,000 SYN |
 | Validator/Security Rewards | 12,000,000,000 SYN |
 | Community/Adopter Rewards | 12,500,000,000 SYN |
-| Ecosystem Treasury | 10,000,000,000 SYN |
-| CMO Launch Grant | 3,000,000,000 SYN |
+| Ecosystem Treasury | 13,000,000,000 SYN |
+| CMO Launch Grant | 0 SYN |
 | Strategic Reserve | 3,000,000,000 SYN |
 | Founder Launch Allocation | 500,000,000 SYN |
 
-Founder vesting is 1,700,000,000 SYN every May 29 for ten years. The CMO launch grant is 3,000,000,000 SYN upon successful SYN token launch. Immune node rewards are paid per verified operator, not per node count.
+Founder vesting is 1,700,000,000 SYN every May 29 for ten years. There is no current CMO launch grant. Immune node rewards are paid per verified operator, not per node count.
 
 ## Launch gates
 
@@ -54,7 +54,6 @@ Before testnet deployment, prepare these addresses:
 | --- | --- |
 | `FOUNDER_WALLET` | Beneficiary of the ten-year founder vesting vault |
 | `FOUNDER_OPS_WALLET` | 500,000,000 SYN founder launch allocation |
-| `CMO_WALLET` | 3,000,000,000 SYN CMO launch grant |
 | `IMMUNE_NODE_REWARDS_WALLET` | Immune node rewards controller, contract, or multisig |
 | `VALIDATOR_REWARDS_WALLET` | Validator rewards controller, staking contract, or multisig |
 | `DEX_LIQUIDITY_WALLET` | Locked liquidity reserve wallet |
@@ -78,7 +77,7 @@ After deployment:
 - Save `contracts/deployments/<network>-<timestamp>.json`.
 - Confirm every wallet received the exact allocation expected.
 - Confirm founder vesting received exactly 17,000,000,000 SYN.
-- Confirm the CMO wallet received exactly 3,000,000,000 SYN.
+- Confirm no CMO allocation was distributed.
 - Confirm immune rewards and validator rewards are funded to their intended controllers.
 - Confirm the DEX liquidity reserve is separated from operating wallets.
 - Publish testnet addresses as testnet-only.
@@ -110,8 +109,8 @@ Before mainnet:
 Minimum review before real value is attached:
 
 - Independent smart contract audit or public peer review of the exact commit.
-- Legal review of launch language, CMO grant language, operator reward language, and any public sale or exchange activity.
-- Tax/accounting review for founder, CMO, treasury, rewards, and grants.
+- Legal review of launch language, operator reward language, and any public sale or exchange activity.
+- Tax/accounting review for founder, treasury, rewards, and grants.
 - Written decision on restricted jurisdictions, sanctions screening, and who can receive rewards.
 
 If money is tight, the lowest-cost version is still useful: freeze the commit, publish the exact scope, ask for public review, run a small private testnet, and do not promise profit, investment return, or guaranteed income.
@@ -133,12 +132,11 @@ If money is tight, the lowest-cost version is still useful: freeze the commit, p
 
 Do not launch the token if any of these are true:
 
-- The CMO wallet, founder wallet, treasury wallet, or reward wallets are unknown or placeholders.
+- The founder wallet, treasury wallet, or reward wallets are unknown or placeholders.
 - The public site, deck, whitepaper, or contract constants disagree.
 - The deployer wallet remains the long-term controller of all funds.
 - The reward contracts are not funded or tested.
 - The founder vesting release dates are wrong.
-- The CMO grant terms are not signed or at least acknowledged in writing.
 - There is no incident plan for a bad deployment, compromised key, or incorrect wallet address.
 
 ## Current operator reward policy

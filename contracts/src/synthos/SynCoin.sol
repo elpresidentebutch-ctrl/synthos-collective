@@ -23,8 +23,8 @@ contract SynCoin is ERC20, ERC20Pausable, ERC20Snapshot, Ownable {
     uint256 public constant FOUNDER_VESTING_ALLOCATION = 17_000_000_000 * 10 ** 18;
     uint256 public constant VALIDATOR_REWARDS_ALLOCATION = 12_000_000_000 * 10 ** 18;
     uint256 public constant COMMUNITY_ALLOCATION = 12_500_000_000 * 10 ** 18;
-    uint256 public constant ECOSYSTEM_TREASURY_ALLOCATION = 10_000_000_000 * 10 ** 18;
-    uint256 public constant CMO_LAUNCH_GRANT = 3_000_000_000 * 10 ** 18;
+    uint256 public constant ECOSYSTEM_TREASURY_ALLOCATION = 13_000_000_000 * 10 ** 18;
+    uint256 public constant CMO_LAUNCH_GRANT = 0;
     uint256 public constant STRATEGIC_RESERVE_ALLOCATION = 3_000_000_000 * 10 ** 18;
     uint256 public constant FOUNDER_OPERATIONS_GRANT = 500_000_000 * 10 ** 18;
 

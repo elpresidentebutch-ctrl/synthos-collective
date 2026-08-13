@@ -36,7 +36,7 @@ If any condition fails, `eligibleToReceive()` returns false and `requireEligible
 
 The registry should be checked before:
 
-- issuing the 3,000,000,000 SYN CMO launch grant;
+- confirming there is no current CMO launch grant;
 - releasing founder or team allocations;
 - approving immune node operator rewards;
 - approving validator reward distributions;

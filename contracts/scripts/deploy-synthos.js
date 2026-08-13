@@ -128,7 +128,6 @@ async function main() {
 
   const founderWallet = process.env.FOUNDER_WALLET || deployer.address;
   const founderOpsWallet = process.env.FOUNDER_OPS_WALLET || founderWallet;
-  const cmoWallet = process.env.CMO_WALLET || deployer.address;
   const immuneNodeRewardsWallet = process.env.IMMUNE_NODE_REWARDS_WALLET || null;
   const validatorRewardsWallet = process.env.VALIDATOR_REWARDS_WALLET || null;
   const dexLiquidityWallet = process.env.DEX_LIQUIDITY_WALLET || deployer.address;
@@ -265,7 +264,6 @@ async function main() {
   const validatorRewardsRecipient = validatorRewardsWallet || staking.address;
   const allocations = [
     [founderVesting.address, await token.FOUNDER_VESTING_ALLOCATION(), "FOUNDER_VESTING"],
-    [cmoWallet, await token.CMO_LAUNCH_GRANT(), "CMO_LAUNCH_GRANT"],
     [founderOpsWallet, await token.FOUNDER_OPERATIONS_GRANT(), "FOUNDER_OPERATIONS_GRANT"],
     [immuneNodeRewardsRecipient, await token.IMMUNE_NODE_REWARDS_ALLOCATION(), "IMMUNE_NODE_REWARDS"],
     [validatorRewardsRecipient, await token.VALIDATOR_REWARDS_ALLOCATION(), "VALIDATOR_REWARDS"],
@@ -390,8 +388,8 @@ async function main() {
       founderVesting: "17000000000",
       validatorRewards: "12000000000",
       communityAdopterRewards: "12500000000",
-      ecosystemTreasury: "10000000000",
-      cmoLaunchGrant: "3000000000",
+      ecosystemTreasury: "13000000000",
+      cmoLaunchGrant: "0",
       strategicReserve: "3000000000",
       founderLaunchAllocation: "500000000",
       treasuryRecyclingBurn: {
@@ -411,7 +409,6 @@ async function main() {
       multisigThreshold: launchMultisigThreshold.toString(),
       founderWallet,
       founderOpsWallet,
-      cmoWallet,
       immuneNodeRewardsWallet: immuneNodeRewardsRecipient,
       validatorRewardsWallet: validatorRewardsRecipient,
       dexLiquidityWallet,

@@ -23,8 +23,8 @@ The full SYNTHOS token supply is allocated as follows:
 | Founder Vesting | 17,000,000,000 SYN | 17% |
 | Validator / Security Rewards | 12,000,000,000 SYN | 12% |
 | Community / Adopter Rewards | 12,500,000,000 SYN | 12.5% |
-| Ecosystem Treasury | 10,000,000,000 SYN | 10% |
-| CMO Launch Grant | 3,000,000,000 SYN | 3% |
+| Ecosystem Treasury | 13,000,000,000 SYN | 13% |
+| CMO Launch Grant | 0 SYN | 0% |
 | Strategic Reserve | 3,000,000,000 SYN | 3% |
 | Founder Launch Allocation | 500,000,000 SYN | 0.5% |
 | **Total** | **100,000,000,000 SYN** | **100%** |
@@ -35,8 +35,8 @@ Grouped by purpose:
 |---|---:|---:|
 | Network Utility and Security | 34,000,000,000 SYN | 34% |
 | Liquidity | 20,000,000,000 SYN | 20% |
-| Community and Ecosystem Growth | 22,500,000,000 SYN | 22.5% |
-| Founder / CMO / Launch Team | 20,500,000,000 SYN | 20.5% |
+| Community and Ecosystem Growth | 25,500,000,000 SYN | 25.5% |
+| Founder / Launch Team | 17,500,000,000 SYN | 17.5% |
 | Strategic Reserve | 3,000,000,000 SYN | 3% |
 | **Total** | **100,000,000,000 SYN** | **100%** |
 
@@ -64,13 +64,11 @@ Each Founder release occurs every **May 29**.
 
 ## 4. CMO Launch Grant
 
-The CMO allocation is **3,000,000,000 SYN**.
+The CMO allocation is **0 SYN**.
 
-The CMO receives this allocation **upon successful launch of the SYNTHOS token**.
+SYNTHOS currently has no CMO allocation.
 
-For planning purposes, "successful launch" means the SYNTHOS token has been deployed, publicly announced, and made transferable or distributable under the Company's launch and compliance process.
-
-The CMO allocation is carved out of the original Founder allocation. It does not increase the total SYNTHOS token supply.
+The former 3,000,000,000 SYN CMO planning bucket has been returned to the Ecosystem Treasury. It remains project-controlled and does not increase the total SYNTHOS token supply.
 
 ## 5. Founder Launch Allocation
 
@@ -80,14 +78,14 @@ The Founder receives this allocation **at launch**.
 
 This allocation is separate from the Founder vesting allocation. It exists to support launch-period execution, including legal work, audits, infrastructure, listings, validators, liquidity preparation, community operations, and other project needs.
 
-## 6. Founder, CMO, and Launch Allocation Summary
+## 6. Founder and Launch Allocation Summary
 
 | Allocation | Amount | Timing |
 |---|---:|---|
 | Founder vesting | 17,000,000,000 SYN | 1,700,000,000 SYN every May 29 for 10 years |
-| CMO launch grant | 3,000,000,000 SYN | Upon successful launch of the SYNTHOS token |
+| CMO launch grant | 0 SYN | No current CMO allocation |
 | Founder launch allocation | 500,000,000 SYN | At launch |
-| **Total** | **20,500,000,000 SYN** | Founder vesting, CMO launch grant, and Founder launch allocation |
+| **Total** | **17,500,000,000 SYN** | Founder vesting and Founder launch allocation |
 
 ## 7. Immune Node Utility
 
@@ -340,13 +338,13 @@ Before public token launch, SYNTHOS should complete the following:
 
 - confirm all tokenomics numbers match deployed contracts;
 - confirm the Founder vesting schedule is 17,000,000,000 SYN over 10 years;
-- confirm the CMO launch grant is 3,000,000,000 SYN upon successful token launch;
+- confirm the CMO launch grant is 0 SYN;
 - confirm the Founder launch allocation is 500,000,000 SYN at launch;
 - confirm the Immune Node Rewards allocation is 22,000,000,000 SYN;
 - confirm the Locked Liquidity allocation is 20,000,000,000 SYN;
 - confirm the Validator / Security Rewards allocation is 12,000,000,000 SYN;
 - confirm the Community / Adopter Rewards allocation is 12,500,000,000 SYN;
-- confirm the Ecosystem Treasury allocation is 10,000,000,000 SYN;
+- confirm the Ecosystem Treasury allocation is 13,000,000,000 SYN;
 - confirm the Strategic Reserve allocation is 3,000,000,000 SYN;
 - define the final immune-node reward rules;
 - confirm the node reward class breakdown and 10-year capacity plan;

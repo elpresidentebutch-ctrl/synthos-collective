@@ -13,7 +13,6 @@ Required launch wallets:
 - `MULTISIG_THRESHOLD`: required owner confirmations, recommended `2` for `3` owners
 - `FOUNDER_WALLET`
 - `FOUNDER_OPS_WALLET`
-- `CMO_WALLET`
 - `COMMUNITY_WALLET`
 - `DEX_LIQUIDITY_WALLET`
 - `TREASURY_WALLET`
