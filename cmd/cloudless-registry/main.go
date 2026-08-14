@@ -1791,6 +1791,8 @@ func nodeStatus(p peer, now time.Time) map[string]any {
 		"first_reward_eligibility":          firstEligible,
 		"uptime_percent_this_month":         uptimePercent,
 	}
+	rewardEpochTracking := rewardEpochStatus(now, p, uptime, uptimePercent, rewardStatus, rewardEligible)
+	reward["epoch"] = rewardEpochTracking
 	if isValidator {
 		reward["monthly_base_syn"] = validatorMonthlyBaseRewardSYN
 		reward["monthly_bonus_cap_syn"] = validatorMonthlyBonusCapSYN
@@ -1821,6 +1823,7 @@ func nodeStatus(p peer, now time.Time) map[string]any {
 		"uptime_percent":            uptimePercent,
 		"uptime_percent_this_month": uptimePercent,
 		"uptime_required_s":         int64(rewardEpoch.Seconds()),
+		"reward_epoch":              rewardEpochTracking,
 		"height":                    p.Height,
 		"tip":                       p.Tip,
 		"state_root":                p.StateRoot,
@@ -1832,6 +1835,32 @@ func nodeStatus(p peer, now time.Time) map[string]any {
 		"capabilityStatus":          capabilityMap,
 		"accepted":                  rewardEligible,
 		"reward":                    reward,
+	}
+}
+
+func rewardEpochStatus(now time.Time, p peer, uptime time.Duration, uptimePercent float64, rewardStatus string, rewardEligible bool) map[string]any {
+	currentEpoch := now.UTC().Format("2006-01")
+	firstEligible := ""
+	if p.FirstHeartbeatAt > 0 {
+		firstEligible = time.UnixMilli(p.FirstHeartbeatAt).Add(rewardEpoch).UTC().Format("2006-01-02")
+	}
+	lastCompletedEpoch := "none completed"
+	previousMonthUptime := "no completed epoch"
+	if uptime >= rewardEpoch {
+		lastCompletedEpoch = now.UTC().AddDate(0, -1, 0).Format("2006-01")
+		previousMonthUptime = "100.0%"
+	}
+	return map[string]any{
+		"current_epoch":                 currentEpoch,
+		"days_verified_this_month":      uptime.Hours() / 24,
+		"uptime_percentage":             uptimePercent,
+		"first_reward_eligibility_date": firstEligible,
+		"last_completed_epoch":          lastCompletedEpoch,
+		"previous_month_uptime":         previousMonthUptime,
+		"reward_status":                 rewardStatus,
+		"reward_eligible":               rewardEligible,
+		"applies_to":                    []string{"validator_candidate", "validator"},
+		"note":                          "Reward eligibility applies to Validator Candidate and Validator roles only.",
 	}
 }
 

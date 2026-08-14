@@ -73,6 +73,20 @@
     </section>
 
     <section class="panel pad" style="margin-top:16px">
+      <h2>Reward epoch tracking</h2>
+      <div class="grid grid3">
+        <div class="stat"><b id="rewardEpoch">—</b><span>Current reward epoch</span></div>
+        <div class="stat"><b id="verifiedDays">0 days</b><span>Days verified this month</span></div>
+        <div class="stat"><b id="uptimePercent">0.0%</b><span>Uptime percentage</span></div>
+        <div class="stat"><b id="firstEligibility">—</b><span>First reward eligibility date</span></div>
+        <div class="stat"><b id="lastCompletedEpoch">none completed</b><span>Last completed epoch</span></div>
+        <div class="stat"><b id="previousMonthUptime">no completed epoch</b><span>Previous month uptime</span></div>
+      </div>
+      <p style="margin-top:14px"><b id="rewardStatus">Reward status: Waiting for node</b></p>
+      <p class="muted" id="rewardNote">Reward eligibility applies to Validator Candidate and Validator roles only.</p>
+    </section>
+
+    <section class="panel pad" style="margin-top:16px">
       <h2>Proof-of-Operation dashboard</h2>
       <ul class="steps" id="steps"></ul>
     </section>
@@ -111,6 +125,7 @@
     let session = null;
     let pollTimer = null;
     let heartbeatInFlight = false;
+    let activeBackendStatus = null;
 
     document.getElementById("backendUrl").textContent = API;
     document.getElementById("startBtn").onclick = installBackgroundNode;
@@ -266,11 +281,32 @@
       render(data.node);
       if (toast) flash("Status refreshed.");
     }
+    async function refreshBackendNodeStatus() {
+      const res = await fetch(API + "/api/network/status");
+      if (!res.ok) return null;
+      const network = await res.json();
+      const nodes = Array.isArray(network.validators) ? network.validators : [];
+      const preferred = session?.node_id
+        ? nodes.find((node) => node.name === session.node_id || node.node_id === session.node_id)
+        : nodes.find((node) => !node.stale) || nodes[0];
+      if (!preferred?.name) {
+        activeBackendStatus = null;
+        render(null);
+        return null;
+      }
+      const statusRes = await fetch(API + "/api/nodes/" + encodeURIComponent(preferred.name) + "/status");
+      if (!statusRes.ok) return null;
+      const data = await statusRes.json();
+      activeBackendStatus = data.node;
+      render(data.node);
+      return data.node;
+    }
     function startPolling() {
       if (pollTimer) clearInterval(pollTimer);
       pollTimer = setInterval(async () => {
         await sendSignedHeartbeat().catch((err) => flash("Heartbeat failed: " + err.message));
-        await refreshStatus();
+        if (session?.node_id) await refreshStatus();
+        await refreshBackendNodeStatus();
       }, 15000);
     }
     async function sendSignedHeartbeat() {
@@ -378,7 +414,7 @@
       setTimeout(() => { msg.textContent = ""; msg.className = "muted"; }, 3000);
     }
     function render(status) {
-      const s = status || session?.last_status || null;
+      const s = status || session?.last_status || activeBackendStatus || null;
       document.getElementById("downloadBtn").disabled = !session;
       document.getElementById("copyBtn").disabled = !session;
       document.getElementById("refreshBtn").disabled = !session;
@@ -395,8 +431,34 @@
       document.getElementById("height").textContent = s?.height || 0;
       document.getElementById("reward").textContent = s?.reward?.eligible ? "Eligible" : "Pending";
       document.getElementById("reward").className = s?.reward?.eligible ? "ok" : "pending";
+      renderRewardEpoch(s);
       renderSteps(s, caps);
       renderCaps(caps);
+    }
+    function fmtDays(value) {
+      const n = Number(value || 0);
+      if (n <= 0) return "0 days";
+      if (n < 1) return `${n.toFixed(3)} days`;
+      return `${n.toFixed(2)} days`;
+    }
+    function fmtPercent(value) {
+      const n = Number(value || 0);
+      return `${n.toFixed(1)}%`;
+    }
+    function titleStatus(value) {
+      return String(value || "waiting_for_node").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    }
+    function renderRewardEpoch(s) {
+      const epoch = s?.reward_epoch || s?.reward?.epoch || {};
+      document.getElementById("rewardEpoch").textContent = epoch.current_epoch || new Date().toISOString().slice(0, 7);
+      document.getElementById("verifiedDays").textContent = fmtDays(epoch.days_verified_this_month ?? s?.verified_days);
+      document.getElementById("uptimePercent").textContent = fmtPercent(epoch.uptime_percentage ?? s?.uptime_percent_this_month ?? s?.uptime_percent);
+      document.getElementById("firstEligibility").textContent = epoch.first_reward_eligibility_date || s?.reward?.first_reward_eligibility || "estimated after first heartbeat";
+      document.getElementById("lastCompletedEpoch").textContent = epoch.last_completed_epoch || "none completed";
+      document.getElementById("previousMonthUptime").textContent = epoch.previous_month_uptime || "no completed epoch";
+      document.getElementById("rewardStatus").textContent = "Reward status: " + titleStatus(epoch.reward_status || s?.reward?.status);
+      document.getElementById("rewardStatus").className = s?.reward?.eligible ? "ok" : "pending";
+      document.getElementById("rewardNote").textContent = epoch.note || "Reward eligibility applies to Validator Candidate and Validator roles only.";
     }
     function renderSteps(s, caps) {
       const done = {
@@ -424,6 +486,10 @@
     if (session?.node_id) {
       refreshStatus();
       startPolling();
+    }
+    refreshBackendNodeStatus();
+    if (!pollTimer) {
+      pollTimer = setInterval(refreshBackendNodeStatus, 15000);
     }
   </script>
 </body>
