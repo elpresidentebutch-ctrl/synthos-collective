@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -33,6 +34,10 @@ var coreCapabilities = []string{
 	"replay_protection",
 	"persistent_storage",
 }
+
+var cliKeyPath string
+var cliRelayURLs string
+var cliStatusPath string
 
 type nodeKey struct {
 	NodeID     string `json:"node_id"`
@@ -62,6 +67,11 @@ type silentNode struct {
 }
 
 func main() {
+	flag.StringVar(&cliKeyPath, "key", "", "path to persistent Ed25519 node key JSON")
+	flag.StringVar(&cliStatusPath, "status", "", "path to write node status JSON")
+	flag.StringVar(&cliRelayURLs, "relay", "", "comma-separated SYNTHOS registry/backend URLs")
+	flag.Parse()
+
 	key, privateKey, err := loadOrCreateNodeKey()
 	if err != nil {
 		log.Fatalf("node key error: %v", err)
@@ -287,6 +297,7 @@ func env(name string, fallback string) string {
 
 func relayURLSet() []string {
 	raw := firstNonEmpty(
+		cliRelayURLs,
 		os.Getenv("SYNTHOS_RELAY_URLS"),
 		os.Getenv("SYNTHOS_REGISTRY_URLS"),
 		os.Getenv("SYNTHOS_MAILBOX_URLS"),
@@ -331,6 +342,9 @@ func randomHex(bytes int) string {
 }
 
 func keyPath() string {
+	if cliKeyPath != "" {
+		return cliKeyPath
+	}
 	if value := os.Getenv("SYNTHOS_SILENT_KEY_PATH"); value != "" {
 		return value
 	}
@@ -342,6 +356,9 @@ func keyPath() string {
 }
 
 func statusPath() string {
+	if cliStatusPath != "" {
+		return cliStatusPath
+	}
 	if value := os.Getenv("SYNTHOS_SILENT_STATUS_PATH"); value != "" {
 		return value
 	}
