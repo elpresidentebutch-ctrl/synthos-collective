@@ -839,6 +839,9 @@ func (s *server) handleAPINodeHeartbeat(w http.ResponseWriter, r *http.Request) 
 	if len(body.Capabilities) > 0 {
 		entry.Capabilities = normalizeCapabilities(body.Capabilities)
 	}
+	if len(entry.Capabilities) == 0 && !entry.HostedProofSession && entry.LastNonce != "" {
+		entry.Capabilities = coreNodeCapabilities()
+	}
 	s.state.Peers[nodeID] = entry
 	s.mu.Unlock()
 	if err := s.persist(); err != nil {

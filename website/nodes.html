@@ -423,17 +423,21 @@
       document.getElementById("nodeBox").innerHTML = session
         ? `<div class="mono">${session.node_id}</div><div class="muted">Role: ${session.role || "validator_candidate"}</div><div class="muted">Runner: ${s?.real_signed_heartbeat ? "real Ed25519 signed heartbeat" : "waiting for signed heartbeat"}</div><div class="muted">Session saved in this browser.</div>`
         : "No node session yet.";
+      const capabilityStatus = s?.capability_status || s?.capabilityStatus || {};
       const caps = new Set(s?.capabilities || []);
       document.getElementById("proofStatus").textContent = s?.proof_status || (session ? "registered" : "—");
       document.getElementById("proofStatus").className = s?.proof_status === "proving" || s?.proof_status === "eligible" ? "ok" : "pending";
       document.getElementById("heartbeats").textContent = s?.valid_heartbeats || 0;
-      document.getElementById("capCount").textContent = `${CAPS.filter(([id]) => caps.has(id)).length}/7`;
+      document.getElementById("capCount").textContent = `${CAPS.filter(([id]) => hasCap(id, caps, capabilityStatus)).length}/7`;
       document.getElementById("height").textContent = s?.height || 0;
       document.getElementById("reward").textContent = s?.reward?.eligible ? "Eligible" : "Pending";
       document.getElementById("reward").className = s?.reward?.eligible ? "ok" : "pending";
       renderRewardEpoch(s);
-      renderSteps(s, caps);
-      renderCaps(caps);
+      renderSteps(s, caps, capabilityStatus);
+      renderCaps(caps, capabilityStatus);
+    }
+    function hasCap(id, caps, capabilityStatus) {
+      return caps.has(id) || capabilityStatus[id] === true;
     }
     function fmtDays(value) {
       const n = Number(value || 0);
@@ -460,7 +464,7 @@
       document.getElementById("rewardStatus").className = s?.reward?.eligible ? "ok" : "pending";
       document.getElementById("rewardNote").textContent = epoch.note || "Reward eligibility applies to Validator Candidate and Validator roles only.";
     }
-    function renderSteps(s, caps) {
+    function renderSteps(s, caps, capabilityStatus) {
       const done = {
         identity: !!session,
         backup: !!session?.backup_saved,
@@ -468,7 +472,7 @@
         heartbeat: (s?.valid_heartbeats || 0) > 0,
         health: !!s?.health,
         sync: !!s?.synced || (s?.height || 0) > 0,
-        capabilities: CAPS.every(([id]) => caps.has(id)),
+        capabilities: CAPS.every(([id]) => hasCap(id, caps, capabilityStatus)),
         reward: !!s?.reward?.eligible,
         promotion: !!s?.accepted,
       };
@@ -476,9 +480,9 @@
         `<li><span>${label}</span><span class="pill ${done[id] ? "ok" : "pending"}">${done[id] ? "complete" : "pending"}</span></li>`
       ).join("");
     }
-    function renderCaps(caps) {
+    function renderCaps(caps, capabilityStatus) {
       document.getElementById("caps").innerHTML = CAPS.map(([id, label]) =>
-        `<li><span>${label}</span><span class="pill ${caps.has(id) ? "ok" : "pending"}">${caps.has(id) ? "verified" : "pending"}</span></li>`
+        `<li><span>${label}</span><span class="pill ${hasCap(id, caps, capabilityStatus) ? "ok" : "pending"}">${hasCap(id, caps, capabilityStatus) ? "verified" : "pending"}</span></li>`
       ).join("");
     }
     load();

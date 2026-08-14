@@ -85,6 +85,58 @@ func TestBrowserNodeMustSendRealSignedHeartbeat(t *testing.T) {
 	if status.Node.Reward.Status != "proving_uptime" {
 		t.Fatalf("reward status = %q", status.Node.Reward.Status)
 	}
+	if len(status.Node.Capabilities) != len(coreNodeCapabilities()) {
+		t.Fatalf("capability count = %d, want %d", len(status.Node.Capabilities), len(coreNodeCapabilities()))
+	}
+	for _, capability := range coreNodeCapabilities() {
+		if !status.Node.CapabilityStatus[capability] {
+			t.Fatalf("capability %q was not marked verified", capability)
+		}
+	}
+}
+
+func TestSignedHeartbeatDefaultsCoreCapabilitiesWhenMissing(t *testing.T) {
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &server{
+		state: registryState{
+			Peers:               map[string]peer{},
+			Mailbox:             map[string][]mailboxMessage{},
+			Contacts:            []contactMessage{},
+			EarlyAccessPayments: map[string]earlyAccessPaymentIntent{},
+		},
+	}
+
+	postJSON(t, s.handleAPINodeRegister, "/api/nodes/register", map[string]any{
+		"publicId":   "syn-capability-fallback",
+		"public_key": hex.EncodeToString(publicKey),
+		"mode":       "public-validator",
+	}, http.StatusOK)
+
+	timestamp := time.Now().UTC().Format(time.RFC3339)
+	nonce := "00000000000000000001"
+	message := canonicalHeartbeatMessage("syn-capability-fallback", 1, "tip-1", "state-1", timestamp, nonce)
+	postJSON(t, s.handleAPINodeHeartbeat, "/api/nodes/heartbeat", map[string]any{
+		"node_id":    "syn-capability-fallback",
+		"height":     1,
+		"tip":        "tip-1",
+		"state_root": "state-1",
+		"timestamp":  timestamp,
+		"nonce":      nonce,
+		"signature":  hex.EncodeToString(ed25519.Sign(privateKey, message)),
+	}, http.StatusOK)
+
+	status := getNodeStatus(t, s, "/api/nodes/syn-capability-fallback/status")
+	if len(status.Node.Capabilities) != len(coreNodeCapabilities()) {
+		t.Fatalf("capability count = %d, want %d", len(status.Node.Capabilities), len(coreNodeCapabilities()))
+	}
+	for _, capability := range coreNodeCapabilities() {
+		if !status.Node.CapabilityStatus[capability] {
+			t.Fatalf("capability %q was not marked verified", capability)
+		}
+	}
 }
 
 func postJSON(t *testing.T, handler http.HandlerFunc, path string, body map[string]any, wantStatus int) {
@@ -104,12 +156,14 @@ func postJSON(t *testing.T, handler http.HandlerFunc, path string, body map[stri
 
 func getNodeStatus(t *testing.T, s *server, path string) struct {
 	Node struct {
-		ProofStatus         string  `json:"proof_status"`
-		HostedProofSession  bool    `json:"hosted_proof_session"`
-		RealSignedHeartbeat bool    `json:"real_signed_heartbeat"`
-		Health              bool    `json:"health"`
-		ValidHeartbeats     uint64  `json:"valid_heartbeats"`
-		UptimePercent       float64 `json:"uptime_percent"`
+		ProofStatus         string          `json:"proof_status"`
+		HostedProofSession  bool            `json:"hosted_proof_session"`
+		RealSignedHeartbeat bool            `json:"real_signed_heartbeat"`
+		Health              bool            `json:"health"`
+		ValidHeartbeats     uint64          `json:"valid_heartbeats"`
+		UptimePercent       float64         `json:"uptime_percent"`
+		Capabilities        []string        `json:"capabilities"`
+		CapabilityStatus    map[string]bool `json:"capability_status"`
 		Reward              struct {
 			Eligible bool   `json:"eligible"`
 			Status   string `json:"status"`
@@ -125,12 +179,14 @@ func getNodeStatus(t *testing.T, s *server, path string) struct {
 	}
 	var status struct {
 		Node struct {
-			ProofStatus         string  `json:"proof_status"`
-			HostedProofSession  bool    `json:"hosted_proof_session"`
-			RealSignedHeartbeat bool    `json:"real_signed_heartbeat"`
-			Health              bool    `json:"health"`
-			ValidHeartbeats     uint64  `json:"valid_heartbeats"`
-			UptimePercent       float64 `json:"uptime_percent"`
+			ProofStatus         string          `json:"proof_status"`
+			HostedProofSession  bool            `json:"hosted_proof_session"`
+			RealSignedHeartbeat bool            `json:"real_signed_heartbeat"`
+			Health              bool            `json:"health"`
+			ValidHeartbeats     uint64          `json:"valid_heartbeats"`
+			UptimePercent       float64         `json:"uptime_percent"`
+			Capabilities        []string        `json:"capabilities"`
+			CapabilityStatus    map[string]bool `json:"capability_status"`
 			Reward              struct {
 				Eligible bool   `json:"eligible"`
 				Status   string `json:"status"`
