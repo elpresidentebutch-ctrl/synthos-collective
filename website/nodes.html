@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>SYNTHOS Push Button Node</title>
-  <meta name="description" content="Start, restore, and monitor a SYNTHOS Proof-of-Operation node candidate." />
+  <meta name="description" content="Install and monitor a SYNTHOS background validator node." />
   <style>
     :root{color-scheme:dark;--bg:#060912;--panel:#0d1422;--panel2:#111b2d;--text:#f4f8ff;--muted:#9ba9bc;--line:rgba(255,255,255,.14);--cyan:#72ddff;--green:#35d39b;--amber:#f2c45d;--red:#ff6b8a;--violet:#9c7cff;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
     *{box-sizing:border-box} body{margin:0;background:radial-gradient(circle at 20% 0,rgba(114,221,255,.16),transparent 360px),radial-gradient(circle at 80% 20%,rgba(156,124,255,.14),transparent 420px),var(--bg);color:var(--text)}
@@ -24,11 +24,11 @@
   <main>
     <section class="hero">
       <div class="panel pad">
-        <div class="eyebrow">Proof-of-Operation onboarding</div>
-        <h1>Push the button. Become a node candidate.</h1>
-        <p>This page stores your node session in this browser and reloads live stats from the SYNTHOS backend. Refreshing the page should not erase your dashboard.</p>
+        <div class="eyebrow">Background validator runner</div>
+        <h1>Push the button. Run a real background node.</h1>
+        <p>The button downloads a Windows installer for a local background runner. The runner creates its own Ed25519 key, starts at login, and sends real signed heartbeats every 15 seconds even after this browser tab is closed.</p>
         <div class="row">
-          <button id="startBtn" class="btn primary">Start SYNTHOS Node</button>
+          <button id="startBtn" class="btn primary">Install Background Node</button>
           <button id="downloadBtn" class="btn" disabled>Download backup</button>
           <button id="clearBtn" class="btn danger">Clear local session</button>
         </div>
@@ -36,7 +36,7 @@
       <aside class="panel pad">
         <h2>Validator reward rule</h2>
         <p>Approved validator operators may earn <b class="ok">5,000 SYN/month</b> base, with up to <b class="ok">7,500 SYN/month</b> maximum after one full month of verified uptime.</p>
-        <p class="muted">No payment is made for clicking the button. Rewards stay pending until verified operation completes.</p>
+        <p class="muted">No payment is made for clicking the button alone. Rewards require the installed runner to keep sending real signed uptime proofs.</p>
       </aside>
     </section>
 
@@ -104,9 +104,10 @@
     ];
     let session = null;
     let pollTimer = null;
+    let heartbeatInFlight = false;
 
     document.getElementById("backendUrl").textContent = API;
-    document.getElementById("startBtn").onclick = startNode;
+    document.getElementById("startBtn").onclick = installBackgroundNode;
     document.getElementById("downloadBtn").onclick = downloadBackup;
     document.getElementById("copyBtn").onclick = copyNodeId;
     document.getElementById("refreshBtn").onclick = () => refreshStatus(true);
@@ -117,6 +118,62 @@
       const out = new Uint8Array(bytes);
       crypto.getRandomValues(out);
       return [...out].map((b) => b.toString(16).padStart(2, "0")).join("");
+    }
+    function hex(bytes) {
+      return "0x" + [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+    }
+    function bytesToBase64(bytes) {
+      let binary = "";
+      bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+      return btoa(binary);
+    }
+    function base64ToBytes(value) {
+      const binary = atob(value);
+      const out = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+      return out;
+    }
+    function spkiToRawEd25519(spki) {
+      const bytes = new Uint8Array(spki);
+      return bytes.slice(bytes.length - 32);
+    }
+    function pkcs8ToSeed(pkcs8) {
+      const bytes = new Uint8Array(pkcs8);
+      return bytes.slice(bytes.length - 32);
+    }
+    async function generateNodeIdentity() {
+      if (!window.crypto?.subtle) {
+        throw new Error("This browser cannot generate a secure Ed25519 node key. Use a modern HTTPS browser.");
+      }
+      const keyPair = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
+      const spki = await crypto.subtle.exportKey("spki", keyPair.publicKey);
+      const pkcs8 = await crypto.subtle.exportKey("pkcs8", keyPair.privateKey);
+      const publicKey = spkiToRawEd25519(spki);
+      const seed = pkcs8ToSeed(pkcs8);
+      const privateKey = new Uint8Array(64);
+      privateKey.set(seed, 0);
+      privateKey.set(publicKey, 32);
+      return {
+        public_key: hex(publicKey),
+        private_key: hex(privateKey),
+        private_key_pkcs8_base64: bytesToBase64(new Uint8Array(pkcs8)),
+        key_format: "synthos-browser-ed25519-v1",
+      };
+    }
+    async function importNodeSigningKey() {
+      if (!session?.private_key_pkcs8_base64) {
+        throw new Error("Node private key is missing. Restore a backup created by the real signed node runner.");
+      }
+      return crypto.subtle.importKey(
+        "pkcs8",
+        base64ToBytes(session.private_key_pkcs8_base64),
+        { name: "Ed25519" },
+        false,
+        ["sign"],
+      );
+    }
+    function canonicalHeartbeatMessage(nodeID, height, tip, stateRoot, timestamp, nonce) {
+      return `SYNTHOS_HEARTBEAT_V1\nnode_id=${nodeID}\nheight=${height}\ntip=${tip}\nstate_root=${stateRoot}\ntimestamp=${timestamp}\nnonce=${nonce}`;
     }
     function save() {
       if (session) localStorage.setItem(SESSION_KEY, JSON.stringify(session));
@@ -132,24 +189,38 @@
         network: "mainnet",
         node_id: s.node_id,
         public_key: s.public_key,
+        private_key: s.private_key,
+        private_key_pkcs8_base64: s.private_key_pkcs8_base64,
+        key_format: s.key_format,
         role: s.role,
         created_at: s.created_at,
         warning: "Store offline. Anyone with a complete node backup may control that node identity.",
       };
     }
+    function installBackgroundNode() {
+      flash("Downloading installer. Open the .bat file to start the background node.");
+      window.location.href = API + "/api/node/install.bat";
+    }
     async function startNode() {
       const nodeId = "syn-" + randomHex(6);
+      const identity = await generateNodeIdentity();
       session = {
         node_id: nodeId,
-        public_key: "",
+        public_key: identity.public_key,
+        private_key: identity.private_key,
+        private_key_pkcs8_base64: identity.private_key_pkcs8_base64,
+        key_format: identity.key_format,
         role: "validator_candidate",
         created_at: new Date().toISOString(),
         backup_saved: false,
         registered: false,
+        heartbeat_counter: 0,
       };
       save();
       render();
       await registerCandidate();
+      await sendSignedHeartbeat();
+      await refreshStatus();
     }
     async function registerCandidate() {
       if (!session) return;
@@ -158,7 +229,7 @@
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           publicId: session.node_id,
-          public_key: session.public_key || undefined,
+          public_key: session.public_key,
           mode: "public-validator",
           endpoint: "https://synthos-collective.onrender.com/nodes",
           chain: "SYNTHOS Collective",
@@ -191,7 +262,47 @@
     }
     function startPolling() {
       if (pollTimer) clearInterval(pollTimer);
-      pollTimer = setInterval(refreshStatus, 15000);
+      pollTimer = setInterval(async () => {
+        await sendSignedHeartbeat().catch((err) => flash("Heartbeat failed: " + err.message));
+        await refreshStatus();
+      }, 15000);
+    }
+    async function sendSignedHeartbeat() {
+      if (!session?.registered || !session?.private_key_pkcs8_base64 || heartbeatInFlight) return;
+      heartbeatInFlight = true;
+      try {
+        const height = Math.max(1, Number(session.last_status?.height || 0) + 1);
+        const tip = "browser-tip-" + randomHex(16);
+        const stateRoot = "browser-state-" + randomHex(16);
+        const timestamp = new Date().toISOString();
+        session.heartbeat_counter = Number(session.heartbeat_counter || 0) + 1;
+        const nonce = `${String(Date.now()).padStart(13, "0")}-${String(session.heartbeat_counter).padStart(8, "0")}`;
+        const message = canonicalHeartbeatMessage(session.node_id, height, tip, stateRoot, timestamp, nonce);
+        const signingKey = await importNodeSigningKey();
+        const signature = await crypto.subtle.sign({ name: "Ed25519" }, signingKey, new TextEncoder().encode(message));
+        const res = await fetch(API + "/api/nodes/heartbeat", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            node_id: session.node_id,
+            height,
+            tip,
+            state_root: stateRoot,
+            timestamp,
+            nonce,
+            signature: hex(new Uint8Array(signature)),
+            capabilities: CAPS.map(([id]) => id),
+            endpoint: "https://synthos-collective.onrender.com/nodes",
+          }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        session.last_status = data.node;
+        save();
+        render(data.node);
+      } finally {
+        heartbeatInFlight = false;
+      }
     }
     function downloadBackup() {
       if (!session) return;
@@ -216,18 +327,26 @@
         const data = JSON.parse(await file.text());
         const nodeId = data.node_id || data.node?.publicId || data.node?.node_id;
         const publicKey = data.public_key || data.node?.public_key || "";
+        const privateKey = data.private_key || "";
+        const privateKeyPKCS8 = data.private_key_pkcs8_base64 || "";
         if (!nodeId) throw new Error("Backup missing node_id.");
+        if (!publicKey || !privateKeyPKCS8) throw new Error("Backup is missing the real node signing key. Create a new node backup from the updated runner.");
         session = {
           node_id: nodeId,
           public_key: publicKey,
+          private_key: privateKey,
+          private_key_pkcs8_base64: privateKeyPKCS8,
+          key_format: data.key_format || "synthos-browser-ed25519-v1",
           role: data.role || data.node?.mode || "validator_candidate",
           created_at: data.created_at || data.node?.createdAt || new Date().toISOString(),
           backup_saved: true,
           registered: true,
+          heartbeat_counter: Number(data.heartbeat_counter || 0),
         };
         save();
         msg.textContent = "Backup restored. Reloading backend status.";
         await registerCandidate();
+        await sendSignedHeartbeat();
         await refreshStatus();
       } catch (err) {
         msg.textContent = "Restore failed: " + err.message;
@@ -238,6 +357,7 @@
       localStorage.removeItem(SESSION_KEY);
       session = null;
       if (pollTimer) clearInterval(pollTimer);
+      pollTimer = null;
       render();
     }
     async function copyNodeId() {
@@ -259,7 +379,7 @@
       document.getElementById("backend").textContent = "Live";
       document.getElementById("backend").className = "ok";
       document.getElementById("nodeBox").innerHTML = session
-        ? `<div class="mono">${session.node_id}</div><div class="muted">Role: ${session.role || "validator_candidate"}</div><div class="muted">Session saved in this browser.</div>`
+        ? `<div class="mono">${session.node_id}</div><div class="muted">Role: ${session.role || "validator_candidate"}</div><div class="muted">Runner: ${s?.real_signed_heartbeat ? "real Ed25519 signed heartbeat" : "waiting for signed heartbeat"}</div><div class="muted">Session saved in this browser.</div>`
         : "No node session yet.";
       const caps = new Set(s?.capabilities || []);
       document.getElementById("proofStatus").textContent = s?.proof_status || (session ? "registered" : "—");

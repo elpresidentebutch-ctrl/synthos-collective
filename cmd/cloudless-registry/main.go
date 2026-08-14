@@ -27,7 +27,6 @@ import (
 
 const staleAfter = 5 * time.Minute
 const heartbeatFreshAfter = 2 * time.Minute
-const hostedProofHeartbeatEvery = 15 * time.Second
 const rewardEpoch = 30 * 24 * time.Hour
 const validatorMonthlyBaseRewardSYN = 5000
 const validatorMonthlyBonusCapSYN = 2500
@@ -464,11 +463,6 @@ func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	now := time.Now()
-	if s.refreshHostedProofSessions(now) {
-		if err := s.persist(); err != nil {
-			log.Printf("persist warning: %v", err)
-		}
-	}
 	s.mu.RLock()
 	peers := make([]peer, 0, len(s.state.Peers))
 	for _, p := range s.state.Peers {
@@ -703,19 +697,9 @@ func (s *server) handleAPINodeRegister(w http.ResponseWriter, r *http.Request) {
 		nodeID = "syn-node-" + shortID()
 	}
 	publicKey := truncate(defaultString(body.PublicKey, body.PublicKeyAlt), 256)
-	hostedProofSession := false
 	if publicKey == "" {
-		// Older Lovable builds created a browser backup placeholder but did not
-		// create/export a real Ed25519 public key. Keep those public pages usable
-		// by registering a backend-hosted proof session. This is not reward
-		// eligibility; it only moves the candidate from "clicked" to "proving".
-		generatedPublicKey, _, err := ed25519.GenerateKey(rand.Reader)
-		if err != nil {
-			http.Error(w, "key generation failed", http.StatusInternalServerError)
-			return
-		}
-		publicKey = hex.EncodeToString(generatedPublicKey)
-		hostedProofSession = true
+		http.Error(w, "public_key required; push-button nodes must generate a client-side Ed25519 key", http.StatusBadRequest)
+		return
 	}
 	role := normalizeRole(defaultString(defaultString(body.Role, body.Kind), body.Mode))
 	kind := roleKind(role)
@@ -741,10 +725,6 @@ func (s *server) handleAPINodeRegister(w http.ResponseWriter, r *http.Request) {
 		Role:         role,
 		ProofStatus:  "registered",
 	}
-	if hostedProofSession {
-		activateHostedProofSession(&entry)
-	}
-
 	s.mu.Lock()
 	if existing, ok := s.state.Peers[nodeID]; ok {
 		entry.RegisteredAt = existing.RegisteredAt
@@ -759,9 +739,6 @@ func (s *server) handleAPINodeRegister(w http.ResponseWriter, r *http.Request) {
 		entry.Tip = existing.Tip
 		entry.StateRoot = existing.StateRoot
 		entry.ProofStatus = proofStatus(entry, time.Now())
-		if hostedProofSession && existing.ValidHeartbeats == 0 {
-			activateHostedProofSession(&entry)
-		}
 	}
 	s.state.Peers[nodeID] = entry
 	s.mu.Unlock()
@@ -886,11 +863,6 @@ func (s *server) handleAPINodeByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	nodeID := sanitize(parts[0])
-	if s.refreshHostedProofSessions(time.Now()) {
-		if err := s.persist(); err != nil {
-			log.Printf("persist warning: %v", err)
-		}
-	}
 	s.mu.RLock()
 	entry, ok := s.state.Peers[nodeID]
 	s.mu.RUnlock()
@@ -1451,11 +1423,6 @@ func (s *server) handleWindowsInstallerBat(w http.ResponseWriter, r *http.Reques
 
 func (s *server) writePeerList(w http.ResponseWriter, activeOnly bool) {
 	now := time.Now()
-	if s.refreshHostedProofSessions(now) {
-		if err := s.persist(); err != nil {
-			log.Printf("persist warning: %v", err)
-		}
-	}
 	s.mu.RLock()
 	peers := make([]peer, 0, len(s.state.Peers))
 	for _, p := range s.state.Peers {
@@ -1486,11 +1453,6 @@ func (s *server) writePeerList(w http.ResponseWriter, activeOnly bool) {
 }
 
 func (s *server) networkSnapshot(now time.Time) networkSnapshot {
-	if s.refreshHostedProofSessions(now) {
-		if err := s.persist(); err != nil {
-			log.Printf("persist warning: %v", err)
-		}
-	}
 	s.mu.RLock()
 	peers := make([]peer, 0, len(s.state.Peers))
 	for _, p := range s.state.Peers {
@@ -1774,63 +1736,6 @@ func activateHostedProofSession(p *peer) {
 	}
 }
 
-func (s *server) refreshHostedProofSessions(now time.Time) bool {
-	nowMS := now.UnixMilli()
-	changed := false
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for id, p := range s.state.Peers {
-		if !p.HostedProofSession && shouldBootstrapHostedProof(p) {
-			activateHostedProofSession(&p)
-			changed = true
-		} else if !p.HostedProofSession {
-			continue
-		}
-
-		if p.LastHeartbeatAt == 0 {
-			activateHostedProofSession(&p)
-			changed = true
-		}
-		elapsed := nowMS - p.LastHeartbeatAt
-		if elapsed >= int64(hostedProofHeartbeatEvery/time.Millisecond) {
-			ticks := elapsed / int64(hostedProofHeartbeatEvery/time.Millisecond)
-			if ticks < 1 {
-				ticks = 1
-			}
-			p.ValidHeartbeats += uint64(ticks)
-			p.VerifiedUptimeMS += ticks * int64(hostedProofHeartbeatEvery/time.Millisecond)
-			p.Height += ticks
-			p.Tip = "hosted-proof-" + shortID()
-			p.StateRoot = "hosted-state-" + shortID()
-			p.LastHeartbeatAt = nowMS
-			changed = true
-		}
-		p.LastSeen = nowMS
-		p.Status = "proving"
-		p.ProofStatus = proofStatus(p, now)
-		p.HostedProofSession = true
-		if p.Mode == "" || p.Mode == "candidate" || p.Mode == "public_endpoint" {
-			p.Mode = "hosted_proof_session"
-		}
-		if len(p.Capabilities) == 0 {
-			p.Capabilities = coreNodeCapabilities()
-		}
-		s.state.Peers[id] = p
-	}
-	return changed
-}
-
-func shouldBootstrapHostedProof(p peer) bool {
-	if p.LastNonce != "" || p.ValidHeartbeats > 0 {
-		return false
-	}
-	endpoint := strings.TrimSpace(p.URL)
-	if endpoint == "" {
-		return false
-	}
-	return strings.Contains(endpoint, "/nodes") || strings.Contains(endpoint, "lovable")
-}
-
 func nodeStatus(p peer, now time.Time) map[string]any {
 	p.ProofStatus = proofStatus(p, now)
 	uptime := time.Duration(p.VerifiedUptimeMS) * time.Millisecond
@@ -1841,7 +1746,7 @@ func nodeStatus(p peer, now time.Time) map[string]any {
 	eligible := p.ProofStatus == "eligible"
 	role := defaultString(p.Role, normalizeRole(p.Kind))
 	isValidator := role == "validator_candidate" || role == "validator"
-	rewardEligible := eligible && isValidator
+	rewardEligible := eligible && isValidator && !p.HostedProofSession
 	uptimePercent := 0.0
 	if rewardEpoch > 0 {
 		uptimePercent = (float64(uptime) / float64(rewardEpoch)) * 100
@@ -1850,8 +1755,8 @@ func nodeStatus(p peer, now time.Time) map[string]any {
 		}
 	}
 	rewardStatus := "proving_uptime"
-	if p.HostedProofSession && !rewardEligible {
-		rewardStatus = "proving_hosted_uptime"
+	if p.HostedProofSession {
+		rewardStatus = "hosted_bootstrap_not_reward_eligible"
 	} else if rewardEligible {
 		rewardStatus = "eligible_next_payout"
 	}
@@ -1864,8 +1769,8 @@ func nodeStatus(p peer, now time.Time) map[string]any {
 		"monthly_max_syn":                   0,
 		"paid_monthly_in_arrears":           true,
 		"requires_full_month_uptime":        true,
-		"requires_real_signed_heartbeats":   false,
-		"hosted_bootstrap_sessions_qualify": true,
+		"requires_real_signed_heartbeats":   true,
+		"hosted_bootstrap_sessions_qualify": false,
 		"first_reward_eligibility":          firstEligible,
 		"uptime_percent_this_month":         uptimePercent,
 	}
@@ -1961,7 +1866,7 @@ func validatorRewardPolicy() map[string]any {
 		"payment_timing":                 "monthly_in_arrears",
 		"first_payment_after":            "one full month of verified validator uptime",
 		"no_payment_for_button_click":    true,
-		"requires_signed_heartbeats":     false,
+		"requires_signed_heartbeats":     true,
 		"requires_verified_operation":    true,
 		"requires_public_endpoint":       false,
 		"no_guaranteed_income":           true,

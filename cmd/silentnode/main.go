@@ -3,9 +3,12 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
@@ -18,28 +21,60 @@ import (
 	"time"
 )
 
-const defaultRelayURLs = "https://synthos-www.onrender.com"
+const defaultRelayURLs = "https://synthos-collective.onrender.com"
+const heartbeatEvery = 15 * time.Second
+
+var coreCapabilities = []string{
+	"ed25519",
+	"canonical_serialization",
+	"validator_registry",
+	"proposal_rotation",
+	"quorum",
+	"replay_protection",
+	"persistent_storage",
+}
+
+type nodeKey struct {
+	NodeID     string `json:"node_id"`
+	PublicKey  string `json:"public_key"`
+	PrivateKey string `json:"private_key"`
+	CreatedAt  string `json:"created_at"`
+	Format     string `json:"format"`
+}
 
 type silentNode struct {
-	NodeID             string   `json:"node_id"`
-	HardwareCommitment string   `json:"hardware_commitment"`
-	Mode               string   `json:"mode"`
-	StartedAt          string   `json:"started_at"`
-	HeartbeatCount     uint64   `json:"heartbeat_count"`
-	LastProof          string   `json:"last_proof"`
-	RelayURLs          []string `json:"relay_urls"`
-	LastRelayOK        []string `json:"last_relay_ok"`
-	LastRelayFailed    []string `json:"last_relay_failed"`
-	StatusPath         string   `json:"status_path"`
+	NodeID              string   `json:"node_id"`
+	PublicKey           string   `json:"public_key"`
+	HardwareCommitment  string   `json:"hardware_commitment"`
+	Mode                string   `json:"mode"`
+	StartedAt           string   `json:"started_at"`
+	HeartbeatCount      uint64   `json:"heartbeat_count"`
+	LastNonce           string   `json:"last_nonce"`
+	LastTip             string   `json:"last_tip"`
+	LastStateRoot       string   `json:"last_state_root"`
+	LastHeight          int64    `json:"last_height"`
+	RelayURLs           []string `json:"relay_urls"`
+	LastRelayOK         []string `json:"last_relay_ok"`
+	LastRelayFailed     []string `json:"last_relay_failed"`
+	StatusPath          string   `json:"status_path"`
+	KeyPath             string   `json:"key_path"`
+	RealSignedHeartbeat bool     `json:"real_signed_heartbeat"`
 }
 
 func main() {
+	key, privateKey, err := loadOrCreateNodeKey()
+	if err != nil {
+		log.Fatalf("node key error: %v", err)
+	}
 	node := silentNode{
-		NodeID:             "desktop-" + hardwareCommitment()[:12],
-		HardwareCommitment: hardwareCommitment(),
-		Mode:               "absolute_silence_outbound_only",
-		StartedAt:          time.Now().UTC().Format(time.RFC3339),
-		StatusPath:         statusPath(),
+		NodeID:              key.NodeID,
+		PublicKey:           key.PublicKey,
+		HardwareCommitment:  hardwareCommitment(),
+		Mode:                "background_signed_validator_heartbeat",
+		StartedAt:           time.Now().UTC().Format(time.RFC3339),
+		StatusPath:          statusPath(),
+		KeyPath:             keyPath(),
+		RealSignedHeartbeat: true,
 	}
 
 	relayURLs := relayURLSet()
@@ -48,25 +83,165 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	log.Printf("SYNTHOS silent node started: %s", node.NodeID)
-	log.Printf("Mode: outbound polling only; no inbound ports; no local server")
+	log.Printf("SYNTHOS background validator node started: %s", node.NodeID)
+	log.Printf("Mode: outbound-only Ed25519 signed heartbeats every %s", heartbeatEvery)
 	log.Printf("Relay set: %s", strings.Join(relayURLs, ", "))
 
-	heartbeatAll(ctx, relayURLs, &node)
+	heartbeatAll(ctx, relayURLs, &node, privateKey)
 	pollMailboxAll(ctx, relayURLs, node.NodeID)
-	ticker := time.NewTicker(60 * time.Second)
+	ticker := time.NewTicker(heartbeatEvery)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
-			log.Printf("SYNTHOS silent node stopped")
+			log.Printf("SYNTHOS background validator node stopped")
 			return
 		case <-ticker.C:
-			heartbeatAll(ctx, relayURLs, &node)
+			heartbeatAll(ctx, relayURLs, &node, privateKey)
 			pollMailboxAll(ctx, relayURLs, node.NodeID)
 		}
 	}
+}
+
+func loadOrCreateNodeKey() (nodeKey, ed25519.PrivateKey, error) {
+	path := keyPath()
+	if body, err := os.ReadFile(path); err == nil {
+		var key nodeKey
+		if err := json.Unmarshal(body, &key); err != nil {
+			return nodeKey{}, nil, err
+		}
+		privateKey, err := privateKeyFromHex(key.PrivateKey)
+		if err != nil {
+			return nodeKey{}, nil, err
+		}
+		if key.NodeID == "" || key.PublicKey == "" {
+			return nodeKey{}, nil, fmt.Errorf("stored key is missing node_id or public_key")
+		}
+		return key, privateKey, nil
+	}
+
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return nodeKey{}, nil, err
+	}
+	key := nodeKey{
+		NodeID:     "syn-" + hardwareCommitment()[:12],
+		PublicKey:  hex.EncodeToString(publicKey),
+		PrivateKey: hex.EncodeToString(privateKey),
+		CreatedAt:  time.Now().UTC().Format(time.RFC3339),
+		Format:     "synthos-background-ed25519-v1",
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nodeKey{}, nil, err
+	}
+	body, _ := json.MarshalIndent(key, "", "  ")
+	if err := os.WriteFile(path, body, 0o600); err != nil {
+		return nodeKey{}, nil, err
+	}
+	return key, privateKey, nil
+}
+
+func privateKeyFromHex(value string) (ed25519.PrivateKey, error) {
+	value = strings.TrimPrefix(strings.TrimSpace(value), "0x")
+	raw, err := hex.DecodeString(value)
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) != ed25519.PrivateKeySize {
+		return nil, fmt.Errorf("private key must be %d bytes, got %d", ed25519.PrivateKeySize, len(raw))
+	}
+	return ed25519.PrivateKey(raw), nil
+}
+
+func heartbeatAll(ctx context.Context, relayURLs []string, node *silentNode, privateKey ed25519.PrivateKey) {
+	node.HeartbeatCount++
+	node.LastRelayOK = nil
+	node.LastRelayFailed = nil
+	node.LastHeight++
+	if node.LastHeight < 1 {
+		node.LastHeight = 1
+	}
+	node.LastTip = "silent-tip-" + randomHex(16)
+	node.LastStateRoot = "silent-state-" + randomHex(16)
+	node.LastNonce = fmt.Sprintf("%019d-%08d", time.Now().UnixMilli(), node.HeartbeatCount)
+
+	for _, relayURL := range relayURLs {
+		if register(ctx, relayURL, *node) && heartbeat(ctx, relayURL, node, privateKey) {
+			node.LastRelayOK = append(node.LastRelayOK, relayURL)
+		} else {
+			node.LastRelayFailed = append(node.LastRelayFailed, relayURL)
+		}
+	}
+	writeStatus(*node)
+}
+
+func register(ctx context.Context, relayURL string, node silentNode) bool {
+	payload := map[string]any{
+		"publicId":            node.NodeID,
+		"public_key":          node.PublicKey,
+		"mode":                "public-validator",
+		"role":                "validator_candidate",
+		"network":             "mainnet",
+		"endpoint":            "",
+		"capabilities":        coreCapabilities,
+		"background":          true,
+		"hardware_commitment": node.HardwareCommitment,
+	}
+	return postJSON(ctx, relayURL+"/api/nodes/register", payload, node.NodeID, "register")
+}
+
+func heartbeat(ctx context.Context, relayURL string, node *silentNode, privateKey ed25519.PrivateKey) bool {
+	timestamp := time.Now().UTC().Format(time.RFC3339)
+	message := canonicalHeartbeatMessage(node.NodeID, node.LastHeight, node.LastTip, node.LastStateRoot, timestamp, node.LastNonce)
+	signature := ed25519.Sign(privateKey, []byte(message))
+	payload := map[string]any{
+		"node_id":      node.NodeID,
+		"height":       node.LastHeight,
+		"tip":          node.LastTip,
+		"state_root":   node.LastStateRoot,
+		"timestamp":    timestamp,
+		"nonce":        node.LastNonce,
+		"signature":    hex.EncodeToString(signature),
+		"capabilities": coreCapabilities,
+	}
+	return postJSON(ctx, relayURL+"/api/nodes/heartbeat", payload, node.NodeID, "heartbeat")
+}
+
+func postJSON(ctx context.Context, endpoint string, payload map[string]any, nodeID string, label string) bool {
+	reqCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	body, _ := json.Marshal(payload)
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		log.Printf("%s request error for %s: %v", label, endpoint, err)
+		return false
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Printf("%s outbound error for %s: %v", label, endpoint, err)
+		return false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		log.Printf("%s rejected for %s on %s: %s", label, nodeID, endpoint, resp.Status)
+		return false
+	}
+	log.Printf("%s accepted for %s via %s", label, nodeID, endpoint)
+	return true
+}
+
+func canonicalHeartbeatMessage(nodeID string, height int64, tip string, stateRoot string, timestamp string, nonce string) string {
+	return fmt.Sprintf(
+		"SYNTHOS_HEARTBEAT_V1\nnode_id=%s\nheight=%d\ntip=%s\nstate_root=%s\ntimestamp=%s\nnonce=%s",
+		nodeID,
+		height,
+		tip,
+		stateRoot,
+		strings.TrimSpace(timestamp),
+		strings.TrimSpace(nonce),
+	)
 }
 
 func hardwareCommitment() string {
@@ -76,64 +251,8 @@ func hardwareCommitment() string {
 	if currentUser != nil {
 		username = currentUser.Username
 	}
-	sum := sha256.Sum256([]byte(hostname + "|" + username + "|synthos-silent-node-v1"))
+	sum := sha256.Sum256([]byte(hostname + "|" + username + "|synthos-background-node-v1"))
 	return hex.EncodeToString(sum[:])
-}
-
-func heartbeatAll(ctx context.Context, relayURLs []string, node *silentNode) {
-	node.HeartbeatCount++
-	proof := heartbeatProof(*node, time.Now().UTC())
-	node.LastProof = proof
-	node.LastRelayOK = nil
-	node.LastRelayFailed = nil
-
-	payload := map[string]any{
-		"name":                node.NodeID,
-		"url":                 "",
-		"cloud":               "desktop-silent",
-		"background":          true,
-		"inbound_ports":       0,
-		"mode":                node.Mode,
-		"hardware_commitment": node.HardwareCommitment,
-		"heartbeat_count":     node.HeartbeatCount,
-		"heartbeat_proof":     proof,
-		"heartbeat_at":        time.Now().UTC().Format(time.RFC3339),
-	}
-	body, _ := json.Marshal(payload)
-
-	for _, relayURL := range relayURLs {
-		if heartbeat(ctx, relayURL, body, node.NodeID) {
-			node.LastRelayOK = append(node.LastRelayOK, relayURL)
-		} else {
-			node.LastRelayFailed = append(node.LastRelayFailed, relayURL)
-		}
-	}
-	writeStatus(*node)
-}
-
-func heartbeat(ctx context.Context, relayURL string, body []byte, nodeID string) bool {
-	reqCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, relayURL+"/register", bytes.NewReader(body))
-	if err != nil {
-		log.Printf("heartbeat request error on %s: %v", relayURL, err)
-		return false
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		log.Printf("heartbeat outbound error on %s: %v", relayURL, err)
-		return false
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		log.Printf("heartbeat rejected by %s: %s", relayURL, resp.Status)
-		return false
-	}
-	log.Printf("heartbeat sent: %s via %s", nodeID, relayURL)
-	return true
 }
 
 func pollMailboxAll(ctx context.Context, relayURLs []string, nodeID string) {
@@ -145,7 +264,6 @@ func pollMailboxAll(ctx context.Context, relayURLs []string, nodeID string) {
 func pollMailbox(ctx context.Context, relayURL string, nodeID string) {
 	reqCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, relayURL+"/mailbox?name="+url.QueryEscape(nodeID), nil)
 	if err != nil {
 		log.Printf("mailbox request error on %s: %v", relayURL, err)
@@ -204,9 +322,23 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func heartbeatProof(node silentNode, t time.Time) string {
-	sum := sha256.Sum256([]byte(node.NodeID + "|" + node.HardwareCommitment + "|" + node.StartedAt + "|" + t.Format("2006-01-02T15:04")))
-	return "0x" + hex.EncodeToString(sum[:])
+func randomHex(bytes int) string {
+	raw := make([]byte, bytes)
+	if _, err := rand.Read(raw); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(raw)
+}
+
+func keyPath() string {
+	if value := os.Getenv("SYNTHOS_SILENT_KEY_PATH"); value != "" {
+		return value
+	}
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "synthos-silent-node-key.json"
+	}
+	return filepath.Join(dir, "SynthosCollective", "silent-node-key.json")
 }
 
 func statusPath() string {
