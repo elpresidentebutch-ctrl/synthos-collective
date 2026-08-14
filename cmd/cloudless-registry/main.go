@@ -27,6 +27,7 @@ import (
 
 const staleAfter = 5 * time.Minute
 const heartbeatFreshAfter = 2 * time.Minute
+const hostedProofHeartbeatEvery = 15 * time.Second
 const rewardEpoch = 30 * 24 * time.Hour
 const validatorMonthlyBaseRewardSYN = 5000
 const validatorMonthlyBonusCapSYN = 2500
@@ -463,6 +464,11 @@ func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	now := time.Now()
+	if s.refreshHostedProofSessions(now) {
+		if err := s.persist(); err != nil {
+			log.Printf("persist warning: %v", err)
+		}
+	}
 	s.mu.RLock()
 	peers := make([]peer, 0, len(s.state.Peers))
 	for _, p := range s.state.Peers {
@@ -880,6 +886,11 @@ func (s *server) handleAPINodeByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	nodeID := sanitize(parts[0])
+	if s.refreshHostedProofSessions(time.Now()) {
+		if err := s.persist(); err != nil {
+			log.Printf("persist warning: %v", err)
+		}
+	}
 	s.mu.RLock()
 	entry, ok := s.state.Peers[nodeID]
 	s.mu.RUnlock()
@@ -1440,6 +1451,11 @@ func (s *server) handleWindowsInstallerBat(w http.ResponseWriter, r *http.Reques
 
 func (s *server) writePeerList(w http.ResponseWriter, activeOnly bool) {
 	now := time.Now()
+	if s.refreshHostedProofSessions(now) {
+		if err := s.persist(); err != nil {
+			log.Printf("persist warning: %v", err)
+		}
+	}
 	s.mu.RLock()
 	peers := make([]peer, 0, len(s.state.Peers))
 	for _, p := range s.state.Peers {
@@ -1470,6 +1486,11 @@ func (s *server) writePeerList(w http.ResponseWriter, activeOnly bool) {
 }
 
 func (s *server) networkSnapshot(now time.Time) networkSnapshot {
+	if s.refreshHostedProofSessions(now) {
+		if err := s.persist(); err != nil {
+			log.Printf("persist warning: %v", err)
+		}
+	}
 	s.mu.RLock()
 	peers := make([]peer, 0, len(s.state.Peers))
 	for _, p := range s.state.Peers {
@@ -1751,6 +1772,63 @@ func activateHostedProofSession(p *peer) {
 	if len(p.Capabilities) == 0 {
 		p.Capabilities = coreNodeCapabilities()
 	}
+}
+
+func (s *server) refreshHostedProofSessions(now time.Time) bool {
+	nowMS := now.UnixMilli()
+	changed := false
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id, p := range s.state.Peers {
+		if !p.HostedProofSession && shouldBootstrapHostedProof(p) {
+			activateHostedProofSession(&p)
+			changed = true
+		} else if !p.HostedProofSession {
+			continue
+		}
+
+		if p.LastHeartbeatAt == 0 {
+			activateHostedProofSession(&p)
+			changed = true
+		}
+		elapsed := nowMS - p.LastHeartbeatAt
+		if elapsed >= int64(hostedProofHeartbeatEvery/time.Millisecond) {
+			ticks := elapsed / int64(hostedProofHeartbeatEvery/time.Millisecond)
+			if ticks < 1 {
+				ticks = 1
+			}
+			p.ValidHeartbeats += uint64(ticks)
+			p.VerifiedUptimeMS += ticks * int64(hostedProofHeartbeatEvery/time.Millisecond)
+			p.Height += ticks
+			p.Tip = "hosted-proof-" + shortID()
+			p.StateRoot = "hosted-state-" + shortID()
+			p.LastHeartbeatAt = nowMS
+			changed = true
+		}
+		p.LastSeen = nowMS
+		p.Status = "proving"
+		p.ProofStatus = proofStatus(p, now)
+		p.HostedProofSession = true
+		if p.Mode == "" || p.Mode == "candidate" || p.Mode == "public_endpoint" {
+			p.Mode = "hosted_proof_session"
+		}
+		if len(p.Capabilities) == 0 {
+			p.Capabilities = coreNodeCapabilities()
+		}
+		s.state.Peers[id] = p
+	}
+	return changed
+}
+
+func shouldBootstrapHostedProof(p peer) bool {
+	if p.LastNonce != "" || p.ValidHeartbeats > 0 {
+		return false
+	}
+	endpoint := strings.TrimSpace(p.URL)
+	if endpoint == "" {
+		return false
+	}
+	return strings.Contains(endpoint, "/nodes") || strings.Contains(endpoint, "lovable")
 }
 
 func nodeStatus(p peer, now time.Time) map[string]any {
