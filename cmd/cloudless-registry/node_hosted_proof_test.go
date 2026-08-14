@@ -78,9 +78,9 @@ func TestBrowserNodeRegistrationStartsHostedProofSession(t *testing.T) {
 		t.Fatal("hosted proof session should have at least one heartbeat")
 	}
 	if status.Node.Reward.Eligible {
-		t.Fatal("hosted proof session must not be reward eligible")
+		t.Fatal("hosted proof session should not be reward eligible before a full uptime month")
 	}
-	if status.Node.Reward.Status != "hosted_bootstrap_not_reward_eligible" {
+	if status.Node.Reward.Status != "proving_hosted_uptime" {
 		t.Fatalf("reward status = %q", status.Node.Reward.Status)
 	}
 }

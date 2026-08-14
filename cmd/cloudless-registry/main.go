@@ -1841,10 +1841,17 @@ func nodeStatus(p peer, now time.Time) map[string]any {
 	eligible := p.ProofStatus == "eligible"
 	role := defaultString(p.Role, normalizeRole(p.Kind))
 	isValidator := role == "validator_candidate" || role == "validator"
-	rewardEligible := eligible && isValidator && !p.HostedProofSession
+	rewardEligible := eligible && isValidator
+	uptimePercent := 0.0
+	if rewardEpoch > 0 {
+		uptimePercent = (float64(uptime) / float64(rewardEpoch)) * 100
+		if uptimePercent > 100 {
+			uptimePercent = 100
+		}
+	}
 	rewardStatus := "proving_uptime"
-	if p.HostedProofSession {
-		rewardStatus = "hosted_bootstrap_not_reward_eligible"
+	if p.HostedProofSession && !rewardEligible {
+		rewardStatus = "proving_hosted_uptime"
 	} else if rewardEligible {
 		rewardStatus = "eligible_next_payout"
 	}
@@ -1857,9 +1864,10 @@ func nodeStatus(p peer, now time.Time) map[string]any {
 		"monthly_max_syn":                   0,
 		"paid_monthly_in_arrears":           true,
 		"requires_full_month_uptime":        true,
-		"requires_real_signed_heartbeats":   true,
-		"hosted_bootstrap_sessions_qualify": false,
+		"requires_real_signed_heartbeats":   false,
+		"hosted_bootstrap_sessions_qualify": true,
 		"first_reward_eligibility":          firstEligible,
+		"uptime_percent_this_month":         uptimePercent,
 	}
 	if isValidator {
 		reward["monthly_base_syn"] = validatorMonthlyBaseRewardSYN
@@ -1870,36 +1878,38 @@ func nodeStatus(p peer, now time.Time) map[string]any {
 	healthy := p.LastHeartbeatAt > 0 && now.Sub(time.UnixMilli(p.LastHeartbeatAt)) <= staleAfter
 	synced := p.Height > 0
 	return map[string]any{
-		"node_id":               p.Name,
-		"publicId":              p.Name,
-		"public_key":            p.PublicKey,
-		"publicKey":             p.PublicKey,
-		"role":                  role,
-		"kind":                  p.Kind,
-		"network":               p.Network,
-		"endpoint":              p.URL,
-		"status":                p.Status,
-		"proof_status":          p.ProofStatus,
-		"hosted_proof_session":  p.HostedProofSession,
-		"real_signed_heartbeat": !p.HostedProofSession && p.LastNonce != "",
-		"registered_at":         millisRFC3339(p.RegisteredAt),
-		"first_heartbeat_at":    millisRFC3339(p.FirstHeartbeatAt),
-		"last_heartbeat_at":     millisRFC3339(p.LastHeartbeatAt),
-		"valid_heartbeats":      p.ValidHeartbeats,
-		"verified_uptime_s":     int64(uptime.Seconds()),
-		"verified_days":         uptime.Hours() / 24,
-		"uptime_required_s":     int64(rewardEpoch.Seconds()),
-		"height":                p.Height,
-		"tip":                   p.Tip,
-		"state_root":            p.StateRoot,
-		"stateRoot":             p.StateRoot,
-		"health":                healthy,
-		"synced":                synced,
-		"capabilities":          p.Capabilities,
-		"capability_status":     capabilityMap,
-		"capabilityStatus":      capabilityMap,
-		"accepted":              rewardEligible,
-		"reward":                reward,
+		"node_id":                   p.Name,
+		"publicId":                  p.Name,
+		"public_key":                p.PublicKey,
+		"publicKey":                 p.PublicKey,
+		"role":                      role,
+		"kind":                      p.Kind,
+		"network":                   p.Network,
+		"endpoint":                  p.URL,
+		"status":                    p.Status,
+		"proof_status":              p.ProofStatus,
+		"hosted_proof_session":      p.HostedProofSession,
+		"real_signed_heartbeat":     !p.HostedProofSession && p.LastNonce != "",
+		"registered_at":             millisRFC3339(p.RegisteredAt),
+		"first_heartbeat_at":        millisRFC3339(p.FirstHeartbeatAt),
+		"last_heartbeat_at":         millisRFC3339(p.LastHeartbeatAt),
+		"valid_heartbeats":          p.ValidHeartbeats,
+		"verified_uptime_s":         int64(uptime.Seconds()),
+		"verified_days":             uptime.Hours() / 24,
+		"uptime_percent":            uptimePercent,
+		"uptime_percent_this_month": uptimePercent,
+		"uptime_required_s":         int64(rewardEpoch.Seconds()),
+		"height":                    p.Height,
+		"tip":                       p.Tip,
+		"state_root":                p.StateRoot,
+		"stateRoot":                 p.StateRoot,
+		"health":                    healthy,
+		"synced":                    synced,
+		"capabilities":              p.Capabilities,
+		"capability_status":         capabilityMap,
+		"capabilityStatus":          capabilityMap,
+		"accepted":                  rewardEligible,
+		"reward":                    reward,
 	}
 }
 
@@ -1951,8 +1961,9 @@ func validatorRewardPolicy() map[string]any {
 		"payment_timing":                 "monthly_in_arrears",
 		"first_payment_after":            "one full month of verified validator uptime",
 		"no_payment_for_button_click":    true,
-		"requires_signed_heartbeats":     true,
-		"requires_public_endpoint":       true,
+		"requires_signed_heartbeats":     false,
+		"requires_verified_operation":    true,
+		"requires_public_endpoint":       false,
 		"no_guaranteed_income":           true,
 		"source_bucket":                  "Validator / Security Rewards",
 		"source_bucket_amount_syn":       12_000_000_000,
