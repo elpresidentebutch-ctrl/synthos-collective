@@ -177,6 +177,11 @@
     async function refreshStatus(toast) {
       if (!session?.node_id) return;
       const res = await fetch(API + "/api/nodes/" + encodeURIComponent(session.node_id) + "/status");
+      if (res.status === 404 && session.registered) {
+        await registerCandidate();
+        if (toast) flash("Backend session restored.");
+        return;
+      }
       if (!res.ok) return;
       const data = await res.json();
       session.last_status = data.node;
