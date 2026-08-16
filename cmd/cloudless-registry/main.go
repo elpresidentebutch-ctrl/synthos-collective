@@ -195,14 +195,18 @@ func main() {
 	mux.HandleFunc("/index.html", s.handleWebsitePage)
 	mux.HandleFunc("/nodes", s.handleWebsitePage)
 	mux.HandleFunc("/nodes.html", s.handleWebsitePage)
+	mux.HandleFunc("/chain", s.handleWebsitePage)
 	mux.HandleFunc("/chain.html", s.handleWebsitePage)
 	mux.HandleFunc("/explorer", s.handleWebsitePage)
 	mux.HandleFunc("/explorer.html", s.handleWebsitePage)
 	mux.HandleFunc("/bridge", s.handleWebsitePage)
 	mux.HandleFunc("/bridge.html", s.handleWebsitePage)
+	mux.HandleFunc("/dex", s.handleWebsitePage)
 	mux.HandleFunc("/dex.html", s.handleWebsitePage)
+	mux.HandleFunc("/api", s.handleWebsitePage)
 	mux.HandleFunc("/api.html", s.handleWebsitePage)
 	mux.HandleFunc("/early-access", s.handleEarlyAccessPage)
+	mux.HandleFunc("/early-access.html", s.handleEarlyAccessPage)
 	mux.HandleFunc("/early-adopters", s.handleEarlyAccessPage)
 	mux.HandleFunc("/assets/", s.handleWebsiteAsset)
 	mux.HandleFunc("/assets/early-access-sale.js", s.handleEarlyAccessWidget)
@@ -1182,6 +1186,15 @@ func (s *server) handleWebsitePage(w http.ResponseWriter, r *http.Request) {
 	}
 	if name == "bridge" {
 		name = "bridge.html"
+	}
+	if name == "chain" {
+		name = "chain.html"
+	}
+	if name == "dex" {
+		name = "dex.html"
+	}
+	if name == "api" {
+		name = "api.html"
 	}
 	if name == "" || strings.Contains(name, "/") || !strings.HasSuffix(name, ".html") {
 		http.Error(w, "not found", http.StatusNotFound)

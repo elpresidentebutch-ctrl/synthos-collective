@@ -16,15 +16,15 @@
       <div class="section-head">
         <p class="eyebrow">Developer API</p>
         <h1>Validator endpoints</h1>
-        <p class="lede">The live validator RPC exposes the same status surface used by this website.</p>
+        <p class="lede">The public backend exposes the same node, explorer, reward, and installation surface used by this website.</p>
       </div>
       <div class="protocol-grid">
-        <article><h3>/health</h3><p>Validator reachability and service identity.</p></article>
-        <article><h3>/status</h3><p>Chain ID, height, tip, state root, mempool, and proposer.</p></article>
-        <article><h3>/heartbeat</h3><p>Heartbeat count, last check, proposal loop status, and gossip counters.</p></article>
-        <article><h3>/blocks</h3><p>Block listing by height for explorer and status panels.</p></article>
+        <article><h3>/api/network/status</h3><p>Live node count, signed heartbeat freshness, capability status, height, and reward policy.</p></article>
+        <article><h3>/api/nodes/ID/status</h3><p>Per-node proof status, reward epoch tracking, verified uptime, and seven-capability checklist.</p></article>
+        <article><h3>/api/explorer/status</h3><p>Explorer summary from the registry and attached native RPC when configured.</p></article>
+        <article><h3>/api/node/install.bat</h3><p>Windows Service installer for the real signed background validator runner.</p></article>
       </div>
-      <pre><code>https://rpc.ishamwilliamsblockchains.com/status</code></pre>
+      <pre><code>https://www.ishamwilliamsblockchains.com/api/network/status</code></pre>
     </section>
   </main>
   <footer><span>SYNTHOS Collective</span><span>Static API reference</span></footer>

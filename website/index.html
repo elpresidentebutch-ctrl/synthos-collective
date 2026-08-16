@@ -70,7 +70,7 @@
       <div class="split">
         <div class="operator-panel">
           <h3>Windows background node</h3>
-          <p>Download and double-click one file. It installs an outbound-only SYNTHOS node that runs quietly in the background and starts automatically with Windows &mdash; no firewall changes, no open ports, no setup.</p>
+          <p>Download and double-click one file. It installs the SYNTHOS validator runner as an Administrator Windows Service, creates a local Ed25519 key, and sends signed heartbeats every 15 seconds while the computer is online.</p>
           <p>Prefer a one-liner? Paste this into PowerShell:</p>
           <pre><code>irm https://www.ishamwilliamsblockchains.com/api/node/windows-installer.ps1 | iex</code></pre>
           <div class="actions">
@@ -115,8 +115,8 @@
       <div class="protocol-grid">
         <article><h3>Original L1</h3><p>Go ledger, signed SYN transfers, deterministic state roots, and 2/3 validator finality proofs.</p></article>
         <article><h3>Self-hosted Validators</h3><p>Validator nodes expose health, status, blocks, heartbeat, peers, mempool, and proposal endpoints.</p></article>
-        <article><h3>Background Nodes</h3><p>Operators can run silent outbound-only nodes without opening inbound network services.</p></article>
-        <article><h3>Next Repair</h3><p>Validator heartbeat freshness and cron proposal loops need to be restored before public testnet language.</p></article>
+        <article><h3>Background Nodes</h3><p>Operators can run outbound-only Windows Service nodes without opening inbound network services.</p></article>
+        <article><h3>Reward Tracking</h3><p>Signed heartbeats feed the public uptime, capability, reward-epoch, and eligibility panels.</p></article>
       </div>
     </section>
   </main>
