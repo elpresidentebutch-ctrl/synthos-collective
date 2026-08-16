@@ -178,6 +178,7 @@ func main() {
 	mux.HandleFunc("/mailbox", s.handleMailbox)
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/network/status", s.handleAPINetworkStatus)
+	mux.HandleFunc("/api/aen/status", s.handleAPIAENStatus)
 	mux.HandleFunc("/api/explorer/status", s.handleAPIExplorerStatus)
 	mux.HandleFunc("/api/explorer/blocks", s.handleAPIExplorerBlocks)
 	mux.HandleFunc("/api/explorer/mempool", s.handleAPIExplorerMempool)
@@ -199,6 +200,8 @@ func main() {
 	mux.HandleFunc("/nodes.html", s.handleWebsitePage)
 	mux.HandleFunc("/security", s.handleWebsitePage)
 	mux.HandleFunc("/security.html", s.handleWebsitePage)
+	mux.HandleFunc("/aen", s.handleWebsitePage)
+	mux.HandleFunc("/aen.html", s.handleWebsitePage)
 	mux.HandleFunc("/chain", s.handleWebsitePage)
 	mux.HandleFunc("/chain.html", s.handleWebsitePage)
 	mux.HandleFunc("/explorer", s.handleWebsitePage)
@@ -535,6 +538,179 @@ func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) 
 		"validators":           peers,
 		"reward_policy":        validatorRewardPolicy(),
 		"updated_at":           time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
+func (s *server) handleAPIAENStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	now := time.Now()
+	snapshot := s.networkSnapshot(now)
+	staleNodes := make([]map[string]any, 0)
+	fakeHeartbeatSuspects := make([]map[string]any, 0)
+	reliabilityReports := make([]map[string]any, 0, len(snapshot.Peers))
+	operatorRankings := make([]map[string]any, 0, len(snapshot.Peers))
+	alerts := make([]map[string]any, 0)
+	healthyValidators := 0
+	unhealthyValidators := 0
+	realSignedHeartbeatNodes := 0
+
+	for _, p := range snapshot.Peers {
+		role := defaultString(p.Role, normalizeRole(p.Kind))
+		isValidator := role == "validator" || role == "validator_candidate" || p.Kind == "" || p.Kind == "validator"
+		if !p.Stale && isValidator {
+			healthyValidators++
+		}
+		if p.Stale && isValidator {
+			unhealthyValidators++
+		}
+		if isRealSignedHeartbeat(p) {
+			realSignedHeartbeatNodes++
+		}
+		report := reliabilityReportForPeer(p, now)
+		reliabilityReports = append(reliabilityReports, report)
+		operatorRankings = append(operatorRankings, map[string]any{
+			"node_id":               p.Name,
+			"role":                  role,
+			"score":                 operatorReliabilityScore(p, now),
+			"rank_inputs":           report,
+			"reward_eligible_track": isValidator && isRealSignedHeartbeat(p) && !p.Stale,
+		})
+		if p.Stale {
+			staleNodes = append(staleNodes, map[string]any{
+				"node_id":        p.Name,
+				"role":           role,
+				"last_seen":      millisRFC3339(p.LastSeen),
+				"last_heartbeat": millisRFC3339(p.LastHeartbeatAt),
+				"reason":         "No fresh heartbeat inside the stale-node window.",
+			})
+		}
+		if !isRealSignedHeartbeat(p) {
+			reason := "No verified Ed25519 heartbeat nonce has been accepted yet."
+			if p.HostedProofSession {
+				reason = "Hosted/browser proof session cannot qualify as a real background node heartbeat."
+			}
+			fakeHeartbeatSuspects = append(fakeHeartbeatSuspects, map[string]any{
+				"node_id":               p.Name,
+				"role":                  role,
+				"valid_heartbeats":      p.ValidHeartbeats,
+				"hosted_proof_session":  p.HostedProofSession,
+				"real_signed_heartbeat": false,
+				"reason":                reason,
+			})
+		}
+	}
+
+	sort.Slice(operatorRankings, func(i, j int) bool {
+		left, _ := operatorRankings[i]["score"].(int)
+		right, _ := operatorRankings[j]["score"].(int)
+		if left == right {
+			return fmt.Sprint(operatorRankings[i]["node_id"]) < fmt.Sprint(operatorRankings[j]["node_id"])
+		}
+		return left > right
+	})
+	for i := range operatorRankings {
+		operatorRankings[i]["rank"] = i + 1
+	}
+	if len(staleNodes) > 0 {
+		alerts = append(alerts, map[string]any{"severity": "warning", "type": "stale_nodes", "count": len(staleNodes)})
+	}
+	if len(fakeHeartbeatSuspects) > 0 {
+		alerts = append(alerts, map[string]any{"severity": "warning", "type": "unverified_or_hosted_heartbeats", "count": len(fakeHeartbeatSuspects)})
+	}
+	rpcAttached := strings.TrimSpace(os.Getenv("SYNTHOS_RPC_URL")) != ""
+	if !rpcAttached {
+		alerts = append(alerts, map[string]any{"severity": "info", "type": "bridge_rpc_not_attached", "message": "Bridge event audit endpoint is present, but native RPC is not attached to this backend."})
+	}
+
+	duties := []map[string]any{
+		{
+			"id":          "monitor_validator_health",
+			"title":       "Monitor validator health",
+			"status":      dutyStatus(unhealthyValidators == 0 && snapshot.ActiveTotal > 0),
+			"description": "Agents watch fresh signed heartbeats, reported height, and validator role health.",
+			"result": map[string]any{
+				"healthy_validators":   healthyValidators,
+				"unhealthy_validators": unhealthyValidators,
+				"heartbeat_window":     staleAfter.String(),
+			},
+		},
+		{
+			"id":          "flag_stale_nodes",
+			"title":       "Flag stale nodes",
+			"status":      dutyStatus(len(staleNodes) == 0),
+			"description": "Agents mark nodes stale when the registry has not received a recent heartbeat.",
+			"result":      staleNodes,
+		},
+		{
+			"id":          "summarize_network_status",
+			"title":       "Summarize network status",
+			"status":      dutyStatus(snapshot.ActiveTotal > 0),
+			"description": "Agents publish one public rollup for node count, quorum visibility, height, and freshness.",
+			"result": map[string]any{
+				"active_nodes":           snapshot.ActiveTotal,
+				"registered_nodes":       snapshot.RegisteredTotal,
+				"validators_running":     snapshot.Validators,
+				"immune_nodes_running":   snapshot.Immune,
+				"fresh_heartbeats":       snapshot.Fresh,
+				"highest_height":         snapshot.HighestHeight,
+				"majority_reachable":     snapshot.RegisteredTotal == 0 || snapshot.Reachable*3 >= snapshot.RegisteredTotal*2,
+				"real_signed_heartbeats": realSignedHeartbeatNodes,
+			},
+		},
+		{
+			"id":          "detect_fake_heartbeats",
+			"title":       "Detect fake heartbeats",
+			"status":      dutyStatus(len(fakeHeartbeatSuspects) == 0),
+			"description": "Agents separate real Ed25519 background-node heartbeats from hosted/browser proof sessions or unsigned registrations.",
+			"result":      fakeHeartbeatSuspects,
+		},
+		{
+			"id":          "audit_bridge_events",
+			"title":       "Audit bridge events",
+			"status":      dutyStatus(rpcAttached),
+			"description": "Agents expose the bridge event audit surface and report whether native RPC is attached.",
+			"result": map[string]any{
+				"rpc_attached": rpcAttached,
+				"endpoint":     "/api/bridge/events",
+				"note":         "When SYNTHOS_RPC_URL is attached, this duty audits lock/release messages and relayer activity.",
+			},
+		},
+		{
+			"id":          "generate_public_reliability_reports",
+			"title":       "Generate public reliability reports",
+			"status":      dutyStatus(len(reliabilityReports) > 0),
+			"description": "Agents publish per-node uptime, capability, and reward-track evidence.",
+			"result":      reliabilityReports,
+		},
+		{
+			"id":          "rank_node_operators",
+			"title":       "Rank node operators",
+			"status":      dutyStatus(len(operatorRankings) > 0),
+			"description": "Agents rank operators by real signed operation, freshness, uptime, height, and capability verification.",
+			"result":      operatorRankings,
+		},
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":                      snapshot.ActiveTotal > 0,
+		"service":                 "synthos-agent-execution-network",
+		"network":                 "synthos",
+		"mode":                    "public_aen_watchtower",
+		"heartbeat_target_s":      15,
+		"duties":                  duties,
+		"alerts":                  alerts,
+		"stale_nodes":             staleNodes,
+		"fake_heartbeat_suspects": fakeHeartbeatSuspects,
+		"reliability_reports":     reliabilityReports,
+		"operator_rankings":       operatorRankings,
+		"bridge_audit_endpoint":   "/api/bridge/events",
+		"bridge_rpc_attached":     rpcAttached,
+		"public_report_available": true,
+		"reward_ranking_note":     "Rankings are evidence reports, not automatic payments. Validator rewards still require one full month of verified signed uptime.",
+		"updated_at":              now.UTC().Format(time.RFC3339),
 	})
 }
 
@@ -1191,6 +1367,9 @@ func (s *server) handleWebsitePage(w http.ResponseWriter, r *http.Request) {
 	if name == "security" {
 		name = "security.html"
 	}
+	if name == "aen" {
+		name = "aen.html"
+	}
 	if name == "bridge" {
 		name = "bridge.html"
 	}
@@ -1231,6 +1410,7 @@ func (s *server) handleSitemapXML(w http.ResponseWriter, r *http.Request) {
 		"/",
 		"/nodes",
 		"/security",
+		"/aen",
 		"/early-access",
 		"/explorer",
 		"/chain",
@@ -1931,6 +2111,91 @@ func rewardEpochStatus(now time.Time, p peer, uptime time.Duration, uptimePercen
 		"reward_eligible":               rewardEligible,
 		"applies_to":                    []string{"validator_candidate", "validator"},
 		"note":                          "Reward eligibility applies to Validator Candidate and Validator roles only.",
+	}
+}
+
+func dutyStatus(ok bool) string {
+	if ok {
+		return "passing"
+	}
+	return "needs_attention"
+}
+
+func isRealSignedHeartbeat(p peer) bool {
+	return !p.HostedProofSession && p.LastNonce != "" && p.ValidHeartbeats > 0
+}
+
+func capabilityCount(p peer) int {
+	status := capabilityStatusMap(p.Capabilities)
+	count := 0
+	for _, capability := range coreNodeCapabilities() {
+		if status[capability] {
+			count++
+		}
+	}
+	return count
+}
+
+func operatorReliabilityScore(p peer, now time.Time) int {
+	score := 0
+	if isRealSignedHeartbeat(p) {
+		score += 35
+	}
+	if p.LastSeen > 0 && now.Sub(time.UnixMilli(p.LastSeen)) <= staleAfter {
+		score += 20
+	}
+	if p.Height > 0 {
+		score += 10
+	}
+	score += capabilityCount(p) * 5
+	if p.VerifiedUptimeMS >= int64(rewardEpoch/time.Millisecond) {
+		score += 20
+	} else if p.VerifiedUptimeMS > 0 {
+		score += int((float64(p.VerifiedUptimeMS) / float64(rewardEpoch/time.Millisecond)) * 20)
+	}
+	if p.HostedProofSession {
+		score -= 30
+	}
+	if score < 0 {
+		return 0
+	}
+	if score > 100 {
+		return 100
+	}
+	return score
+}
+
+func reliabilityReportForPeer(p peer, now time.Time) map[string]any {
+	role := defaultString(p.Role, normalizeRole(p.Kind))
+	uptime := time.Duration(p.VerifiedUptimeMS) * time.Millisecond
+	uptimePercent := 0.0
+	if rewardEpoch > 0 {
+		uptimePercent = (float64(uptime) / float64(rewardEpoch)) * 100
+		if uptimePercent > 100 {
+			uptimePercent = 100
+		}
+	}
+	stale := p.LastSeen == 0 || now.Sub(time.UnixMilli(p.LastSeen)) > staleAfter
+	isValidator := role == "validator_candidate" || role == "validator" || p.Kind == "" || p.Kind == "validator"
+	return map[string]any{
+		"node_id":               p.Name,
+		"role":                  role,
+		"kind":                  p.Kind,
+		"status":                p.Status,
+		"stale":                 stale,
+		"endpoint":              p.URL,
+		"height":                p.Height,
+		"last_seen":             millisRFC3339(p.LastSeen),
+		"last_heartbeat":        millisRFC3339(p.LastHeartbeatAt),
+		"real_signed_heartbeat": isRealSignedHeartbeat(p),
+		"hosted_proof_session":  p.HostedProofSession,
+		"valid_heartbeats":      p.ValidHeartbeats,
+		"verified_uptime_s":     int64(uptime.Seconds()),
+		"uptime_percentage":     uptimePercent,
+		"capabilities_verified": capabilityCount(p),
+		"capabilities_required": len(coreNodeCapabilities()),
+		"reward_eligible_track": isValidator && isRealSignedHeartbeat(p) && !stale,
+		"operator_score":        operatorReliabilityScore(p, now),
 	}
 }
 

@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SYNTHOS AEN — Agent Execution Network</title>
+  <meta name="description" content="Live SYNTHOS Agent Execution Network reports for validator health, stale nodes, fake heartbeat detection, bridge audits, reliability reports, and node operator rankings." />
+  <meta name="robots" content="index,follow" />
+  <link rel="canonical" href="https://www.ishamwilliamsblockchains.com/aen" />
+  <link rel="stylesheet" href="./assets/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./index.html"><span class="brand-mark"></span><span>SYNTHOS Collective</span></a>
+    <nav>
+      <a href="./index.html#network">Network</a>
+      <a href="./nodes.html">Nodes</a>
+      <a href="./explorer.html">Explorer</a>
+      <a href="./bridge.html">Bridge</a>
+      <a href="./api.html">API</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="console">
+      <div class="console-copy">
+        <p class="eyebrow">Agent Execution Network</p>
+        <h1>AEN gives agents real jobs.</h1>
+        <p class="lede">SYNTHOS agents are watchtower workers. They monitor validator health, flag stale nodes, detect fake heartbeats, audit bridge events, publish reliability reports, and rank node operators from public evidence.</p>
+        <div class="actions">
+          <a class="button primary" href="./nodes.html">Run a Node</a>
+          <a class="button secondary" href="/api/aen/status">View Raw AEN API</a>
+        </div>
+      </div>
+
+      <div class="network-board">
+        <div class="board-head">
+          <div>
+            <p class="label">Live AEN Status</p>
+            <h2 id="aenVerdict">Checking agents</h2>
+          </div>
+          <button id="refreshAEN" class="icon-button" type="button" title="Refresh AEN status" aria-label="Refresh AEN status">↻</button>
+        </div>
+        <div class="metrics">
+          <div><span id="dutyCount">-</span><small>Duties</small></div>
+          <div><span id="alertCount">-</span><small>Alerts</small></div>
+          <div><span id="rankedCount">-</span><small>Ranked</small></div>
+          <div><span id="bridgeAudit">-</span><small>Bridge RPC</small></div>
+        </div>
+        <dl class="chain-facts">
+          <div><dt>Mode</dt><dd id="aenMode">-</dd></div>
+          <div><dt>Updated</dt><dd id="aenUpdated">-</dd></div>
+          <div><dt>Reward note</dt><dd id="rewardNote">-</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section class="band">
+      <div class="section-head">
+        <p class="eyebrow">Concrete Duties</p>
+        <h2>What agents are responsible for</h2>
+      </div>
+      <div class="protocol-grid" id="dutyGrid">
+        <article><h3>Loading AEN duties</h3><p>Fetching live reports from /api/aen/status.</p></article>
+      </div>
+    </section>
+
+    <section class="band">
+      <div class="section-head">
+        <p class="eyebrow">Operator Reliability</p>
+        <h2>Public node operator rankings</h2>
+        <p class="lede">Rankings are based on signed heartbeats, freshness, verified uptime, height, and seven-capability verification. They do not trigger automatic payment by themselves.</p>
+      </div>
+      <div class="validator-list" id="operatorRankings"></div>
+    </section>
+
+    <section class="band">
+      <div class="section-head">
+        <p class="eyebrow">Alerts</p>
+        <h2>What needs attention</h2>
+      </div>
+      <div class="protocol-grid" id="aenAlerts">
+        <article><h3>No data yet</h3><p>Waiting for the AEN report.</p></article>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>SYNTHOS Collective</span>
+    <span>Agent Execution Network</span>
+  </footer>
+
+  <script>
+    const apiBase = window.SYNTHOS_API_URL || window.location.origin;
+    const $ = (id) => document.getElementById(id);
+    const short = (value) => {
+      if (!value) return "-";
+      const text = String(value);
+      return text.length > 18 ? `${text.slice(0, 10)}…${text.slice(-6)}` : text;
+    };
+    const percent = (value) => `${Number(value || 0).toFixed(2)}%`;
+    const pill = (status) => status === "passing" ? "✓ passing" : "needs attention";
+
+    async function loadAEN() {
+      const response = await fetch(`${apiBase}/api/aen/status`, { cache: "no-store" });
+      if (!response.ok) throw new Error(`AEN API returned ${response.status}`);
+      return response.json();
+    }
+
+    function renderDuties(duties) {
+      $("dutyGrid").innerHTML = (duties || []).map((duty) => `
+        <article>
+          <h3>${duty.title || duty.id}</h3>
+          <p><strong>${pill(duty.status)}</strong></p>
+          <p>${duty.description || ""}</p>
+          <pre><code>${JSON.stringify(duty.result ?? {}, null, 2)}</code></pre>
+        </article>
+      `).join("") || "<article><h3>No duties reported</h3><p>The backend did not return AEN duties.</p></article>";
+    }
+
+    function renderRankings(rankings) {
+      $("operatorRankings").innerHTML = (rankings || []).map((item) => {
+        const input = item.rank_inputs || {};
+        return `
+          <article class="validator-card">
+            <div>
+              <strong>#${item.rank || "-"} ${short(item.node_id)}</strong>
+              <span>${item.role || "node"} · score ${item.score ?? 0}/100</span>
+            </div>
+            <dl class="chain-facts">
+              <div><dt>Signed heartbeat</dt><dd>${input.real_signed_heartbeat ? "yes" : "no"}</dd></div>
+              <div><dt>Stale</dt><dd>${input.stale ? "yes" : "no"}</dd></div>
+              <div><dt>Uptime</dt><dd>${percent(input.uptime_percentage)}</dd></div>
+              <div><dt>Capabilities</dt><dd>${input.capabilities_verified || 0}/${input.capabilities_required || 7}</dd></div>
+            </dl>
+          </article>
+        `;
+      }).join("") || "<article class='validator-card'><strong>No ranked operators yet</strong><span>Run a signed background node to appear here.</span></article>";
+    }
+
+    function renderAlerts(alerts) {
+      $("aenAlerts").innerHTML = (alerts || []).map((alert) => `
+        <article>
+          <h3>${alert.type || "alert"}</h3>
+          <p>${alert.severity || "info"} · ${alert.count ?? ""}</p>
+          <p>${alert.message || "See raw AEN API for affected nodes."}</p>
+        </article>
+      `).join("") || "<article><h3>All clear</h3><p>No active AEN alerts.</p></article>";
+    }
+
+    async function refresh() {
+      try {
+        const data = await loadAEN();
+        $("aenVerdict").textContent = data.ok ? "Agents reporting" : "Agents need attention";
+        $("dutyCount").textContent = (data.duties || []).length;
+        $("alertCount").textContent = (data.alerts || []).length;
+        $("rankedCount").textContent = (data.operator_rankings || []).length;
+        $("bridgeAudit").textContent = data.bridge_rpc_attached ? "attached" : "pending";
+        $("aenMode").textContent = data.mode || "-";
+        $("aenUpdated").textContent = data.updated_at || "-";
+        $("rewardNote").textContent = data.reward_ranking_note || "-";
+        renderDuties(data.duties);
+        renderRankings(data.operator_rankings);
+        renderAlerts(data.alerts);
+      } catch (error) {
+        $("aenVerdict").textContent = "AEN unavailable";
+        $("dutyGrid").innerHTML = `<article><h3>Unable to load</h3><p>${error.message}</p></article>`;
+      }
+    }
+
+    $("refreshAEN").addEventListener("click", refresh);
+    refresh();
+    setInterval(refresh, 30000);
+  </script>
+</body>
+</html>

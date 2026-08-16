@@ -9,7 +9,7 @@
 <body>
   <header class="topbar">
     <a class="brand" href="./index.html"><span class="brand-mark"></span><span>SYNTHOS Collective</span></a>
-    <nav><a href="./index.html#network">Network</a><a href="./chain.html">Chain</a><a href="./explorer.html">Explorer</a><a href="./dex.html">DEX</a></nav>
+    <nav><a href="./index.html#network">Network</a><a href="./aen.html">AEN</a><a href="./chain.html">Chain</a><a href="./explorer.html">Explorer</a><a href="./dex.html">DEX</a></nav>
   </header>
   <main>
     <section class="band">
@@ -20,6 +20,7 @@
       </div>
       <div class="protocol-grid">
         <article><h3>/api/network/status</h3><p>Live node count, signed heartbeat freshness, capability status, height, and reward policy.</p></article>
+        <article><h3>/api/aen/status</h3><p>Agent Execution Network duties: validator health, stale-node flags, fake-heartbeat detection, bridge audit status, reliability reports, and operator rankings.</p></article>
         <article><h3>/api/nodes/ID/status</h3><p>Per-node proof status, reward epoch tracking, verified uptime, and seven-capability checklist.</p></article>
         <article><h3>/api/explorer/status</h3><p>Explorer summary from the registry and attached native RPC when configured.</p></article>
         <article><h3>/api/node/install.bat</h3><p>Windows Service installer for the real signed background validator runner.</p></article>
