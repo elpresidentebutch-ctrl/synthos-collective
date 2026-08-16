@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SYNTHOS Security & Installer Details — Official Website</title>
+  <meta name="description" content="Official SYNTHOS Collective security notes for the SynthosNode Windows Service installer, signed heartbeats, removal instructions, and operator safety." />
+  <meta name="robots" content="index,follow" />
+  <link rel="canonical" href="https://www.ishamwilliamsblockchains.com/security" />
+  <meta property="og:title" content="SYNTHOS Security & Installer Details" />
+  <meta property="og:description" content="What the SYNTHOS node installer does, what it does not do, and how to remove it." />
+  <meta property="og:url" content="https://www.ishamwilliamsblockchains.com/security" />
+  <link rel="stylesheet" href="./assets/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./index.html" aria-label="SYNTHOS Collective">
+      <span class="brand-mark"></span>
+      <span>SYNTHOS Collective</span>
+    </a>
+    <nav aria-label="Primary">
+      <a href="./index.html#network">Network</a>
+      <a href="./nodes.html">Nodes</a>
+      <a href="./security.html">Security</a>
+      <a href="./explorer.html">Explorer</a>
+      <a href="./api.html">API</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="band">
+      <div class="section-head">
+        <p class="eyebrow">Official installer details</p>
+        <h1>SYNTHOS security and node installer transparency</h1>
+        <p class="lede">This page explains the SYNTHOS validator node installer in plain language so operators, email systems, and search engines can understand what is being installed.</p>
+      </div>
+
+      <div class="notice">
+        The SYNTHOS node installer is user-authorized software for running a validator service. It does not ask for passwords, does not access wallets, does not mine cryptocurrency, and does not open inbound firewall ports.
+      </div>
+
+      <div class="protocol-grid" style="margin-top:16px">
+        <article>
+          <h3>What gets installed</h3>
+          <p>The installer creates a Windows Service named <b>SynthosNode</b>. The service runs in the background and starts automatically with Windows while the computer is on.</p>
+        </article>
+        <article>
+          <h3>What the node sends</h3>
+          <p>The service sends outbound HTTPS heartbeats to the SYNTHOS backend. Each heartbeat is signed with the node's local Ed25519 key.</p>
+        </article>
+        <article>
+          <h3>Where keys are stored</h3>
+          <p>The service stores its local node key and status under <code>C:\ProgramData\SynthosNode</code>. The private key should stay on the operator's computer.</p>
+        </article>
+        <article>
+          <h3>What it does not do</h3>
+          <p>It does not request credentials, read browser passwords, access wallets, mine, open inbound ports, or require a SYNTHOS website login.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="band">
+      <div class="section-head">
+        <p class="eyebrow">Operator controls</p>
+        <h2>Install, verify, or remove the node</h2>
+      </div>
+      <div class="split">
+        <div class="operator-panel">
+          <h3>Install</h3>
+          <p>Download the installer from the official SYNTHOS backend. Windows will ask for Administrator approval because the node is installed as a service.</p>
+          <div class="actions">
+            <a class="button primary" href="/api/node/install.bat" download>Download Installer</a>
+            <a class="button secondary" href="./nodes.html">View Node Dashboard</a>
+          </div>
+        </div>
+        <div class="operator-panel">
+          <h3>Remove</h3>
+          <p>To stop and remove the Windows Service later, open PowerShell as Administrator and run:</p>
+          <pre><code>Stop-Service SynthosNode
+sc.exe delete SynthosNode</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="band">
+      <div class="section-head">
+        <p class="eyebrow">Live verification</p>
+        <h2>Public status endpoints</h2>
+      </div>
+      <div class="protocol-grid">
+        <article><h3>Network status</h3><p><a href="/api/network/status">/api/network/status</a></p></article>
+        <article><h3>Explorer status</h3><p><a href="/api/explorer/status">/api/explorer/status</a></p></article>
+        <article><h3>Node installer</h3><p><a href="/api/node/install.bat">/api/node/install.bat</a></p></article>
+        <article><h3>Sitemap</h3><p><a href="/sitemap.xml">/sitemap.xml</a></p></article>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>SYNTHOS Collective — Official Website</span>
+    <span>Security and installer transparency</span>
+  </footer>
+</body>
+</html>

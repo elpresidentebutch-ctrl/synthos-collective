@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>SYNTHOS Push Button Node</title>
   <meta name="description" content="Install and monitor a SYNTHOS background validator node." />
+  <meta name="robots" content="index,follow" />
+  <link rel="canonical" href="https://www.ishamwilliamsblockchains.com/nodes" />
+  <meta property="og:title" content="SYNTHOS Validator Node Installer" />
+  <meta property="og:description" content="Install the SynthosNode Windows Service and monitor signed Ed25519 uptime heartbeats." />
+  <meta property="og:url" content="https://www.ishamwilliamsblockchains.com/nodes" />
   <style>
     :root{color-scheme:dark;--bg:#060912;--panel:#0d1422;--panel2:#111b2d;--text:#f4f8ff;--muted:#9ba9bc;--line:rgba(255,255,255,.14);--cyan:#72ddff;--green:#35d39b;--amber:#f2c45d;--red:#ff6b8a;--violet:#9c7cff;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
     *{box-sizing:border-box} body{margin:0;background:radial-gradient(circle at 20% 0,rgba(114,221,255,.16),transparent 360px),radial-gradient(circle at 80% 20%,rgba(156,124,255,.14),transparent 420px),var(--bg);color:var(--text)}
@@ -18,7 +23,7 @@
   <header>
     <div class="bar">
       <a class="brand" href="/nodes"><span class="mark"></span><span>SYNTHOS Push Button Node</span></a>
-      <nav><a href="/">Home</a><a href="/api/network/status">Network API</a><a href="/health">Backend Health</a></nav>
+      <nav><a href="/">Home</a><a href="/security">Security</a><a href="/api/network/status">Network API</a><a href="/health">Backend Health</a></nav>
     </div>
   </header>
   <main>
@@ -29,6 +34,7 @@
         <p>The button downloads a Windows installer for a local validator service. The service creates its own Ed25519 key and sends real signed heartbeats every 15 seconds while the computer is on — no website login and no browser tab required.</p>
         <div class="row">
           <button id="startBtn" class="btn primary">Install Validator Service</button>
+          <a class="btn" href="/security">Read installer details</a>
           <button id="downloadBtn" class="btn" disabled>Download backup</button>
           <button id="clearBtn" class="btn danger">Clear local session</button>
         </div>

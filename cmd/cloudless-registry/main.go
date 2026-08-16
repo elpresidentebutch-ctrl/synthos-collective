@@ -192,9 +192,13 @@ func main() {
 	mux.HandleFunc("/api/early-access/config", s.handleAPIEarlyAccessConfig)
 	mux.HandleFunc("/api/early-access/payment-intents", s.handleAPIEarlyAccessPaymentIntents)
 	mux.HandleFunc("/api/early-access/payment-intents/", s.handleAPIEarlyAccessPaymentIntentByID)
+	mux.HandleFunc("/robots.txt", s.handleRobotsTXT)
+	mux.HandleFunc("/sitemap.xml", s.handleSitemapXML)
 	mux.HandleFunc("/index.html", s.handleWebsitePage)
 	mux.HandleFunc("/nodes", s.handleWebsitePage)
 	mux.HandleFunc("/nodes.html", s.handleWebsitePage)
+	mux.HandleFunc("/security", s.handleWebsitePage)
+	mux.HandleFunc("/security.html", s.handleWebsitePage)
 	mux.HandleFunc("/chain", s.handleWebsitePage)
 	mux.HandleFunc("/chain.html", s.handleWebsitePage)
 	mux.HandleFunc("/explorer", s.handleWebsitePage)
@@ -1184,6 +1188,9 @@ func (s *server) handleWebsitePage(w http.ResponseWriter, r *http.Request) {
 	if name == "nodes" {
 		name = "nodes.html"
 	}
+	if name == "security" {
+		name = "security.html"
+	}
 	if name == "bridge" {
 		name = "bridge.html"
 	}
@@ -1201,6 +1208,49 @@ func (s *server) handleWebsitePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.serveWebsiteFile(w, r, name)
+}
+
+func (s *server) handleRobotsTXT(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	siteURL := canonicalSiteURL(r)
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	_, _ = fmt.Fprintf(w, "User-agent: *\nAllow: /\n\nSitemap: %s/sitemap.xml\n", siteURL)
+}
+
+func (s *server) handleSitemapXML(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	siteURL := canonicalSiteURL(r)
+	paths := []string{
+		"/",
+		"/nodes",
+		"/security",
+		"/early-access",
+		"/explorer",
+		"/chain",
+		"/bridge",
+		"/dex",
+		"/api",
+	}
+	now := time.Now().UTC().Format("2006-01-02")
+	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>` + "\n"))
+	_, _ = w.Write([]byte(`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">` + "\n"))
+	for _, path := range paths {
+		priority := "0.7"
+		if path == "/" {
+			priority = "1.0"
+		}
+		_, _ = fmt.Fprintf(w, "  <url><loc>%s%s</loc><lastmod>%s</lastmod><changefreq>daily</changefreq><priority>%s</priority></url>\n", siteURL, path, now, priority)
+	}
+	_, _ = w.Write([]byte(`</urlset>` + "\n"))
 }
 
 func (s *server) handleWebsiteAsset(w http.ResponseWriter, r *http.Request) {
@@ -1364,6 +1414,10 @@ func baseURL(r *http.Request) string {
 		scheme = p
 	}
 	return scheme + "://" + r.Host
+}
+
+func canonicalSiteURL(r *http.Request) string {
+	return strings.TrimRight(env("SYNTHOS_CANONICAL_SITE_URL", "https://www.ishamwilliamsblockchains.com"), "/")
 }
 
 // handleSilentNodeBinary serves the prebuilt Windows node binary.

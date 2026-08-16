@@ -3,8 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>SYNTHOS Collective</title>
-  <meta name="description" content="SYNTHOS Collective live network console and background-node onboarding." />
+  <title>SYNTHOS Collective — Official Layer-1 Network Website</title>
+  <meta name="description" content="Official website for SYNTHOS Collective, a Layer-1 blockchain network with validator node status, signed heartbeat uptime tracking, explorer, and operator onboarding." />
+  <meta name="robots" content="index,follow" />
+  <link rel="canonical" href="https://www.ishamwilliamsblockchains.com/" />
+  <meta property="og:title" content="SYNTHOS Collective — Official Website" />
+  <meta property="og:description" content="Official SYNTHOS Collective network console, validator node onboarding, explorer, and public status APIs." />
+  <meta property="og:url" content="https://www.ishamwilliamsblockchains.com/" />
   <link rel="stylesheet" href="./assets/styles.css" />
 </head>
 <body>
@@ -16,6 +21,7 @@
     <nav aria-label="Primary">
       <a href="#network">Network</a>
       <a href="#nodes">Nodes</a>
+      <a href="./security.html">Security</a>
       <a href="./early-access.html">Early Access</a>
       <a href="#dex">DEX</a>
       <a href="./explorer.html">Explorer</a>
@@ -31,7 +37,7 @@
         <h1>Live SYNTHOS node console</h1>
         <p class="lede">Original L1 infrastructure for immune-node operators, outbound-only participation, validator status, and SYN network operations.</p>
         <div class="actions">
-        <a class="button primary" href="/api/node/install.bat" download>Download Windows Node</a>
+        <a class="button primary" href="./security.html">Installer Safety Details</a>
         <a class="button secondary" href="./early-access.html">Early Access</a>
         <a class="button secondary" href="#nodes">View Validators</a>
         </div>
@@ -74,7 +80,7 @@
           <p>Prefer a one-liner? Paste this into PowerShell:</p>
           <pre><code>irm https://www.ishamwilliamsblockchains.com/api/node/windows-installer.ps1 | iex</code></pre>
           <div class="actions">
-            <a class="button primary" href="/api/node/install.bat" download>Get Installer</a>
+            <a class="button primary" href="./security.html">Review Installer Details</a>
             <a class="button secondary" href="#protocol">Read Protocol</a>
           </div>
         </div>
@@ -117,6 +123,7 @@
         <article><h3>Self-hosted Validators</h3><p>Validator nodes expose health, status, blocks, heartbeat, peers, mempool, and proposal endpoints.</p></article>
         <article><h3>Background Nodes</h3><p>Operators can run outbound-only Windows Service nodes without opening inbound network services.</p></article>
         <article><h3>Reward Tracking</h3><p>Signed heartbeats feed the public uptime, capability, reward-epoch, and eligibility panels.</p></article>
+        <article><h3>Installer Transparency</h3><p>The public security page explains the Windows Service, outbound-only behavior, local key storage, and removal command.</p></article>
       </div>
     </section>
   </main>
