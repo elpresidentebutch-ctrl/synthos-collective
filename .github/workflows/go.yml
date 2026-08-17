@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, codex/repair-existing-cloudflare-validators]
   pull_request:
     branches: [main, master]
 
@@ -16,3 +16,10 @@ jobs:
           go-version-file: go.mod
       - name: Test
         run: go test -count=1 ./...
+
+  probe-existing-cloudflare-validators:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe validator endpoints
+        run: node scripts/probe-cloudflare-validators.mjs
