@@ -11,19 +11,16 @@ import (
 )
 
 // Engine is a minimal 2/3+ vote finality engine.
-// It assumes an external proposer selection mechanism (round-robin, stake-weighted, etc.).
 type Engine struct {
 	mu sync.Mutex
 
 	totalValidators int
 	validators      map[string]struct{}
 
-	// proposalsByHeight[height] = proposal block for that height.
-	// v0.1 only allows a single canonical proposal per height.
+	// proposalsByHeight stores the deterministic canonical candidate per height.
 	proposalsByHeight map[uint64]*chain.Block
 
-	// votes[height][voterID] = (blockHash, vote)
-	// This ensures each validator can vote at most once per height.
+	// votes[height][voterID] = (blockHash, vote). Each validator votes once/height.
 	votes map[uint64]map[string]voteRecord
 }
 
@@ -46,26 +43,20 @@ func NewEngine(totalValidators int) *Engine {
 	}
 }
 
-// SetValidators replaces the active validator registry used by consensus.
-// Once configured, votes from identities outside this registry are rejected.
 func (e *Engine) SetValidators(validators []string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
 	e.validators = make(map[string]struct{}, len(validators))
 	for _, validatorID := range validators {
-		if validatorID == "" {
-			continue
+		if validatorID != "" {
+			e.validators[validatorID] = struct{}{}
 		}
-		e.validators[validatorID] = struct{}{}
 	}
 	e.totalValidators = len(e.validators)
 }
 
 func (e *Engine) isRegisteredValidator(voterID string) bool {
-	// Preserve compatibility for standalone engines that have not yet been
-	// configured with concrete validator identities. Production nodes call
-	// SetValidators through node.SetValidators before processing votes.
 	if len(e.validators) == 0 {
 		return true
 	}
@@ -77,7 +68,6 @@ func (e *Engine) RequiredForFinality() int {
 	if e.totalValidators <= 0 {
 		return 1
 	}
-	// ceil(2N/3) using integer math
 	req := (2*e.totalValidators + 2) / 3
 	if req < 1 {
 		req = 1
@@ -85,42 +75,37 @@ func (e *Engine) RequiredForFinality() int {
 	return req
 }
 
-// OnProposal records a proposal for its height. Only one proposal per height is
-// currently supported; conflicting proposals are treated as byzantine behavior
-// by the proposer and ignored.
+// OnProposal applies a deterministic tie-break for competing valid proposals.
+// Every node that observes the same candidate set selects the lexicographically
+// smallest full block hash, removing first-arrival ordering from fork choice.
 func (e *Engine) OnProposal(b *chain.Block) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	h := b.Header.Height
-	if existing, ok := e.proposalsByHeight[h]; ok {
-		if existing.Hash != b.Hash {
-			// Conflicting proposal at same height; ignore the new one.
-			return
-		}
-		// Same proposal hash repeated; ignore.
+	if b == nil || b.Hash == "" {
 		return
 	}
-	e.proposalsByHeight[h] = b
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	h := b.Header.Height
+	existing, ok := e.proposalsByHeight[h]
+	if !ok || existing == nil || b.Hash < existing.Hash {
+		e.proposalsByHeight[h] = b
+	}
 	if _, ok := e.votes[h]; !ok {
 		e.votes[h] = make(map[string]voteRecord)
 	}
 }
 
-// Proposal returns the proposal block at a given height, if any.
 func (e *Engine) Proposal(blockHash string) (*chain.Block, bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	for h, b := range e.proposalsByHeight {
+	for _, b := range e.proposalsByHeight {
 		if b != nil && b.Hash == blockHash {
-			_ = h
 			return b, true
 		}
 	}
 	return nil, false
 }
 
-// FinalityStatus returns whether a proposal has reached 2/3+ votes-for.
-// It searches for the proposal by hash and inspects votes for its height.
 func (e *Engine) FinalityStatus(blockHash string) (finalized bool, votesFor int, required int, ok bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -153,14 +138,15 @@ func (e *Engine) OnVote(v BlockVote) (finalized bool, votesFor int, required int
 	if !e.isRegisteredValidator(v.VoterID) {
 		return false, 0, e.RequiredForFinality(), ErrUnknownValidator
 	}
-
 	h := v.Height
+	canonical, ok := e.proposalsByHeight[h]
+	if !ok || canonical == nil || canonical.Hash != v.BlockHash {
+		return false, 0, e.RequiredForFinality(), ErrUnknownProposal
+	}
 	if _, ok := e.votes[h]; !ok {
 		e.votes[h] = make(map[string]voteRecord)
 	}
-	if _, exists := e.votes[h][v.VoterID]; exists {
-		// ignore duplicates per height
-	} else {
+	if _, exists := e.votes[h][v.VoterID]; !exists {
 		e.votes[h][v.VoterID] = voteRecord{BlockHash: v.BlockHash, Vote: v.Vote}
 	}
 
@@ -173,8 +159,6 @@ func (e *Engine) OnVote(v BlockVote) (finalized bool, votesFor int, required int
 	finalized = votesFor >= required
 	return finalized, votesFor, required, nil
 }
-
-// Envelope handlers helpers
 
 const (
 	TopicProposals = "consensus/proposals"
@@ -198,21 +182,16 @@ func DecodeVote(b []byte) (BlockVote, error) {
 	return v, err
 }
 
-// Basic time window check for consensus messages.
 func FreshEnough(ts time.Time, now time.Time, skew time.Duration) bool {
 	if skew <= 0 {
 		skew = 5 * time.Minute
 	}
-	if ts.After(now.Add(skew)) {
-		return false
-	}
-	if ts.Before(now.Add(-skew)) {
+	if ts.After(now.Add(skew)) || ts.Before(now.Add(-skew)) {
 		return false
 	}
 	return true
 }
 
-// VerifyAndUnmarshalEnvelope parses a network envelope into a typed message payload.
 func VerifyAndUnmarshalEnvelope[T any](
 	verify func(env network.Envelope, senderPub []byte, now time.Time) error,
 	env network.Envelope,

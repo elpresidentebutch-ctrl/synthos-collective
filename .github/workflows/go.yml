@@ -2,17 +2,42 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, synthos-release-2026-07-30]
   pull_request:
     branches: [main, master]
 
+permissions:
+  contents: read
+
 jobs:
-  go:
+  integrity-and-race:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: Test
-        run: go test -count=1 ./...
+          cache: true
+      - name: Format check
+        run: test -z "$(gofmt -l .)"
+      - name: Vet
+        run: go vet ./...
+      - name: Unit and race tests
+        run: go test -race -count=1 ./...
+      - name: Build all commands
+        run: go build ./cmd/...
+      - name: L1 integrity check
+        run: go run ./cmd/l1check
+
+  reproducibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Repeat consensus tests
+        run: go test -count=25 ./internal/consensus ./internal/chain
