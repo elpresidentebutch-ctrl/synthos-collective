@@ -71,7 +71,7 @@
 
   <main>
     <h1>Live Network Explorer</h1>
-    <p class="sub">Real-time view of the SYNTHOS Collective Layer-1, served directly from the network RPC.</p>
+    <p class="sub">Live view of the SYNTHOS Collective Layer-1, backed by signed node checkpoint data from the network registry.</p>
 
     <dl class="grid">
       <div class="stat"><dt>Chain</dt><dd data-chain>—</dd></div>
@@ -105,12 +105,12 @@
 
   <footer>
     <span>SYNTHOS Collective · synthos-mainnet-1</span>
-    <span>RPC: <span class="mono" data-rpc></span></span>
+    <span>Source: <span class="mono" data-rpc></span></span>
   </footer>
 
 <script>
 (function(){
-  var RPC = "https://rpc.ishamwilliamsblockchains.com";
+  var RPC = "https://synthos-collective.onrender.com/api/explorer";
   var $ = function(s){ return document.querySelector(s); };
   function set(sel,v){ var n=document.querySelector(sel); if(n) n.textContent=v; }
   function shortHash(h){ if(!h) return "—"; h=String(h); return h.length>16 ? h.slice(0,10)+"…"+h.slice(-6) : h; }
@@ -134,7 +134,7 @@
       set("[data-net]", s.chain_id || "synthos");
       set("[data-chain]", s.chain_id || "—");
       set("[data-height]", (s.height!=null? s.height : "—"));
-      set("[data-immune]", (s.immune && s.immune.active_immune_nodes!=null)? s.immune.active_immune_nodes : "0");
+      set("[data-immune]", (s.immune_nodes_running!=null)? s.immune_nodes_running : "0");
     }catch(e){ markLive(false); }
 
     try{
@@ -162,15 +162,11 @@
     var err = $("[data-acct-err]"), out = $("[data-acct-out]");
     err.style.display="none"; out.classList.remove("show");
     if(!addr){ err.textContent="Enter a SYNTHOS address."; err.style.display="block"; return; }
-    try{
-      var a = await j("/account?address="+encodeURIComponent(addr));
-      set("[data-acct-bal]", (a.balance!=null? Number(a.balance).toLocaleString() : "0"));
-      set("[data-acct-nonce]", (a.nonce!=null? a.nonce : "0"));
-      set("[data-acct-addr]", a.address || addr);
-      out.classList.add("show");
-    }catch(e){
-      err.textContent="Lookup failed: "+e.message; err.style.display="block";
-    }
+    // The public registry API does not expose per-account balance/nonce lookups yet
+    // (only aggregated node checkpoints). Say so honestly instead of hitting a 404
+    // and showing a confusing generic error.
+    err.textContent="Account lookups aren't available on the public explorer yet -- only network-wide status is exposed right now.";
+    err.style.display="block";
   }
 
   $("[data-acct-btn]").addEventListener("click", lookup);
