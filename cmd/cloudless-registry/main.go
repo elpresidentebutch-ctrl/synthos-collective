@@ -303,7 +303,7 @@ func (s *server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		Kind               string   `json:"kind"`
 		Network            string   `json:"network"`
 		Status             string   `json:"status"`
-		PublicKey          string   `json:"public_key"`
+		PublicKey    string `json:"public_key"`
 		Capabilities       []string `json:"capabilities"`
 		Mode               string   `json:"mode"`
 		InboundPorts       int      `json:"inbound_ports"`
@@ -860,8 +860,8 @@ func (s *server) handleAPINodeRegister(w http.ResponseWriter, r *http.Request) {
 		NodeID       string   `json:"node_id"`
 		NodeIDCamel  string   `json:"nodeId"`
 		PublicID     string   `json:"publicId"`
-		PublicKey    string   `json:"public_key"`
-		PublicKeyAlt string   `json:"publicKey"`
+		PublicKey    string `json:"public_key"`
+		PublicKeyAlt string `json:"publicKey"`
 		Role         string   `json:"role"`
 		Kind         string   `json:"kind"`
 		Mode         string   `json:"mode"`
@@ -1071,6 +1071,8 @@ func (s *server) handleAPIProvisionNode(w http.ResponseWriter, r *http.Request) 
 	}
 	var body struct {
 		Kind    string `json:"kind"`
+		PublicKey    string `json:"public_key"`
+		PublicKeyAlt string `json:"publicKey"`
 		Network string `json:"network"`
 		Label   string `json:"label"`
 		URL     string `json:"url"`
@@ -1086,12 +1088,16 @@ func (s *server) handleAPIProvisionNode(w http.ResponseWriter, r *http.Request) 
 		label = fmt.Sprintf("%s-%s", kind, shortID())
 	}
 	nodeID := fmt.Sprintf("synthos-%s-%s", kind, label)
-	publicKey, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		http.Error(w, "key generation failed", http.StatusInternalServerError)
+	publicHex := truncate(strings.TrimPrefix(strings.TrimSpace(defaultString(body.PublicKey, body.PublicKeyAlt)), "0x"), 256)
+	if publicHex == "" {
+		http.Error(w, "public_key required: generate an Ed25519 keypair locally and submit only the public key", http.StatusBadRequest)
 		return
 	}
-	publicHex := hex.EncodeToString(publicKey)
+	pubBytes, err := hex.DecodeString(publicHex)
+	if err != nil || len(pubBytes) != ed25519.PublicKeySize {
+		http.Error(w, "invalid public_key: must be a hex-encoded 32-byte Ed25519 public key", http.StatusBadRequest)
+		return
+	}
 	endpoint := truncate(body.URL, 256)
 	if endpoint == "" {
 		endpoint = "outbound-only"
