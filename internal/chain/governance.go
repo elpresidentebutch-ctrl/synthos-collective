@@ -1,10 +1,10 @@
 package chain
 
 import (
+	"crypto/rand"
 	"errors"
-	"math/rand"
+	"math/big"
 	"sync"
-	"time"
 )
 
 // -----------------------------
@@ -97,9 +97,16 @@ func (tg *TreasuryGovernance) CheckRaffle(treasuryBalance uint64, communityMembe
 		tg.RaffleActive = true
 
 		if len(communityMembers) > 0 {
-			// Select random community member for the raffle payout
-			rand.Seed(time.Now().UnixNano())
-			winner := communityMembers[rand.Intn(len(communityMembers))]
+			// Select random community member for the raffle payout using a
+			// cryptographically secure random source. A predictable,
+			// time-seeded PRNG (math/rand) would let anyone who can guess or
+			// influence the seed predict or bias who wins the payout.
+			n, err := rand.Int(rand.Reader, big.NewInt(int64(len(communityMembers))))
+			if err != nil {
+				// Fail safe: don't pay out if we can't securely pick a winner.
+				return nil
+			}
+			winner := communityMembers[n.Int64()]
 			tg.RaffleActive = false // Reset after payout
 			return &winner
 		}
