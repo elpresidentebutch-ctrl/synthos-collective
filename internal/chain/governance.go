@@ -1,9 +1,7 @@
 package chain
 
 import (
-	"crypto/rand"
 	"errors"
-	"math/big"
 	"sync"
 )
 
@@ -22,25 +20,19 @@ type Proposal struct {
 }
 
 type TreasuryGovernance struct {
-	mu              sync.Mutex
-	Proposals       map[string]*Proposal
-	FounderAddress  Address
-	TreasuryAddr    Address
-	RaffleActive    bool
-	RaffleThreshold uint64
-	RaffleReward    uint64
-	GetStake        func(Address) uint64
+	mu             sync.Mutex
+	Proposals      map[string]*Proposal
+	FounderAddress Address
+	TreasuryAddr   Address
+	GetStake       func(Address) uint64
 }
 
 func NewTreasuryGovernance(founder Address, getStake func(Address) uint64) *TreasuryGovernance {
 	return &TreasuryGovernance{
-		Proposals:       make(map[string]*Proposal),
-		FounderAddress:  founder,
-		TreasuryAddr:    Address("0x4823d9af45c0e297d818eb58cb049a0860337aeb"),
-		RaffleActive:    false,
-		RaffleThreshold: 25_000_000_000, // Trigger at 25 Billion
-		RaffleReward:    1_000_000_000,  // 1 Billion payout
-		GetStake:        getStake,
+		Proposals:      make(map[string]*Proposal),
+		FounderAddress: founder,
+		TreasuryAddr:   Address("0x4823d9af45c0e297d818eb58cb049a0860337aeb"),
+		GetStake:       getStake,
 	}
 }
 
@@ -88,28 +80,3 @@ func (tg *TreasuryGovernance) Vote(voter Address, proposalID string, inFavor boo
 	return nil
 }
 
-// CheckRaffle monitors the Treasury balance and triggers a community raffle if it exceeds the threshold.
-func (tg *TreasuryGovernance) CheckRaffle(treasuryBalance uint64, communityMembers []Address) *Address {
-	tg.mu.Lock()
-	defer tg.mu.Unlock()
-
-	if treasuryBalance >= tg.RaffleThreshold {
-		tg.RaffleActive = true
-
-		if len(communityMembers) > 0 {
-			// Select random community member for the raffle payout using a
-			// cryptographically secure random source. A predictable,
-			// time-seeded PRNG (math/rand) would let anyone who can guess or
-			// influence the seed predict or bias who wins the payout.
-			n, err := rand.Int(rand.Reader, big.NewInt(int64(len(communityMembers))))
-			if err != nil {
-				// Fail safe: don't pay out if we can't securely pick a winner.
-				return nil
-			}
-			winner := communityMembers[n.Int64()]
-			tg.RaffleActive = false // Reset after payout
-			return &winner
-		}
-	}
-	return nil
-}
