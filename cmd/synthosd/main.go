@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -81,7 +82,7 @@ func main() {
 	}
 
 	// Agent + keys.
-	keys, err := nodeKeys(cfg.PrivateKey)
+	keys, err := nodeKeys(cfg.PrivateKey, dataDir)
 	if err != nil {
 		panic(err)
 	}
@@ -256,10 +257,21 @@ func shouldRefreshHeightZeroSnapshot(snap *storage.Snapshot, genesisChain *chain
 	return snap.State.Root() != genesisChain.State.Root()
 }
 
-func nodeKeys(privateKeyHex string) (synthoscrypto.KeyPair, error) {
-	if privateKeyHex == "" {
-		return synthoscrypto.NewKeyPair()
+// nodeKeys returns the ed25519 identity synthosd should run with. An
+// explicit private_key in the config always wins (useful for reproducible
+// devnets / test fixtures). Otherwise the node's identity is persisted to
+// disk under its data directory so that restarting the process reuses the
+// same key instead of generating a brand new random identity every time --
+// which would otherwise reset the node's on-chain history/reputation (and,
+// for a validator, drop it out of the validator set) on every restart.
+func nodeKeys(privateKeyHex string, dataDir string) (synthoscrypto.KeyPair, error) {
+	if privateKeyHex != "" {
+		return keyPairFromHex(privateKeyHex)
 	}
+	return loadOrCreatePersistedKeyPair(dataDir)
+}
+
+func keyPairFromHex(privateKeyHex string) (synthoscrypto.KeyPair, error) {
 	raw := strings.TrimPrefix(privateKeyHex, "0x")
 	b, err := hex.DecodeString(raw)
 	if err != nil {
@@ -274,4 +286,62 @@ func nodeKeys(privateKeyHex string) (synthoscrypto.KeyPair, error) {
 		return synthoscrypto.KeyPair{}, fmt.Errorf("failed to derive public key")
 	}
 	return synthoscrypto.KeyPair{Public: pub, Private: priv}, nil
+}
+
+// persistedNodeKey is the on-disk shape of a node's ed25519 identity.
+type persistedNodeKey struct {
+	PrivateKey string `json:"private_key"`
+	PublicKey  string `json:"public_key"`
+	CreatedAt  string `json:"created_at"`
+}
+
+func persistedKeyPath(dataDir string) string {
+	if dataDir == "" {
+		dataDir = "."
+	}
+	return filepath.Join(dataDir, "node_identity.json")
+}
+
+// loadOrCreatePersistedKeyPair loads the node's identity from
+// <dataDir>/node_identity.json, or generates one and saves it there the
+// first time the node runs. The file contains raw private key material, so
+// it's written with owner-only permissions and its data directory should
+// never be committed to source control (see .gitignore).
+func loadOrCreatePersistedKeyPair(dataDir string) (synthoscrypto.KeyPair, error) {
+	path := persistedKeyPath(dataDir)
+
+	if body, err := os.ReadFile(path); err == nil {
+		var stored persistedNodeKey
+		if err := json.Unmarshal(body, &stored); err != nil {
+			return synthoscrypto.KeyPair{}, fmt.Errorf("reading persisted node identity %s: %w", path, err)
+		}
+		kp, err := keyPairFromHex(stored.PrivateKey)
+		if err != nil {
+			return synthoscrypto.KeyPair{}, fmt.Errorf("persisted node identity %s is invalid: %w", path, err)
+		}
+		return kp, nil
+	} else if !os.IsNotExist(err) {
+		return synthoscrypto.KeyPair{}, fmt.Errorf("reading persisted node identity %s: %w", path, err)
+	}
+
+	kp, err := synthoscrypto.NewKeyPair()
+	if err != nil {
+		return synthoscrypto.KeyPair{}, err
+	}
+	if err := os.MkdirAll(dataDir, 0o700); err != nil {
+		return synthoscrypto.KeyPair{}, fmt.Errorf("creating data dir %s for node identity: %w", dataDir, err)
+	}
+	stored := persistedNodeKey{
+		PrivateKey: hex.EncodeToString(kp.Private),
+		PublicKey:  hex.EncodeToString(kp.Public),
+		CreatedAt:  time.Now().UTC().Format(time.RFC3339),
+	}
+	body, err := json.MarshalIndent(stored, "", "  ")
+	if err != nil {
+		return synthoscrypto.KeyPair{}, err
+	}
+	if err := os.WriteFile(path, body, 0o600); err != nil {
+		return synthoscrypto.KeyPair{}, fmt.Errorf("writing persisted node identity %s: %w", path, err)
+	}
+	return kp, nil
 }

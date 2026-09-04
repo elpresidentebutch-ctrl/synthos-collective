@@ -1,4 +1,7 @@
 .synthos-data
+data-local/
+.synthos-node-*/
+node_identity.json
 .env
 .env.*
 !.env.example
