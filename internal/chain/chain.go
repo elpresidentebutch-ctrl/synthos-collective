@@ -335,7 +335,16 @@ func (c *Chain) SnapshotData() (string, uint64, []*Block, *State) {
 			continue
 		}
 		copyBlock := *block
-		copyBlock.Tx = append([]Tx(nil), block.Tx...)
+		// append([]Tx(nil), block.Tx...) would silently collapse a non-nil
+		// empty Tx slice back to nil (append with zero elements to append
+		// returns the destination unchanged), changing the block's canonical
+		// JSON encoding ("tx":[] vs "tx":null) across every save/reload
+		// cycle. Use make+copy instead so nil stays nil and non-nil (even
+		// empty) stays non-nil.
+		if block.Tx != nil {
+			copyBlock.Tx = make([]Tx, len(block.Tx))
+			copy(copyBlock.Tx, block.Tx)
+		}
 		if block.ValidatorVotes != nil {
 			copyBlock.ValidatorVotes = make(map[string]int, len(block.ValidatorVotes))
 			for validator, vote := range block.ValidatorVotes {

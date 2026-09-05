@@ -35,12 +35,28 @@ type Block struct {
 
 // CalculateHash returns the canonical block hash without mutating the block.
 func (b *Block) CalculateHash() (string, error) {
+	// Canonicalize a nil transaction list to an empty (non-nil) slice before
+	// hashing non-genesis blocks. The block producer assembles Tx as a
+	// non-nil, possibly-empty slice, so a proposed block's hash is computed
+	// over a JSON body containing "tx":[]. But once that block round-trips
+	// through storage or an HTTP response, an empty slice unmarshals back as
+	// a nil slice, which encodes as "tx":null instead. That mismatched byte
+	// representation makes a peer's hash recomputation during validation
+	// (validateBlockLocked) disagree with the original b.Hash for every empty
+	// block, so HTTP peer sync can never finalize a single block.
+	// Height 0 (genesis) is exempt: NewChain hard-codes Tx to a literal nil,
+	// and the genesis hash already anchored across the live network was
+	// computed against "tx":null, so it must not shift under this fix.
+	txs := b.Tx
+	if txs == nil && b.Header.Height > 0 {
+		txs = []Tx{}
+	}
 	tmp := struct {
 		Header BlockHeader `json:"header"`
 		Tx     []Tx        `json:"tx"`
 	}{
 		Header: b.Header,
-		Tx:     b.Tx,
+		Tx:     txs,
 	}
 	data, err := json.Marshal(tmp)
 	if err != nil {
