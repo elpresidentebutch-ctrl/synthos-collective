@@ -15,6 +15,7 @@ import (
 
 	"synthos-collective/internal/agent"
 	"synthos-collective/internal/chain"
+	"synthos-collective/internal/config"
 	"synthos-collective/internal/crypto"
 	"synthos-collective/internal/network"
 )
@@ -55,15 +56,23 @@ func main() {
 	agentID := fmt.Sprintf("agent-%s", string(addr)[2:18])
 
 	// 2. Setup Mesh Infrastructure (Sovereign L1)
-	c, _ := chain.NewChain(chain.Genesis{
-		ChainID: "synthos_mainnet",
-		Alloc: map[chain.Address]uint64{
-			addr: 500_000_000,
-			"0x205042f06cd3aa7d9a88deec39b9d0ba6b9fbf2b": 79_500_000_000,
-			"0x4823d9af45c0e297d818eb58cb049a0860337aeb": 17_000_000_000,
-			"0x4823d9af45c0e297d818eb58cb049a0860337aec": 3_000_000_000,
-		},
-	})
+	//
+	// Genesis comes from config/genesis.json — the single, documented source
+	// of truth for allocation (see docs/SYN_COINS_GENESIS_WALLETS.md). This
+	// used to construct its own separate, undocumented genesis block here
+	// with three hardcoded addresses that received 99.5% of supply outside
+	// of anything in config/genesis.json or the docs. That parallel genesis
+	// has been removed; this node now loads the same genesis every other
+	// entrypoint uses. If the file can't be loaded, we fail loudly instead
+	// of silently minting supply to addresses nobody can see.
+	gen, err := config.LoadGenesis("config/genesis.json")
+	if err != nil {
+		log.Fatalf("❌ Failed to load config/genesis.json: %v", err)
+	}
+	c, err := chain.NewChain(gen)
+	if err != nil {
+		log.Fatalf("❌ Failed to initialize chain from genesis: %v", err)
+	}
 
 	// Seed DEX Pools
 	c.DEX.SeedPool("B12", 10_000_000, 50_000)
@@ -86,32 +95,24 @@ func main() {
 	a.AttachTransport(t)
 
 	// 5. Initialize DMAS Distributed Immune System (Stake-Weighted)
+	//
+	// This used to hardcode a "Founder Anchor" address as permanently immune
+	// from slashing, and to route 50% of every slashed stake to that same
+	// address and 50% to another undocumented address — both removed. Every
+	// address is now slashable on equal terms, and a slashed stake is burned
+	// (removed from circulation) rather than funneled to any address. If you
+	// want slashed stake to go somewhere specific instead of being burned,
+	// that destination needs to be a real, documented address — not a
+	// hardcoded one only the code knows about.
 	immune := chain.NewImmuneSystem(
-		chain.Address("0x205042f06cd3aa7d9a88deec39b9d0ba6b9fbf2b"), // Founder Anchor (Immune)
 		func(a chain.Address) uint64 {
 			acc := c.State.Get(a)
 			return acc.Balance
 		},
 		func(a chain.Address) {
-			log.Printf("🔥 EXECUTING AUTO-SLASH ON %s", a)
+			log.Printf("🔥 EXECUTING AUTO-SLASH ON %s (stake burned)", a)
 			acc := c.State.Get(a)
-
-			// Split slashed stake 50% Treasury, 50% Founder
-			half := acc.Balance / 2
-			otherHalf := acc.Balance - half
-
-			founderAddr := chain.Address("0x205042f06cd3aa7d9a88deec39b9d0ba6b9fbf2b")
-			treasuryAddr := chain.Address("0x4823d9af45c0e297d818eb58cb049a0860337aeb")
-
-			founderAcc := c.State.Get(founderAddr)
-			founderAcc.Balance += half
-			c.State.Set(founderAddr, founderAcc)
-
-			treasuryAcc := c.State.Get(treasuryAddr)
-			treasuryAcc.Balance += otherHalf
-			c.State.Set(treasuryAddr, treasuryAcc)
-
-			acc.Balance = 0 // 100% Stake Recycled (50/50 Split)
+			acc.Balance = 0
 			c.State.Set(a, acc)
 		},
 	)
