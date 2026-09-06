@@ -295,43 +295,35 @@ class SynthosTokenContract:
 
     def slash_and_recycle(self, slasher: str, from_addr: str, amount: int, reason: str) -> Tuple[bool, str]:
         """
-        Slash tokens (Recycle 50% to Treasury, 50% to Founder)
+        Slash tokens by burning them.
+
+        This used to route 50% of every slashed amount to a hardcoded
+        "founder" address and 50% to a hardcoded "treasury" address, neither
+        of which was documented anywhere in this project. Both addresses
+        have been removed. Slashed tokens are now burned to the null address,
+        consistent with burn() above. If a real, documented destination is
+        wanted instead of burning, pass it in explicitly rather than
+        hardcoding it here.
         Returns: (success, message)
         """
         if slasher not in self.burners or not self.burners[slasher]:
             return False, f"Address {slasher} is not authorized to slash"
-        
+
         if from_addr not in self.balances or self.balances[from_addr] < amount:
             return False, f"Insufficient balance to slash. Have: {self.balances.get(from_addr, 0)}"
-        
-        # 50/50 Split
-        half = amount // 2
-        other_half = amount - half
 
-        founder_addr = "0x205042f06cd3aa7d9a88deec39b9d0ba6b9fbf2b"
-        treasury_addr = "0x4823d9af45c0e297d818eb58cb049a0860337aeb"
-        
-        # Deduct from slashed user
+        null_addr = "0x0000000000000000000000000000000000000000"
+
+        # Deduct from slashed user and burn.
         self.balances[from_addr] -= amount
-        
-        # Add to recipients
-        self.balances[founder_addr] = self.balances.get(founder_addr, 0) + half
-        self.balances[treasury_addr] = self.balances.get(treasury_addr, 0) + other_half
-        
-        # Record transfers
-        tx_hash1 = self._generate_tx_hash(from_addr, founder_addr, half)
+
+        tx_hash = self._generate_tx_hash(from_addr, null_addr, amount)
         self.transfer_history.append(TokenTransfer(
-            from_address=from_addr, to_address=founder_addr, amount=half,
-            timestamp=datetime.now(), tx_hash=tx_hash1, reason=f"SLASH_RECYCLE_FOUNDER: {reason}", metadata={"slashed": True}
+            from_address=from_addr, to_address=null_addr, amount=amount,
+            timestamp=datetime.now(), tx_hash=tx_hash, reason=f"SLASH_BURN: {reason}", metadata={"slashed": True, "burned": True}
         ))
-        
-        tx_hash2 = self._generate_tx_hash(from_addr, treasury_addr, other_half)
-        self.transfer_history.append(TokenTransfer(
-            from_address=from_addr, to_address=treasury_addr, amount=other_half,
-            timestamp=datetime.now(), tx_hash=tx_hash2, reason=f"SLASH_RECYCLE_TREASURY: {reason}", metadata={"slashed": True}
-        ))
-        
-        return True, f"Slashed {amount} tokens from {from_addr} (50% Treasury / 50% Founder)"
+
+        return True, f"Slashed and burned {amount} tokens from {from_addr}"
 
 
     def create_snapshot(self, block_height: int) -> Tuple[bool, str]:
