@@ -27,11 +27,16 @@ type TreasuryGovernance struct {
 	GetStake       func(Address) uint64
 }
 
-func NewTreasuryGovernance(founder Address, getStake func(Address) uint64) *TreasuryGovernance {
+// NewTreasuryGovernance constructs treasury governance. The treasury address
+// is caller-supplied — this used to hardcode an undocumented address here;
+// callers must now pass whatever treasury address is actually documented for
+// this deployment (e.g. from config/genesis.json), and an empty one is left
+// empty rather than silently defaulting to a hidden address.
+func NewTreasuryGovernance(founder Address, treasury Address, getStake func(Address) uint64) *TreasuryGovernance {
 	return &TreasuryGovernance{
 		Proposals:      make(map[string]*Proposal),
 		FounderAddress: founder,
-		TreasuryAddr:   Address("0x4823d9af45c0e297d818eb58cb049a0860337aeb"),
+		TreasuryAddr:   treasury,
 		GetStake:       getStake,
 	}
 }

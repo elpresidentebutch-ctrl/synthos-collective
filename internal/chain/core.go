@@ -319,31 +319,21 @@ func (s *State) ApplyTx(tx Tx) error {
 	}
 	from := s.Get(tx.From)
 	to := s.Get(tx.To)
-	founderAddr := Address("0x205042f06cd3aa7d9a88deec39b9d0ba6b9fbf2b")
 
 	if tx.Nonce != from.Nonce {
 		return errors.New("bad nonce")
 	}
 
-	var commission uint64
 	if len(tx.Metadata) > 0 {
 		for _, kv := range tx.Metadata {
-			if kv.Key == "type" && kv.Value == "escrow_lock" {
-				commission = (tx.Amount * ESCROW_COMMISSION) / 100
-			}
 			if kv.Key == "type" && kv.Value == "inner_circle_purchase" && tx.Amount < INNER_CIRCLE_PRICE {
 				return errors.New("insufficient amount for Inner Circle slot")
 			}
 		}
 	}
 
-	totalFee, err := safeAdd(tx.Fee, commission)
-	if err != nil {
-		return errors.New("fee overflow detected")
-	}
-
 	if tx.AssetID == "" || tx.AssetID == "syn" {
-		totalAmount, err := safeAdd(tx.Amount, totalFee)
+		totalAmount, err := safeAdd(tx.Amount, tx.Fee)
 		if err != nil {
 			return errors.New("amount overflow detected")
 		}
@@ -355,61 +345,31 @@ func (s *State) ApplyTx(tx Tx) error {
 		if from.Assets[tx.AssetID] < tx.Amount {
 			return errors.New("insufficient asset balance")
 		}
-		if from.Balance < totalFee {
+		if from.Balance < tx.Fee {
 			return ErrInsufficientFunds
 		}
-		from.Balance -= totalFee
+		from.Balance -= tx.Fee
 		from.Assets[tx.AssetID] -= tx.Amount
 	}
 
 	from.Nonce += 1
 
-	isInnerCircle := false
-	for _, kv := range tx.Metadata {
-		if kv.Key == "type" && kv.Value == "inner_circle_purchase" {
-			isInnerCircle = true
-			break
-		}
-	}
-
-	// Calculate every credited balance before mutating state. This preserves
-	// transaction atomicity when an addition would overflow.
-	var nextRecipient Account
-	var nextFounder Account
-	founderChanged := false
-	if isInnerCircle {
-		nextFounder = s.Get(founderAddr)
-		nextBalance, err := safeAdd(nextFounder.Balance, tx.Amount)
+	// Every transaction credits the recipient the sender named, in full.
+	// There is no hidden redirect, commission skim, or special-cased
+	// address in this path — what the sender specifies is what gets paid.
+	nextRecipient := to
+	if tx.AssetID == "" || tx.AssetID == "syn" {
+		nextBalance, err := safeAdd(nextRecipient.Balance, tx.Amount)
 		if err != nil {
-			return errors.New("founder balance overflow detected")
+			return errors.New("recipient balance overflow detected")
 		}
-		nextFounder.Balance = nextBalance
-		founderChanged = true
+		nextRecipient.Balance = nextBalance
 	} else {
-		nextRecipient = to
-		if tx.AssetID == "" || tx.AssetID == "syn" {
-			nextBalance, err := safeAdd(nextRecipient.Balance, tx.Amount)
-			if err != nil {
-				return errors.New("recipient balance overflow detected")
-			}
-			nextRecipient.Balance = nextBalance
-		} else {
-			nextAssetBalance, err := safeAdd(nextRecipient.Assets[tx.AssetID], tx.Amount)
-			if err != nil {
-				return errors.New("recipient asset balance overflow detected")
-			}
-			nextRecipient.Assets[tx.AssetID] = nextAssetBalance
+		nextAssetBalance, err := safeAdd(nextRecipient.Assets[tx.AssetID], tx.Amount)
+		if err != nil {
+			return errors.New("recipient asset balance overflow detected")
 		}
-
-		if commission > 0 {
-			nextFounder = s.Get(founderAddr)
-			nextBalance, err := safeAdd(nextFounder.Balance, commission)
-			if err != nil {
-				return errors.New("founder commission overflow detected")
-			}
-			nextFounder.Balance = nextBalance
-			founderChanged = true
-		}
+		nextRecipient.Assets[tx.AssetID] = nextAssetBalance
 	}
 
 	if err := s.applyImmuneMetadata(tx); err != nil {
@@ -419,12 +379,7 @@ func (s *State) ApplyTx(tx Tx) error {
 		return err
 	}
 
-	if !isInnerCircle {
-		s.Set(tx.To, nextRecipient)
-	}
-	if founderChanged {
-		s.Set(founderAddr, nextFounder)
-	}
+	s.Set(tx.To, nextRecipient)
 	s.Set(tx.From, from)
 	return nil
 }
@@ -855,19 +810,19 @@ type ThreatProfile struct {
 }
 
 type ImmuneSystem struct {
-	ActiveThreats     map[Address][]ThreatProfile
-	AnchorAddress     Address
-	AllowFounderSlash bool
-	SlashThreshold    uint64
-	mu                sync.Mutex
-	GetStake          func(addr Address) uint64
-	ExecuteSlash      func(target Address)
+	ActiveThreats  map[Address][]ThreatProfile
+	SlashThreshold uint64
+	mu             sync.Mutex
+	GetStake       func(addr Address) uint64
+	ExecuteSlash   func(target Address)
 }
 
-func NewImmuneSystem(anchor Address, getStake func(Address) uint64, executeSlash func(Address)) *ImmuneSystem {
+// NewImmuneSystem constructs the slashing/threat-tracking system. Every
+// address is subject to the same rules — there is no anchor address with
+// built-in slash immunity.
+func NewImmuneSystem(getStake func(Address) uint64, executeSlash func(Address)) *ImmuneSystem {
 	return &ImmuneSystem{
 		ActiveThreats:  make(map[Address][]ThreatProfile),
-		AnchorAddress:  anchor,
 		SlashThreshold: 1_000_000,
 		GetStake:       getStake,
 		ExecuteSlash:   executeSlash,
@@ -877,10 +832,6 @@ func NewImmuneSystem(anchor Address, getStake func(Address) uint64, executeSlash
 func (is *ImmuneSystem) RecordThreat(p ThreatProfile) bool {
 	is.mu.Lock()
 	defer is.mu.Unlock()
-
-	if p.TargetAddress == is.AnchorAddress && !is.AllowFounderSlash {
-		return false
-	}
 
 	threats := is.ActiveThreats[p.TargetAddress]
 	if len(threats) >= MAX_THREATS_PER_ADDR {
