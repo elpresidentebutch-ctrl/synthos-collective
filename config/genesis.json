@@ -1,24 +1,40 @@
 {
-  "chain_id": "synthos-mainnet-1",
-  "tx_chain_id": 20260702,
-  "alloc": {
-    "0x825fd94aa826da6ce0b4e57487418b72aea09f5e": 99999978940,
-    "0x25151dd517ef19003d8feb50a501d8a096b7f597": 7000,
-    "0xb039d690927d389e4c03a87f3f0001069f4832fe": 10000,
-    "0xcf206e37d6425bbcebeefa006b1df9e4964ba87c": 20,
-    "0x757a88a78ad5e636a083de9775f8606fc3f0a511": 40,
-    "0xea5435f9b214f9bf193a9b9f1d3ae8fb8ec09d99": 2000,
-    "0x66a0c64a9ff8d5187715b1fefed6b0ccc883b702": 2000
-  },
-  "metadata": {
-    "symbol": "SYN",
-    "decimals": 0,
-    "network": "SYNTHOS Collective",
-    "public_rpc_url": "https://rpc.ishamwilliamsblockchains.com",
-    "founder_allocation": 99999978940,
-    "coin_name": "syn coins",
-    "display_name": "syn coins",
-    "named_wallet_allocation": 21060,
-    "named_wallets_file": ".synthos/syn-coins-wallets/public-wallets.json"
-  }
+    "chain_id": "synthos-mainnet-1",
+    "tx_chain_id": 20260702,
+    "alloc": {
+          "0x825fd94aa826da6ce0b4e57487418b72aea09f5e": 499978940,
+          "0x564f8814cc40f7c287ccdff66a4324217859cc8f": 17000000000,
+          "0x4119efcd17aafd0f785f06d8df7cd4e88f85b5b2": 22000000000,
+          "0xc58962c2c91db3b106cacfe42f1992eafc0a9b23": 20000000000,
+          "0x83f91f1fbef8b0a0d995a7fe3cedbbab6b8e3ed9": 12000000000,
+          "0xa8e6b4662c0344e83ba260e8360c096b3ef7019a": 12500000000,
+          "0xa4aabbc7e5841259b61afb4b4fbfcd7dae7b0501": 13000000000,
+          "0x58a39157bcfdbadbd779ca32325d28f921311973": 3000000000,
+          "0x25151dd517ef19003d8feb50a501d8a096b7f597": 7000,
+          "0xb039d690927d389e4c03a87f3f0001069f4832fe": 10000,
+          "0xcf206e37d6425bbcebeefa006b1df9e4964ba87c": 20,
+          "0x757a88a78ad5e636a083de9775f8606fc3f0a511": 40,
+          "0xea5435f9b214f9bf193a9b9f1d3ae8fb8ec09d99": 2000,
+          "0x66a0c64a9ff8d5187715b1fefed6b0ccc883b702": 2000
+    },
+    "metadata": {
+          "symbol": "SYN",
+          "decimals": 0,
+          "network": "SYNTHOS Collective",
+          "public_rpc_url": "https://rpc.ishamwilliamsblockchains.com",
+          "founder_allocation": 499978940,
+          "coin_name": "syn coins",
+          "display_name": "syn coins",
+          "named_wallet_allocation": 21060,
+          "named_wallets_file": ".synthos/syn-coins-wallets/public-wallets.json",
+          "tokenomics_buckets": {
+                  "founder_vesting": "0x564f8814cc40f7c287ccdff66a4324217859cc8f",
+                  "immune_node_rewards": "0x4119efcd17aafd0f785f06d8df7cd4e88f85b5b2",
+                  "locked_liquidity": "0xc58962c2c91db3b106cacfe42f1992eafc0a9b23",
+                  "validator_security_rewards": "0x83f91f1fbef8b0a0d995a7fe3cedbbab6b8e3ed9",
+                  "community_adopter_rewards": "0xa8e6b4662c0344e83ba260e8360c096b3ef7019a",
+                  "ecosystem_treasury": "0xa4aabbc7e5841259b61afb4b4fbfcd7dae7b0501",
+                  "strategic_reserve": "0x58a39157bcfdbadbd779ca32325d28f921311973"
+          }
+    }
 }
