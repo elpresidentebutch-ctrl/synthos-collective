@@ -37,6 +37,10 @@ async function main() {
   if (!contracts.synCoin || !contracts.complianceRegistry) {
     throw new Error("Deployment file is missing contracts.synCoin or contracts.complianceRegistry");
   }
+  const isLocalNetwork = network.name === "hardhat" || network.name === "localhost";
+  if (isLocalNetwork && !contracts.synBridgeMinter) {
+    throw new Error("Deployment file is missing contracts.synBridgeMinter (needed to bridge-mint on a local network)");
+  }
 
   const confirmerAddress = requiredEnv("BITCOIN_SALE_CONFIRMER");
   if (!ethers.isAddress(confirmerAddress) || confirmerAddress === ethers.ZeroAddress) {
@@ -69,13 +73,34 @@ async function main() {
   const saleAddress = await sale.getAddress();
   console.log(`SYNTHOSBitcoinAdopterSale: ${saleAddress}`);
 
-  const allocateTx = await token.allocateTokens(
-    saleAddress,
-    allocation,
-    "COMMUNITY_EARLY_ADOPTER_BITCOIN_SALE"
-  );
-  await allocateTx.wait();
-  console.log(`Funded sale contract with ${ethers.formatUnits(allocation, 18)} SYN`);
+  // SynCoin is a bridge-pegged wrapper: nothing can allocate it into
+  // existence anymore. On a local network this script controls the sole
+  // dev relayer, so it can bridge-mint the allocation directly to the sale
+  // contract (dev convenience only). On a real network the allocation has
+  // to already be sitting in the deployer's wallet, bridge-minted in ahead
+  // of time against a real native-chain lock, and this script just moves it.
+  if (isLocalNetwork) {
+    const minter = await ethers.getContractAt("SYNTHOSSynBridgeMinter", contracts.synBridgeMinter);
+    if (await minter.paused()) {
+      await (await minter.unpause()).wait();
+    }
+    const sourceEventId = ethers.keccak256(ethers.toUtf8Bytes(`local-bitcoin-sale-funding-${Date.now()}`));
+    const mintTx = await minter.approveMint(sourceEventId, saleAddress, allocation);
+    await mintTx.wait();
+    console.log(`Funded sale contract with ${ethers.formatUnits(allocation, 18)} SYN (bridge-minted, dev convenience)`);
+  } else {
+    const deployerBalance = await token.balanceOf(deployer.address);
+    if (deployerBalance < allocation) {
+      throw new Error(
+        `Deployer wallet does not hold enough bridge-minted SYN to fund this sale ` +
+        `(needs ${ethers.formatUnits(allocation, 18)} SYN, has ${ethers.formatUnits(deployerBalance, 18)}). ` +
+        "Bridge-mint it in first (real relayer quorum over a real native-chain lock), then re-run."
+      );
+    }
+    const transferTx = await token.transfer(saleAddress, allocation);
+    await transferTx.wait();
+    console.log(`Funded sale contract with ${ethers.formatUnits(allocation, 18)} SYN (transferred from deployer's bridge-minted balance)`);
+  }
 
   const output = {
     network: network.name,

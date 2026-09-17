@@ -8,51 +8,41 @@ import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Snapshot.sol";
 
 /**
  * @title SynCoin
- * @dev Canonical ERC-20 for SYNTHOS tokenomics.
+ * @dev A bridge-pegged wrapper for SYN on EVM chains (Base, Ethereum, ...).
  *
- * The entire 100B SYN supply is minted once at genesis to this contract.
- * Distribution is then performed by the owner with allocation accounting.
- * Production ownership should be transferred to governance, a timelock, or
- * a multisig before any public launch.
+ * SYNTHOS is a sovereign native Layer-1 chain. The native chain is the only
+ * place SYN is ever really created -- its 100B supply cap is enforced there,
+ * once, at genesis, and nowhere else. This contract is NOT a second,
+ * independent supply of SYN. It never mints on its own, has no genesis
+ * allocation, and no owner-controlled mint path. Every unit that exists here
+ * exists only because it was proven, through the SYNTHOSSynBridgeMinter
+ * contract, to correspond to one real SYN locked on the native chain. When a
+ * holder wants their SYN back on the native chain, this contract's supply
+ * shrinks by exactly that much (see bridgeBurn).
+ *
+ * Concretely:
+ *   - mint() can only ever be called by `bridgeMinter`, a single contract
+ *     address wired up exactly once via initializeBridgeMinter() and never
+ *     changeable again after that -- not by the owner, not by anyone.
+ *   - bridgeBurn() can only ever be called by that same `bridgeMinter`
+ *     contract, and only burns the balance of whoever is actually calling
+ *     into the bridge to send their coins home.
+ *   - There is no owner mint function, no pre-mined "undistributed pool"
+ *     sitting in this contract for an owner to redirect, and no genesis
+ *     token-bucket bookkeeping here at all -- those live in the native
+ *     chain's own genesis allocation and treasury governance.
+ *
+ * Ownership (pause/unpause/treasury-recycling-spend-type management) should
+ * still be transferred to a timelock or multisig before any public launch,
+ * exactly as before -- but the owner's remaining powers no longer include
+ * anything that can create SYN or seize an undistributed balance, because
+ * neither of those things exist on this contract anymore.
  */
 contract SynCoin is ERC20, ERC20Pausable, ERC20Snapshot, Ownable {
-    uint256 public constant INITIAL_SUPPLY = 100_000_000_000 * 10 ** 18;
-
-    uint256 public constant IMMUNE_NODE_REWARDS_ALLOCATION = 22_000_000_000 * 10 ** 18;
-    uint256 public constant LOCKED_DEX_LIQUIDITY_ALLOCATION = 20_000_000_000 * 10 ** 18;
-    uint256 public constant FOUNDER_VESTING_ALLOCATION = 17_000_000_000 * 10 ** 18;
-    uint256 public constant VALIDATOR_REWARDS_ALLOCATION = 12_000_000_000 * 10 ** 18;
-    uint256 public constant COMMUNITY_ALLOCATION = 12_500_000_000 * 10 ** 18;
-    uint256 public constant ECOSYSTEM_TREASURY_ALLOCATION = 13_000_000_000 * 10 ** 18;
-    uint256 public constant CMO_LAUNCH_GRANT = 0;
-    uint256 public constant STRATEGIC_RESERVE_ALLOCATION = 3_000_000_000 * 10 ** 18;
-    uint256 public constant FOUNDER_OPERATIONS_GRANT = 500_000_000 * 10 ** 18;
-
-    uint256 public constant IMMUNE_STANDARD_HEARTBEAT_REWARDS = 15_000_000_000 * 10 ** 18;
-    uint256 public constant IMMUNE_EARLY_OPERATOR_REWARDS = 500_000_000 * 10 ** 18;
-    uint256 public constant IMMUNE_RELIABILITY_BONUSES = 2_000_000_000 * 10 ** 18;
-    uint256 public constant IMMUNE_FUTURE_EXPANSION = 3_000_000_000 * 10 ** 18;
-    uint256 public constant IMMUNE_FRAUD_GOVERNANCE_RESERVE = 1_500_000_000 * 10 ** 18;
-
-    uint256 public constant VALIDATOR_UPTIME_FINALITY_REWARDS = 5_000_000_000 * 10 ** 18;
-    uint256 public constant VALIDATOR_STAKING_DELEGATION_REWARDS = 3_000_000_000 * 10 ** 18;
-    uint256 public constant VALIDATOR_SECURITY_INCENTIVES = 1_000_000_000 * 10 ** 18;
-    uint256 public constant VALIDATOR_TESTNET_MAINNET_MIGRATION = 1_000_000_000 * 10 ** 18;
-    uint256 public constant VALIDATOR_LONG_TERM_RESERVE = 2_000_000_000 * 10 ** 18;
-
-    uint256 public constant COMMUNITY_TESTNET_PARTICIPATION = 2_000_000_000 * 10 ** 18;
-    uint256 public constant COMMUNITY_BUILDER_GRANTS = 2_500_000_000 * 10 ** 18;
-    uint256 public constant COMMUNITY_AMBASSADOR_EDUCATION = 1_500_000_000 * 10 ** 18;
-    uint256 public constant COMMUNITY_BUG_DOCS_QA = 1_500_000_000 * 10 ** 18;
-    uint256 public constant COMMUNITY_EARLY_ADOPTER_CAMPAIGNS = 2_000_000_000 * 10 ** 18;
-    uint256 public constant COMMUNITY_RETRO_PUBLIC_GOODS = 1_000_000_000 * 10 ** 18;
-    uint256 public constant COMMUNITY_RESERVE = 2_000_000_000 * 10 ** 18;
-
-    uint256 public constant FOUNDER_ANNUAL_RELEASE = 1_700_000_000 * 10 ** 18;
-    uint256 public constant FOUNDER_RELEASE_COUNT = 10;
-    uint256 public constant FOUNDER_FIRST_RELEASE_YEAR = 2027;
-    uint256 public constant FOUNDER_FIRST_RELEASE_MONTH = 5;
-    uint256 public constant FOUNDER_FIRST_RELEASE_DAY = 29;
+    /// @dev The only address ever allowed to mint or bridge-burn. Set once,
+    /// permanently, via initializeBridgeMinter -- never mutable again.
+    address public bridgeMinter;
+    bool public bridgeMinterInitialized;
 
     bytes32 public constant SPEND_PROTOCOL = keccak256("PROTOCOL_SPEND");
     bytes32 public constant SPEND_NODE_REGISTRATION = keccak256("NODE_REGISTRATION");
@@ -64,16 +54,13 @@ contract SynCoin is ERC20, ERC20Pausable, ERC20Snapshot, Ownable {
     uint256 public totalTreasuryRecyclingBurned;
     uint256 public totalTreasuryRecycled;
 
-    mapping(string => uint256) public allocatedByType;
     mapping(bytes32 => bool) public approvedTreasuryRecyclingSpendTypes;
     mapping(bytes32 => uint256) public treasuryRecyclingBurnedByType;
     mapping(bytes32 => uint256) public treasuryRecycledByType;
 
-    event TokensAllocated(
-        address indexed recipient,
-        uint256 amount,
-        string allocationType
-    );
+    event BridgeMinterInitialized(address indexed bridgeMinter);
+    event BridgeMinted(address indexed recipient, uint256 amount);
+    event BridgeBurned(address indexed holder, uint256 amount);
 
     event TreasuryUpdated(address indexed previousTreasury, address indexed newTreasury);
     event TreasuryRecyclingSpendTypeUpdated(bytes32 indexed spendType, bool approved);
@@ -87,54 +74,55 @@ contract SynCoin is ERC20, ERC20Pausable, ERC20Snapshot, Ownable {
         bytes32 indexed spendType
     );
 
-    event GenesisAllocationDeclared(string allocationType, uint256 amount);
+    modifier onlyBridgeMinter() {
+        require(bridgeMinterInitialized && msg.sender == bridgeMinter, "not bridge minter");
+        _;
+    }
 
-    constructor() ERC20("SYNTHOS", "SYN") {
-        uint256 allocationTotal = IMMUNE_NODE_REWARDS_ALLOCATION
-            + LOCKED_DEX_LIQUIDITY_ALLOCATION
-            + FOUNDER_VESTING_ALLOCATION
-            + VALIDATOR_REWARDS_ALLOCATION
-            + COMMUNITY_ALLOCATION
-            + ECOSYSTEM_TREASURY_ALLOCATION
-            + CMO_LAUNCH_GRANT
-            + STRATEGIC_RESERVE_ALLOCATION
-            + FOUNDER_OPERATIONS_GRANT;
-        require(allocationTotal == INITIAL_SUPPLY, "allocation total mismatch");
-        require(immuneRewardsBreakdownTotal() == IMMUNE_NODE_REWARDS_ALLOCATION, "immune breakdown mismatch");
-        require(validatorRewardsBreakdownTotal() == VALIDATOR_REWARDS_ALLOCATION, "validator breakdown mismatch");
-        require(communityRewardsBreakdownTotal() == COMMUNITY_ALLOCATION, "community breakdown mismatch");
-
-        treasury = _msgSender();
+    constructor(address initialTreasury) ERC20("SYNTHOS", "SYN") {
+        require(initialTreasury != address(0), "invalid treasury");
+        treasury = initialTreasury;
         _setTreasuryRecyclingSpendType(SPEND_PROTOCOL, true);
         _setTreasuryRecyclingSpendType(SPEND_NODE_REGISTRATION, true);
         _setTreasuryRecyclingSpendType(SPEND_SERVICE_FEE, true);
         _setTreasuryRecyclingSpendType(SPEND_MARKETPLACE, true);
-        _mint(address(this), INITIAL_SUPPLY);
-
-        emit GenesisAllocationDeclared("IMMUNE_NODE_REWARDS", IMMUNE_NODE_REWARDS_ALLOCATION);
-        emit GenesisAllocationDeclared("LOCKED_DEX_LIQUIDITY", LOCKED_DEX_LIQUIDITY_ALLOCATION);
-        emit GenesisAllocationDeclared("FOUNDER_VESTING", FOUNDER_VESTING_ALLOCATION);
-        emit GenesisAllocationDeclared("VALIDATOR_REWARDS", VALIDATOR_REWARDS_ALLOCATION);
-        emit GenesisAllocationDeclared("COMMUNITY", COMMUNITY_ALLOCATION);
-        emit GenesisAllocationDeclared("ECOSYSTEM_TREASURY", ECOSYSTEM_TREASURY_ALLOCATION);
-        emit GenesisAllocationDeclared("CMO_LAUNCH_GRANT", CMO_LAUNCH_GRANT);
-        emit GenesisAllocationDeclared("STRATEGIC_RESERVE", STRATEGIC_RESERVE_ALLOCATION);
-        emit GenesisAllocationDeclared("FOUNDER_OPERATIONS_GRANT", FOUNDER_OPERATIONS_GRANT);
     }
 
-    function allocateTokens(
-        address recipient,
-        uint256 amount,
-        string calldata allocationType
-    ) external onlyOwner {
+    /// @dev One-time wiring of the bridge minter contract. Callable only by
+    /// the owner, and only once ever -- after this call, `bridgeMinter` is
+    /// permanent for the life of the contract. There is deliberately no
+    /// "setBridgeMinter" or "updateBridgeMinter" function: once wired, the
+    /// mint authority can never be redirected, by the owner or anyone else.
+    function initializeBridgeMinter(address minter) external onlyOwner {
+        require(!bridgeMinterInitialized, "bridge minter already initialized");
+        require(minter != address(0), "invalid bridge minter");
+        bridgeMinterInitialized = true;
+        bridgeMinter = minter;
+        emit BridgeMinterInitialized(minter);
+    }
+
+    /// @dev Mints SYN that the bridge minter has verified is backed by a real
+    /// coin locked on the native chain. Only the bridge minter can call
+    /// this -- see SYNTHOSSynBridgeMinter for the relayer-quorum logic that
+    /// gates when this actually gets called.
+    function mint(address recipient, uint256 amount) external onlyBridgeMinter {
         require(recipient != address(0), "invalid recipient");
         require(amount > 0, "amount must be positive");
-        require(balanceOf(address(this)) >= amount, "insufficient undistributed supply");
+        _mint(recipient, amount);
+        emit BridgeMinted(recipient, amount);
+    }
 
-        allocatedByType[allocationType] += amount;
-        _transfer(address(this), recipient, amount);
-
-        emit TokensAllocated(recipient, amount, allocationType);
+    /// @dev Burns `amount` from `holder` when they send SYN back to the
+    /// native chain through the bridge minter. Only the bridge minter can
+    /// call this, and it is only ever invoked with `holder` set to whoever
+    /// actually called into the bridge (see
+    /// SYNTHOSSynBridgeMinter.burnToNative), never an arbitrary address --
+    /// this contract has no way to know that on its own, so that guarantee
+    /// lives in the bridge minter, not here.
+    function bridgeBurn(address holder, uint256 amount) external onlyBridgeMinter {
+        require(amount > 0, "amount must be positive");
+        _burn(holder, amount);
+        emit BridgeBurned(holder, amount);
     }
 
     function setTreasury(address newTreasury) external onlyOwner {
@@ -155,6 +143,11 @@ contract SynCoin is ERC20, ERC20Pausable, ERC20Snapshot, Ownable {
         _setTreasuryRecyclingSpendType(spendType, approved);
     }
 
+    /// @dev Lets a holder spend SYN they already have into a recognized
+    /// protocol-spend category, burning half and recycling half to
+    /// treasury. This never creates SYN -- it only ever moves or destroys
+    /// SYN a holder already legitimately holds (whether bridged in or
+    /// received on this chain), so it needs no bridge involvement.
     function treasuryRecyclingBurn(
         uint256 amount,
         bytes32 spendType
@@ -202,48 +195,6 @@ contract SynCoin is ERC20, ERC20Pausable, ERC20Snapshot, Ownable {
 
     function createSnapshot() external onlyOwner returns (uint256) {
         return _snapshot();
-    }
-
-    function undistributedSupply() external view returns (uint256) {
-        return balanceOf(address(this));
-    }
-
-    function tokenomicsTotal() external pure returns (uint256) {
-        return IMMUNE_NODE_REWARDS_ALLOCATION
-            + LOCKED_DEX_LIQUIDITY_ALLOCATION
-            + FOUNDER_VESTING_ALLOCATION
-            + VALIDATOR_REWARDS_ALLOCATION
-            + COMMUNITY_ALLOCATION
-            + ECOSYSTEM_TREASURY_ALLOCATION
-            + CMO_LAUNCH_GRANT
-            + STRATEGIC_RESERVE_ALLOCATION
-            + FOUNDER_OPERATIONS_GRANT;
-    }
-
-    function immuneRewardsBreakdownTotal() public pure returns (uint256) {
-        return IMMUNE_STANDARD_HEARTBEAT_REWARDS
-            + IMMUNE_EARLY_OPERATOR_REWARDS
-            + IMMUNE_RELIABILITY_BONUSES
-            + IMMUNE_FUTURE_EXPANSION
-            + IMMUNE_FRAUD_GOVERNANCE_RESERVE;
-    }
-
-    function validatorRewardsBreakdownTotal() public pure returns (uint256) {
-        return VALIDATOR_UPTIME_FINALITY_REWARDS
-            + VALIDATOR_STAKING_DELEGATION_REWARDS
-            + VALIDATOR_SECURITY_INCENTIVES
-            + VALIDATOR_TESTNET_MAINNET_MIGRATION
-            + VALIDATOR_LONG_TERM_RESERVE;
-    }
-
-    function communityRewardsBreakdownTotal() public pure returns (uint256) {
-        return COMMUNITY_TESTNET_PARTICIPATION
-            + COMMUNITY_BUILDER_GRANTS
-            + COMMUNITY_AMBASSADOR_EDUCATION
-            + COMMUNITY_BUG_DOCS_QA
-            + COMMUNITY_EARLY_ADOPTER_CAMPAIGNS
-            + COMMUNITY_RETRO_PUBLIC_GOODS
-            + COMMUNITY_RESERVE;
     }
 
     function _beforeTokenTransfer(

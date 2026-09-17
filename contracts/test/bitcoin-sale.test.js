@@ -1,13 +1,12 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
+const { deploySynWithBridge, mintSyn } = require("./helpers/syn");
 
 describe("SYNTHOSBitcoinAdopterSale", function () {
   async function deployFixture() {
-    const [owner, confirmer, buyer, outsider] = await ethers.getSigners();
+    const [owner, confirmer, buyer, outsider, treasury] = await ethers.getSigners();
 
-    const SynCoin = await ethers.getContractFactory("SynCoin");
-    const syn = await SynCoin.deploy();
-    await syn.waitForDeployment();
+    const { syn, minter } = await deploySynWithBridge(treasury, [owner]);
 
     const ComplianceRegistry = await ethers.getContractFactory(
       "SYNTHOSComplianceRegistry"
@@ -26,11 +25,7 @@ describe("SYNTHOSBitcoinAdopterSale", function () {
     );
     await sale.waitForDeployment();
 
-    await syn.allocateTokens(
-      await sale.getAddress(),
-      ethers.parseUnits("2000000", 18),
-      "COMMUNITY_EARLY_ADOPTER_BITCOIN_SALE"
-    );
+    await mintSyn(minter, [owner], await sale.getAddress(), ethers.parseUnits("2000000", 18), "bitcoin-sale-inventory");
 
     await compliance.setComplianceRecord(
       buyer.address,

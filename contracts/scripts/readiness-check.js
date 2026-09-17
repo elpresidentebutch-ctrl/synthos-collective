@@ -1,18 +1,19 @@
 const hre = require("hardhat");
+const { BUCKETS_SYN, TOTAL_SUPPLY_SYN, assertBucketsSumToTotal } = require("../tokenomics");
 
 const { ethers, network } = hre;
 
 const expected = {
-  totalSupply: "100000000000",
-  immuneNodeRewards: "22000000000",
-  lockedDexLiquidity: "20000000000",
-  founderVesting: "17000000000",
-  validatorRewards: "12000000000",
-  community: "12500000000",
-  ecosystemTreasury: "13000000000",
-  cmoLaunchGrant: "0",
-  strategicReserve: "3000000000",
-  founderOperationsGrant: "500000000",
+  totalSupply: TOTAL_SUPPLY_SYN,
+  immuneNodeRewards: BUCKETS_SYN.IMMUNE_NODE_REWARDS,
+  lockedDexLiquidity: BUCKETS_SYN.LOCKED_DEX_LIQUIDITY,
+  founderVesting: BUCKETS_SYN.FOUNDER_VESTING,
+  validatorRewards: BUCKETS_SYN.VALIDATOR_REWARDS,
+  community: BUCKETS_SYN.COMMUNITY,
+  ecosystemTreasury: BUCKETS_SYN.ECOSYSTEM_TREASURY,
+  cmoLaunchGrant: BUCKETS_SYN.CMO_LAUNCH_GRANT,
+  strategicReserve: BUCKETS_SYN.STRATEGIC_RESERVE,
+  founderOperationsGrant: BUCKETS_SYN.FOUNDER_OPERATIONS_GRANT,
   founderAnnualRelease: "1700000000",
   immuneTargetOperators: 100000n,
   immuneActivationReward: "500",
@@ -41,26 +42,50 @@ async function main() {
   console.log("SYNTHOS token launch readiness check");
   console.log(`Network: ${network.name}`);
 
-  const SynCoin = await ethers.getContractFactory("SynCoin");
-  const token = await SynCoin.deploy();
-  await token.waitForDeployment();
+  // These tokenomics numbers are enforced on the native chain's genesis
+  // allocation, not on SynCoin -- SynCoin no longer carries any bucket
+  // bookkeeping at all. This just checks tokenomics.js (the EVM side's
+  // documentation copy of those figures) hasn't drifted out of sum.
+  assertBucketsSumToTotal();
+  console.log(`ok tokenomics buckets sum to ${expected.totalSupply} SYN`);
+
   const [deployer] = await ethers.getSigners();
 
-  assertEq(await token.INITIAL_SUPPLY(), units(expected.totalSupply), "total supply");
-  assertEq(await token.IMMUNE_NODE_REWARDS_ALLOCATION(), units(expected.immuneNodeRewards), "immune node rewards bucket");
-  assertEq(await token.LOCKED_DEX_LIQUIDITY_ALLOCATION(), units(expected.lockedDexLiquidity), "locked DEX liquidity bucket");
-  assertEq(await token.FOUNDER_VESTING_ALLOCATION(), units(expected.founderVesting), "founder vesting bucket");
-  assertEq(await token.VALIDATOR_REWARDS_ALLOCATION(), units(expected.validatorRewards), "validator rewards bucket");
-  assertEq(await token.COMMUNITY_ALLOCATION(), units(expected.community), "community/adopter bucket");
-  assertEq(await token.ECOSYSTEM_TREASURY_ALLOCATION(), units(expected.ecosystemTreasury), "ecosystem treasury bucket");
-  assertEq(await token.CMO_LAUNCH_GRANT(), units(expected.cmoLaunchGrant), "CMO launch grant");
-  assertEq(await token.STRATEGIC_RESERVE_ALLOCATION(), units(expected.strategicReserve), "strategic reserve bucket");
-  assertEq(await token.FOUNDER_OPERATIONS_GRANT(), units(expected.founderOperationsGrant), "founder launch allocation");
-  assertEq(await token.FOUNDER_ANNUAL_RELEASE(), units(expected.founderAnnualRelease), "founder annual release");
-  assertEq(await token.tokenomicsTotal(), await token.INITIAL_SUPPLY(), "tokenomics total equals supply");
-  assertEq(await token.immuneRewardsBreakdownTotal(), await token.IMMUNE_NODE_REWARDS_ALLOCATION(), "immune sub-buckets total");
-  assertEq(await token.validatorRewardsBreakdownTotal(), await token.VALIDATOR_REWARDS_ALLOCATION(), "validator sub-buckets total");
-  assertEq(await token.communityRewardsBreakdownTotal(), await token.COMMUNITY_ALLOCATION(), "community sub-buckets total");
+  const SynCoin = await ethers.getContractFactory("SynCoin");
+  const token = await SynCoin.deploy(deployer.address);
+  await token.waitForDeployment();
+
+  assertEq(await token.totalSupply(), 0n, "SynCoin starts at zero supply");
+  assertEq(await token.bridgeMinterInitialized(), false, "bridge minter starts uninitialized");
+  assertEq(await token.bridgeMinter(), ethers.ZeroAddress, "bridge minter starts unset");
+
+  try {
+    await token.mint.staticCall(deployer.address, 1);
+    throw new Error("SynCoin.mint() should be unreachable before the bridge minter is wired up");
+  } catch (error) {
+    if (!/not bridge minter/.test(error.message)) throw error;
+  }
+  console.log("ok SynCoin.mint() unreachable before bridge minter wiring, and not owner-callable");
+
+  const Minter = await ethers.getContractFactory("SYNTHOSSynBridgeMinter");
+  const minter = await Minter.deploy(await token.getAddress(), [deployer.address], 1);
+  await minter.waitForDeployment();
+  await (await token.initializeBridgeMinter(await minter.getAddress())).wait();
+
+  assertEq(await token.bridgeMinterInitialized(), true, "bridge minter wired up");
+  if ((await token.bridgeMinter()) !== (await minter.getAddress())) {
+    throw new Error("bridgeMinter address mismatch after wiring");
+  }
+  console.log("ok bridgeMinter address matches deployed SYNTHOSSynBridgeMinter");
+
+  try {
+    await token.initializeBridgeMinter.staticCall(deployer.address);
+    throw new Error("initializeBridgeMinter should be unreachable a second time");
+  } catch (error) {
+    if (!/bridge minter already initialized/.test(error.message)) throw error;
+  }
+  console.log("ok bridge minter wiring is permanent (no setter, cannot re-initialize)");
+
   if ((await token.treasury()) !== deployer.address) {
     throw new Error("treasury recycling burn treasury mismatch");
   }

@@ -37,6 +37,7 @@ async function main() {
 
   const multisigAddress = requireValue(contracts.multisig, "contracts.multisig");
   const tokenAddress = requireValue(contracts.synCoin, "contracts.synCoin");
+  const bridgeMinterAddress = requireValue(contracts.synBridgeMinter, "contracts.synBridgeMinter");
   const timelockAddress = requireValue(contracts.timelock, "contracts.timelock");
   const governanceAddress = requireValue(contracts.governance, "contracts.governance");
   const dexAddress = requireValue(contracts.dex, "contracts.dex");
@@ -45,6 +46,11 @@ async function main() {
   const token = await ethers.getContractAt("SynCoin", tokenAddress);
   const timelock = await ethers.getContractAt("SYNTHOSTimelock", timelockAddress);
   const dex = await ethers.getContractAt("SYNTHOSDex", dexAddress);
+
+  // SynCoin is a bridge-pegged wrapper with zero independent supply: this is
+  // the launch invariant that makes that true on-chain, not just on paper.
+  assertEq(await token.bridgeMinterInitialized(), true, "bridge minter initialized");
+  assertEq((await token.bridgeMinter()).toLowerCase(), bridgeMinterAddress.toLowerCase(), "bridge minter address");
 
   const expectedOwners = wallets.multisigOwners || [];
   const actualOwners = await multisig.owners();

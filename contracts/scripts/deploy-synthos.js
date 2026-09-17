@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const hre = require("hardhat");
+const { BUCKETS_SYN, TOTAL_SUPPLY_SYN, assertBucketsSumToTotal } = require("../tokenomics");
 
 const { ethers, network } = hre;
 
@@ -168,20 +169,40 @@ async function main() {
   const treasuryWallet = configuredTreasuryWallet || launchMultisig.address;
   const strategicReserveWallet = process.env.STRATEGIC_RESERVE_WALLET || treasuryWallet;
 
-  const syn = await deployContract("SynCoin");
-  const token = syn.contract;
-  const earlyAdopterCampaignBudget = await token.COMMUNITY_EARLY_ADOPTER_CAMPAIGNS();
+  assertBucketsSumToTotal();
+  const earlyAdopterCampaignBudget = ethers.parseUnits(BUCKETS_SYN.COMMUNITY, 18) / 5n; // documented sub-bucket, see note below
+  // NOTE: COMMUNITY_EARLY_ADOPTER_CAMPAIGNS is a native-chain-side sub-bucket
+  // of the broader COMMUNITY allocation. It is not read from this contract
+  // (SynCoin no longer carries tokenomics bucket bookkeeping at all -- see
+  // tokenomics.js for why), so treat this constant as documentation to be
+  // kept in sync with the native chain's genesis allocation, not as an
+  // on-chain-enforced figure the way it used to be.
   if (earlyAdopterSaleAllocation > earlyAdopterCampaignBudget) {
-    throw new Error("EARLY_ADOPTER_SALE_ALLOCATION exceeds COMMUNITY_EARLY_ADOPTER_CAMPAIGNS");
+    throw new Error("EARLY_ADOPTER_SALE_ALLOCATION exceeds the documented COMMUNITY_EARLY_ADOPTER_CAMPAIGNS budget");
   }
   const earlyAdopterCampaignReserve = earlyAdopterCampaignBudget - earlyAdopterSaleAllocation;
-  const communityOperatingAllocation = (await token.COMMUNITY_ALLOCATION()) - earlyAdopterCampaignBudget;
+  const communityOperatingAllocation = ethers.parseUnits(BUCKETS_SYN.COMMUNITY, 18) - earlyAdopterCampaignBudget;
 
-  if ((await token.treasury()) !== treasuryWallet) {
-    const tx = await token.setTreasury(treasuryWallet);
-    await tx.wait();
-    console.log(`TREASURY_RECYCLING_BURN_TREASURY: ${treasuryWallet}`);
-  }
+  // SynCoin is a bridge-pegged wrapper: it starts at zero supply and can
+  // only ever be minted by the SYNTHOSSynBridgeMinter contract, wired up
+  // once, immediately below, and never changeable again.
+  const syn = await deployContract("SynCoin", [treasuryWallet]);
+  const token = syn.contract;
+
+  const synBridgeRelayers = parseAddressList(process.env.SYN_BRIDGE_RELAYERS);
+  const bridgeRelayers = synBridgeRelayers.length > 0 ? synBridgeRelayers : [deployer.address];
+  const synBridgeThreshold = BigInt(
+    process.env.SYN_BRIDGE_THRESHOLD || (bridgeRelayers.length >= 2 ? "2" : "1")
+  );
+  const synBridgeMinter = await deployContract("SYNTHOSSynBridgeMinter", [
+    syn.address,
+    bridgeRelayers,
+    synBridgeThreshold,
+  ]);
+  let tx = await token.initializeBridgeMinter(synBridgeMinter.address);
+  await tx.wait();
+  console.log(`SYN_BRIDGE_MINTER: ${synBridgeMinter.address} (relayers=${bridgeRelayers.join(",")} threshold=${synBridgeThreshold})`);
+  console.log("SYN_BRIDGE_MINTER is paused by default -- unpause it once relayers are confirmed live.");
 
   const timelockMinDelay = BigInt(
     process.env.TIMELOCK_MIN_DELAY || (network.name === "hardhat" ? "60" : "172800")
@@ -200,10 +221,19 @@ async function main() {
 
   console.log("Configuring timelock custody");
   const proposerRole = await timelock.contract.PROPOSER_ROLE();
+  const cancellerRole = await timelock.contract.CANCELLER_ROLE();
   const adminRole = await timelock.contract.TIMELOCK_ADMIN_ROLE();
-  let tx = await timelock.contract.grantRole(proposerRole, governance.address);
+  tx = await timelock.contract.grantRole(proposerRole, governance.address);
   await tx.wait();
   tx = await timelock.contract.revokeRole(proposerRole, deployer.address);
+  await tx.wait();
+  // OZ's TimelockController grants CANCELLER_ROLE to every constructor
+  // proposer, so the deployer picked it up alongside PROPOSER_ROLE above.
+  // Move it to governance the same way, and take it off the deployer --
+  // nobody outside governance should be able to cancel a queued proposal.
+  tx = await timelock.contract.grantRole(cancellerRole, governance.address);
+  await tx.wait();
+  tx = await timelock.contract.revokeRole(cancellerRole, deployer.address);
   await tx.wait();
   tx = await timelock.contract.grantRole(adminRole, launchMultisig.address);
   await tx.wait();
@@ -211,6 +241,7 @@ async function main() {
   await tx.wait();
   console.log(`TIMELOCK_ADMIN: ${launchMultisig.address}`);
   console.log(`TIMELOCK_PROPOSER: ${governance.address}`);
+  console.log(`TIMELOCK_CANCELLER: ${governance.address}`);
   console.log("TIMELOCK_EXECUTOR: open");
 
   const staking = await deployContract("SYNTHOSStaking", [
@@ -252,32 +283,60 @@ async function main() {
     console.log(`ADOPTER_MERKLE_ROOT: ${merkle.root} gateRequired=${merkle.gateRequired} source=${merkle.source}`);
   }
 
+  const founderAnnualRelease = ethers.parseUnits("1700000000", 18);
   const founderVesting = await deployContract("SYNTHOSFounderAnnualVesting", [
     syn.address,
     founderWallet,
-    await token.FOUNDER_ANNUAL_RELEASE(),
+    founderAnnualRelease,
     FOUNDER_RELEASE_TIMESTAMPS,
   ]);
 
-  console.log("Allocating genesis supply");
   const immuneNodeRewardsRecipient = immuneNodeRewardsWallet || adopterRewards.address;
   const validatorRewardsRecipient = validatorRewardsWallet || staking.address;
   const allocations = [
-    [founderVesting.address, await token.FOUNDER_VESTING_ALLOCATION(), "FOUNDER_VESTING"],
-    [founderOpsWallet, await token.FOUNDER_OPERATIONS_GRANT(), "FOUNDER_OPERATIONS_GRANT"],
-    [immuneNodeRewardsRecipient, await token.IMMUNE_NODE_REWARDS_ALLOCATION(), "IMMUNE_NODE_REWARDS"],
-    [validatorRewardsRecipient, await token.VALIDATOR_REWARDS_ALLOCATION(), "VALIDATOR_REWARDS"],
+    [founderVesting.address, ethers.parseUnits(BUCKETS_SYN.FOUNDER_VESTING, 18), "FOUNDER_VESTING"],
+    [founderOpsWallet, ethers.parseUnits(BUCKETS_SYN.FOUNDER_OPERATIONS_GRANT, 18), "FOUNDER_OPERATIONS_GRANT"],
+    [immuneNodeRewardsRecipient, ethers.parseUnits(BUCKETS_SYN.IMMUNE_NODE_REWARDS, 18), "IMMUNE_NODE_REWARDS"],
+    [validatorRewardsRecipient, ethers.parseUnits(BUCKETS_SYN.VALIDATOR_REWARDS, 18), "VALIDATOR_REWARDS"],
     [earlyAdopterSale.address, earlyAdopterSaleAllocation, "COMMUNITY_EARLY_ADOPTER_SALE_TRANCHE_1"],
     [communityWallet, earlyAdopterCampaignReserve, "COMMUNITY_EARLY_ADOPTER_CAMPAIGN_RESERVE"],
     [communityWallet, communityOperatingAllocation, "COMMUNITY"],
-    [treasuryWallet, await token.ECOSYSTEM_TREASURY_ALLOCATION(), "ECOSYSTEM_TREASURY"],
-    [strategicReserveWallet, await token.STRATEGIC_RESERVE_ALLOCATION(), "STRATEGIC_RESERVE"],
+    [treasuryWallet, ethers.parseUnits(BUCKETS_SYN.ECOSYSTEM_TREASURY, 18), "ECOSYSTEM_TREASURY"],
+    [strategicReserveWallet, ethers.parseUnits(BUCKETS_SYN.STRATEGIC_RESERVE, 18), "STRATEGIC_RESERVE"],
   ];
 
-  for (const [recipient, amount, label] of allocations) {
-    const tx = await token.allocateTokens(recipient, amount, label);
+  const isLocalNetwork = network.name === "hardhat" || network.name === "localhost";
+  if (isLocalNetwork) {
+    // Local/dev convenience only: this deploy script controls the sole
+    // relayer key on a local devnet, so it can complete a real (if
+    // single-signer) bridge mint for each bucket, exercising the exact
+    // same approveMint path production relayers use. This branch never
+    // runs on a real network -- there, minting requires real relayer
+    // quorum over a real native-chain lock, which no deploy script can
+    // manufacture on its own.
+    console.log("Local network: minting genesis buckets through the real bridge-mint path (dev convenience)");
+    tx = await synBridgeMinter.contract.unpause();
     await tx.wait();
-    console.log(`${label}: ${ethers.formatUnits(amount, 18)} SYN -> ${recipient}`);
+    let seq = 0;
+    for (const [recipient, amount, label] of allocations) {
+      seq++;
+      const sourceEventId = ethers.keccak256(ethers.toUtf8Bytes(`local-genesis-${label}-${seq}`));
+      tx = await synBridgeMinter.contract.approveMint(sourceEventId, recipient, amount);
+      await tx.wait();
+      console.log(`${label}: ${ethers.formatUnits(amount, 18)} SYN -> ${recipient} (bridge-minted)`);
+    }
+  } else {
+    console.log("");
+    console.log("No SYN has been minted on this network. SynCoin is a bridge-pegged");
+    console.log("wrapper: every bucket below needs to be funded by locking the");
+    console.log("matching real SYN on the native chain and having the configured");
+    console.log("relayers (" + bridgeRelayers.join(",") + ") approve the mint on");
+    console.log("SYNTHOSSynBridgeMinter at " + synBridgeMinter.address + ".");
+    console.log("Documented bucket sizes (see tokenomics.js):");
+    for (const [recipient, amount, label] of allocations) {
+      console.log(`  ${label}: ${ethers.formatUnits(amount, 18)} SYN -> ${recipient}`);
+    }
+    console.log("");
   }
 
   console.log("Configuring early adopter crypto sale");
@@ -309,10 +368,16 @@ async function main() {
   const poolConfig = dexPoolConfig();
   let seededSynLiquidity = 0n;
 
+  if (poolConfig.length > 0 && !isLocalNetwork) {
+    console.log("Real network: the deployer wallet must already hold the SYN needed to");
+    console.log("seed these pools (funded through a real bridge mint) -- this script");
+    console.log("cannot mint it, only spend what is already there.");
+  }
+
   for (const pool of poolConfig) {
     let assetAddress = pool.address;
     if (!assetAddress) {
-      if (!(network.name === "hardhat" || network.name === "localhost")) {
+      if (!isLocalNetwork) {
         throw new Error(`DEX pool ${pool.symbol} is missing production asset address`);
       }
       const initialSupply = ethers.parseUnits(pool.asset, pool.decimals || 18);
@@ -329,8 +394,26 @@ async function main() {
     const assetAmount = ethers.parseUnits(pool.asset, pool.decimals || 18);
     seededSynLiquidity += synAmount;
 
-    tx = await token.allocateTokens(deployer.address, synAmount, "LOCKED_DEX_LIQUIDITY");
-    await tx.wait();
+    if (isLocalNetwork) {
+      // Dev convenience only: mint this pool's SYN side through the real
+      // bridge-mint path (see the genesis allocation branch above for why
+      // this never runs on a real network).
+      const sourceEventId = ethers.keccak256(
+        ethers.toUtf8Bytes(`local-dex-liquidity-${pool.symbol}`)
+      );
+      tx = await synBridgeMinter.contract.approveMint(sourceEventId, deployer.address, synAmount);
+      await tx.wait();
+    } else {
+      const deployerBalance = await token.balanceOf(deployer.address);
+      if (deployerBalance < synAmount) {
+        throw new Error(
+          `Deployer wallet does not hold enough bridge-minted SYN to seed the ${pool.symbol} pool ` +
+          `(needs ${ethers.formatUnits(synAmount, 18)} SYN, has ${ethers.formatUnits(deployerBalance, 18)}). ` +
+          "Bridge-mint it in first (real relayer quorum over a real native-chain lock), then re-run."
+        );
+      }
+    }
+
     tx = await dex.contract.createPool(assetAddress);
     await tx.wait();
     tx = await token.approve(dex.address, synAmount);
@@ -354,16 +437,26 @@ async function main() {
     console.log(`DEX pool SYN/${pool.symbol}: ${pool.syn} SYN + ${pool.asset} ${pool.symbol}`);
   }
 
-  const remainingDexLiquidity = (await token.LOCKED_DEX_LIQUIDITY_ALLOCATION()) - seededSynLiquidity;
+  const dexLiquidityBucket = ethers.parseUnits(BUCKETS_SYN.LOCKED_DEX_LIQUIDITY, 18);
+  const remainingDexLiquidity = dexLiquidityBucket - seededSynLiquidity;
   if (remainingDexLiquidity > 0n) {
-    tx = await token.allocateTokens(dexLiquidityWallet, remainingDexLiquidity, "LOCKED_DEX_LIQUIDITY_RESERVE");
-    await tx.wait();
-    console.log(`LOCKED_DEX_LIQUIDITY_RESERVE: ${ethers.formatUnits(remainingDexLiquidity, 18)} SYN -> ${dexLiquidityWallet}`);
+    if (isLocalNetwork) {
+      const sourceEventId = ethers.keccak256(ethers.toUtf8Bytes("local-dex-liquidity-reserve"));
+      tx = await synBridgeMinter.contract.approveMint(sourceEventId, dexLiquidityWallet, remainingDexLiquidity);
+      await tx.wait();
+      console.log(`LOCKED_DEX_LIQUIDITY_RESERVE: ${ethers.formatUnits(remainingDexLiquidity, 18)} SYN -> ${dexLiquidityWallet} (bridge-minted)`);
+    } else {
+      console.log(
+        `LOCKED_DEX_LIQUIDITY_RESERVE: ${ethers.formatUnits(remainingDexLiquidity, 18)} SYN documented for ` +
+        `${dexLiquidityWallet} -- fund via a real bridge mint, this script does not mint it.`
+      );
+    }
   }
 
   console.log("Transferring launch contract ownership to timelock");
   const ownableTransfers = [
     ["SynCoin", token],
+    ["SYNTHOSSynBridgeMinter", synBridgeMinter.contract],
     ["SYNTHOSAdopterRewards", adopterRewards.contract],
     ["SYNTHOSEarlyAdopterPresale", earlyAdopterSale.contract],
     ["SYNTHOSDex", dex.contract],
@@ -382,16 +475,17 @@ async function main() {
     deployedAt: new Date().toISOString(),
     deployer: deployer.address,
     tokenomics: {
-      totalSupply: "100000000000",
-      immuneNodeRewards: "22000000000",
-      dexLiquidity: "20000000000",
-      founderVesting: "17000000000",
-      validatorRewards: "12000000000",
-      communityAdopterRewards: "12500000000",
-      ecosystemTreasury: "13000000000",
-      cmoLaunchGrant: "0",
-      strategicReserve: "3000000000",
-      founderLaunchAllocation: "500000000",
+      totalSupply: TOTAL_SUPPLY_SYN,
+      immuneNodeRewards: BUCKETS_SYN.IMMUNE_NODE_REWARDS,
+      dexLiquidity: BUCKETS_SYN.LOCKED_DEX_LIQUIDITY,
+      founderVesting: BUCKETS_SYN.FOUNDER_VESTING,
+      validatorRewards: BUCKETS_SYN.VALIDATOR_REWARDS,
+      communityAdopterRewards: BUCKETS_SYN.COMMUNITY,
+      ecosystemTreasury: BUCKETS_SYN.ECOSYSTEM_TREASURY,
+      cmoLaunchGrant: BUCKETS_SYN.CMO_LAUNCH_GRANT,
+      strategicReserve: BUCKETS_SYN.STRATEGIC_RESERVE,
+      founderLaunchAllocation: BUCKETS_SYN.FOUNDER_OPERATIONS_GRANT,
+      note: "These figures describe the native chain's genesis allocation, which is the only place SYN is ever created. SynCoin on this network is a bridge-pegged wrapper with zero independent supply -- see contracts.synBridgeMinter.",
       treasuryRecyclingBurn: {
         protocolSpendBurnShare: "50%",
         protocolSpendTreasuryShare: "50%",
@@ -419,6 +513,7 @@ async function main() {
     contracts: {
       multisig: launchMultisig.address,
       synCoin: syn.address,
+      synBridgeMinter: synBridgeMinter.address,
       timelock: timelock.address,
       governance: governance.address,
       staking: staking.address,

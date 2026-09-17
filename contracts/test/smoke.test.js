@@ -1,5 +1,6 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
+const { deploySynWithBridge, mintSyn } = require("./helpers/syn");
 
 describe("post-incubation compile / deploy smoke", function () {
   it("rejects unsafe sovereign multisig configuration", async function () {
@@ -30,11 +31,9 @@ describe("post-incubation compile / deploy smoke", function () {
   });
 
   it("executes launch admin calls through the sovereign multisig", async function () {
-    const [ownerA, ownerB, ownerC, outsider, treasury] = await ethers.getSigners();
+    const [ownerA, ownerB, ownerC, outsider, treasury, newTreasury] = await ethers.getSigners();
 
-    const SynCoin = await ethers.getContractFactory("SynCoin");
-    const token = await SynCoin.deploy();
-    await token.waitForDeployment();
+    const { syn: token } = await deploySynWithBridge(treasury, [ownerA]);
 
     const Multisig = await ethers.getContractFactory("SYNTHOSMultisig");
     const multisig = await Multisig.deploy(
@@ -53,7 +52,7 @@ describe("post-incubation compile / deploy smoke", function () {
     await token.transferOwnership(await multisig.getAddress());
 
     const data = token.interface.encodeFunctionData("setTreasury", [
-      treasury.address,
+      newTreasury.address,
     ]);
     await multisig.submitTransaction(await token.getAddress(), 0, data);
 
@@ -67,7 +66,7 @@ describe("post-incubation compile / deploy smoke", function () {
     await multisig.connect(ownerB).confirmTransaction(0);
     await multisig.connect(outsider).executeTransaction(0);
 
-    expect(await token.treasury()).to.equal(treasury.address);
+    expect(await token.treasury()).to.equal(newTreasury.address);
     const transaction = await multisig.getTransaction(0);
     expect(transaction.executed).to.equal(true);
 
@@ -77,11 +76,9 @@ describe("post-incubation compile / deploy smoke", function () {
   });
 
   it("handles multisig confirmation revocation and failed calls safely", async function () {
-    const [ownerA, ownerB, ownerC, treasury] = await ethers.getSigners();
+    const [ownerA, ownerB, ownerC, treasury, newTreasury] = await ethers.getSigners();
 
-    const SynCoin = await ethers.getContractFactory("SynCoin");
-    const token = await SynCoin.deploy();
-    await token.waitForDeployment();
+    const { syn: token } = await deploySynWithBridge(treasury, [ownerA]);
 
     const Multisig = await ethers.getContractFactory("SYNTHOSMultisig");
     const multisig = await Multisig.deploy(
@@ -93,7 +90,7 @@ describe("post-incubation compile / deploy smoke", function () {
     await token.transferOwnership(await multisig.getAddress());
 
     const data = token.interface.encodeFunctionData("setTreasury", [
-      treasury.address,
+      newTreasury.address,
     ]);
     await multisig.submitTransaction(await token.getAddress(), 0, data);
 
@@ -110,7 +107,7 @@ describe("post-incubation compile / deploy smoke", function () {
 
     await multisig.connect(ownerC).confirmTransaction(0);
     await multisig.executeTransaction(0);
-    expect(await token.treasury()).to.equal(treasury.address);
+    expect(await token.treasury()).to.equal(newTreasury.address);
 
     const failingData = token.interface.encodeFunctionData("setTreasury", [
       ethers.ZeroAddress,
@@ -156,25 +153,15 @@ describe("post-incubation compile / deploy smoke", function () {
   it("applies treasury recycling burn only through protocol spend", async function () {
     const [deployer, spender, treasury] = await ethers.getSigners();
 
-    const SynCoin = await ethers.getContractFactory("SynCoin");
-    const token = await SynCoin.deploy();
-    await token.waitForDeployment();
-
-    await token.setTreasury(treasury.address);
-    expect(await token.treasury()).to.equal(treasury.address);
-
-    await token.allocateTokens(
-      spender.address,
-      ethers.parseUnits("1000", 18),
-      "COMMUNITY"
-    );
+    const { syn: token, minter } = await deploySynWithBridge(treasury, [deployer]);
+    await mintSyn(minter, [deployer], spender, ethers.parseUnits("1000", 18), "community");
 
     await token.connect(spender).transfer(deployer.address, ethers.parseUnits("100", 18));
     expect(await token.balanceOf(deployer.address)).to.equal(
       ethers.parseUnits("100", 18)
     );
     expect(await token.totalSupply()).to.equal(
-      ethers.parseUnits("100000000000", 18)
+      ethers.parseUnits("1000", 18)
     );
 
     await token.connect(spender).treasuryRecyclingBurn(
@@ -189,7 +176,7 @@ describe("post-incubation compile / deploy smoke", function () {
       ethers.parseUnits("100", 18)
     );
     expect(await token.totalSupply()).to.equal(
-      ethers.parseUnits("99999999900", 18)
+      ethers.parseUnits("900", 18)
     );
     expect(await token.totalTreasuryRecyclingBurned()).to.equal(
       ethers.parseUnits("100", 18)
@@ -215,20 +202,14 @@ describe("post-incubation compile / deploy smoke", function () {
   it("preserves treasury recycling burn invariants under edge cases", async function () {
     const [deployer, spender, treasury] = await ethers.getSigners();
 
-    const SynCoin = await ethers.getContractFactory("SynCoin");
-    const token = await SynCoin.deploy();
-    await token.waitForDeployment();
-
-    await token.setTreasury(treasury.address);
-    await token.allocateTokens(spender.address, 9, "TEST");
+    const { syn: token, minter } = await deploySynWithBridge(treasury, [deployer]);
+    await mintSyn(minter, [deployer], spender, 9, "edge-case");
 
     await token.connect(spender).treasuryRecyclingBurn(
       3,
       await token.SPEND_SERVICE_FEE()
     );
-    expect(await token.totalSupply()).to.equal(
-      ethers.parseUnits("100000000000", 18) - 1n
-    );
+    expect(await token.totalSupply()).to.equal(9n - 1n);
     expect(await token.balanceOf(treasury.address)).to.equal(2);
     expect(await token.balanceOf(spender.address)).to.equal(6);
     expect(await token.totalTreasuryRecyclingBurned()).to.equal(1);
@@ -276,31 +257,18 @@ describe("post-incubation compile / deploy smoke", function () {
     );
   });
 
-  it("deploys core SYNTHOS stack on hardhat", async function () {
+  it("deploys core SYNTHOS stack on hardhat, funded only through real bridge mints", async function () {
     this.timeout(120000);
-    const [deployer, adopter] = await ethers.getSigners();
+    const [deployer, adopter, treasury] = await ethers.getSigners();
 
-    const SynCoin = await ethers.getContractFactory("SynCoin");
-    const token = await SynCoin.deploy();
-    await token.waitForDeployment();
+    const { syn: token, minter } = await deploySynWithBridge(treasury, [deployer]);
     const tokenAddr = await token.getAddress();
 
-    expect(await token.totalSupply()).to.equal(
-      ethers.parseUnits("100000000000", 18)
-    );
-    expect(await token.undistributedSupply()).to.equal(
-      ethers.parseUnits("100000000000", 18)
-    );
-    expect(await token.tokenomicsTotal()).to.equal(await token.INITIAL_SUPPLY());
-    expect(await token.immuneRewardsBreakdownTotal()).to.equal(
-      await token.IMMUNE_NODE_REWARDS_ALLOCATION()
-    );
-    expect(await token.validatorRewardsBreakdownTotal()).to.equal(
-      await token.VALIDATOR_REWARDS_ALLOCATION()
-    );
-    expect(await token.communityRewardsBreakdownTotal()).to.equal(
-      await token.COMMUNITY_ALLOCATION()
-    );
+    // Bridge-pegged: nothing exists until it's actually minted through the
+    // relayer-quorum path. No genesis premint, no "undistributed pool".
+    expect(await token.totalSupply()).to.equal(0);
+    expect(await token.bridgeMinterInitialized()).to.equal(true);
+    expect(await token.bridgeMinter()).to.equal(await minter.getAddress());
 
     const Timelock = await ethers.getContractFactory("SYNTHOSTimelock");
     const timelock = await Timelock.deploy(
@@ -369,36 +337,31 @@ describe("post-incubation compile / deploy smoke", function () {
       1811548800, 1843171200, 1874707200, 1906243200, 1937779200,
       1969401600, 2000937600, 2032473600, 2064009600, 2095632000,
     ];
+    const founderAnnualRelease = ethers.parseUnits("1700000000", 18);
     const founderVesting = await FounderVesting.deploy(
       tokenAddr,
       deployer.address,
-      await token.FOUNDER_ANNUAL_RELEASE(),
+      founderAnnualRelease,
       founderSchedule
     );
     await founderVesting.waitForDeployment();
 
-    await token.allocateTokens(
-      await founderVesting.getAddress(),
-      await token.FOUNDER_VESTING_ALLOCATION(),
-      "FOUNDER_VESTING"
-    );
-    await token.allocateTokens(
-      await adopterRewards.getAddress(),
-      await token.IMMUNE_NODE_REWARDS_ALLOCATION(),
-      "IMMUNE_NODE_REWARDS"
-    );
-    await token.allocateTokens(
-      deployer.address,
-      ethers.parseUnits("10000000", 18),
-      "LOCKED_DEX_LIQUIDITY"
-    );
+    // Every SYN these contracts hold now traces back to a real,
+    // relayer-approved bridge mint -- this is what "backed by a real coin
+    // locked on the native chain" looks like mechanically in a test.
+    const founderVestingAllocation = ethers.parseUnits("17000000000", 18);
+    await mintSyn(minter, [deployer], await founderVesting.getAddress(), founderVestingAllocation, "founder-vesting");
+    const immuneRewardsAllocation = ethers.parseUnits("22000000000", 18);
+    await mintSyn(minter, [deployer], await adopterRewards.getAddress(), immuneRewardsAllocation, "immune-rewards");
+    const dexSeed = ethers.parseUnits("10000000", 18);
+    await mintSyn(minter, [deployer], deployer, dexSeed, "dex-liquidity");
 
     await dex.createPool(await b12.getAddress());
-    await token.approve(await dex.getAddress(), ethers.parseUnits("10000000", 18));
+    await token.approve(await dex.getAddress(), dexSeed);
     await b12.approve(await dex.getAddress(), ethers.parseUnits("50000", 18));
     await dex.addLiquidity(
       await b12.getAddress(),
-      ethers.parseUnits("10000000", 18),
+      dexSeed,
       ethers.parseUnits("50000", 18)
     );
 
@@ -415,7 +378,7 @@ describe("post-incubation compile / deploy smoke", function () {
     expect(await staking.getAddress()).to.match(/^0x[a-fA-F0-9]{40}$/);
     expect(await compliance.getAddress()).to.match(/^0x[a-fA-F0-9]{40}$/);
     expect(await token.balanceOf(await founderVesting.getAddress())).to.equal(
-      await token.FOUNDER_VESTING_ALLOCATION()
+      founderVestingAllocation
     );
     expect(await adopterRewards.registeredNodeCount()).to.equal(1);
     expect(await adopterRewards.nodeByOperator(deployer.address)).to.equal(
@@ -494,11 +457,9 @@ describe("post-incubation compile / deploy smoke", function () {
   });
 
   it("lets the launch operator add a real token pool after DEX deployment", async function () {
-    const [operator, trader, outsider] = await ethers.getSigners();
+    const [operator, trader, outsider, treasury] = await ethers.getSigners();
 
-    const SynCoin = await ethers.getContractFactory("SynCoin");
-    const syn = await SynCoin.deploy();
-    await syn.waitForDeployment();
+    const { syn, minter } = await deploySynWithBridge(treasury, [operator]);
 
     const Dex = await ethers.getContractFactory("SYNTHOSDex");
     const dex = await Dex.deploy(await syn.getAddress());
@@ -520,11 +481,7 @@ describe("post-incubation compile / deploy smoke", function () {
     await dex.createPool(await launchToken.getAddress());
     expect(await dex.poolCount()).to.equal(1);
 
-    await syn.allocateTokens(
-      operator.address,
-      ethers.parseUnits("100000", 18),
-      "LOCKED_DEX_LIQUIDITY"
-    );
+    await mintSyn(minter, [operator], operator, ethers.parseUnits("100000", 18), "dex-liquidity");
     await syn.approve(await dex.getAddress(), ethers.parseUnits("100000", 18));
     await launchToken.approve(await dex.getAddress(), ethers.parseUnits("50000", 18));
 
@@ -534,11 +491,7 @@ describe("post-incubation compile / deploy smoke", function () {
       ethers.parseUnits("50000", 18)
     );
 
-    await syn.allocateTokens(
-      trader.address,
-      ethers.parseUnits("1000", 18),
-      "COMMUNITY"
-    );
+    await mintSyn(minter, [operator], trader, ethers.parseUnits("1000", 18), "trader-funding");
     await syn.connect(trader).approve(await dex.getAddress(), ethers.parseUnits("1000", 18));
 
     const quote = await dex.quoteSynForAsset(
@@ -563,9 +516,7 @@ describe("post-incubation compile / deploy smoke", function () {
   it("sells SYN automatically to eligible early adopters at ten cents", async function () {
     const [operator, buyer, outsider, treasury] = await ethers.getSigners();
 
-    const SynCoin = await ethers.getContractFactory("SynCoin");
-    const syn = await SynCoin.deploy();
-    await syn.waitForDeployment();
+    const { syn, minter } = await deploySynWithBridge(treasury, [operator]);
 
     const ComplianceRegistry = await ethers.getContractFactory(
       "SYNTHOSComplianceRegistry"
@@ -584,11 +535,7 @@ describe("post-incubation compile / deploy smoke", function () {
     );
     await sale.waitForDeployment();
 
-    await syn.allocateTokens(
-      await sale.getAddress(),
-      ethers.parseUnits("2000000", 18),
-      "COMMUNITY_EARLY_ADOPTER_SALE"
-    );
+    await mintSyn(minter, [operator], await sale.getAddress(), ethers.parseUnits("2000000", 18), "sale-inventory");
 
     const MockERC20 = await ethers.getContractFactory("MockERC20");
     const usdc = await MockERC20.deploy(
@@ -678,9 +625,7 @@ describe("post-incubation compile / deploy smoke", function () {
   it("lets early adopters self-register and buy from the first 250M SYN tranche", async function () {
     const [operator, buyer, treasury] = await ethers.getSigners();
 
-    const SynCoin = await ethers.getContractFactory("SynCoin");
-    const syn = await SynCoin.deploy();
-    await syn.waitForDeployment();
+    const { syn, minter } = await deploySynWithBridge(treasury, [operator]);
 
     const ComplianceRegistry = await ethers.getContractFactory(
       "SYNTHOSComplianceRegistry"
@@ -699,11 +644,7 @@ describe("post-incubation compile / deploy smoke", function () {
     );
     await sale.waitForDeployment();
 
-    await syn.allocateTokens(
-      await sale.getAddress(),
-      ethers.parseUnits("2000000", 18),
-      "COMMUNITY_EARLY_ADOPTER_CAMPAIGNS"
-    );
+    await mintSyn(minter, [operator], await sale.getAddress(), ethers.parseUnits("2000000", 18), "sale-inventory");
 
     const MockERC20 = await ethers.getContractFactory("MockERC20");
     const usdc = await MockERC20.deploy(
@@ -770,9 +711,7 @@ describe("post-incubation compile / deploy smoke", function () {
   it("can sell SYN for native crypto when founder sets a native USD price", async function () {
     const [operator, buyer, treasury] = await ethers.getSigners();
 
-    const SynCoin = await ethers.getContractFactory("SynCoin");
-    const syn = await SynCoin.deploy();
-    await syn.waitForDeployment();
+    const { syn, minter } = await deploySynWithBridge(treasury, [operator]);
 
     const ComplianceRegistry = await ethers.getContractFactory(
       "SYNTHOSComplianceRegistry"
@@ -791,11 +730,7 @@ describe("post-incubation compile / deploy smoke", function () {
     );
     await sale.waitForDeployment();
 
-    await syn.allocateTokens(
-      await sale.getAddress(),
-      ethers.parseUnits("1000000", 18),
-      "COMMUNITY_EARLY_ADOPTER_SALE"
-    );
+    await mintSyn(minter, [operator], await sale.getAddress(), ethers.parseUnits("1000000", 18), "sale-inventory");
 
     await compliance.setComplianceRecord(
       buyer.address,
