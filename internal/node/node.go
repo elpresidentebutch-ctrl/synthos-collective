@@ -38,6 +38,18 @@ type Node struct {
 
 	// Optional hook called after this node finalizes a block.
 	OnFinalize func(*chain.Chain) error
+
+	// Slashing is the real enforcement backend: double-signing and vote
+	// equivocation detected by Consensus get reported here, and it's the
+	// thing that actually debits a misbehaving validator's real balance
+	// (see the ExecuteSlash wiring in NewNode) rather than just logging
+	// that something bad happened.
+	Slashing *consensus.SlashingTracker
+
+	// Governance is the real treasury-proposal system. Founder-gated
+	// proposal creation, stake-weighted voting, and fund release all run
+	// through this rather than a simulated/no-op path.
+	Governance *chain.TreasuryGovernance
 }
 
 var (
@@ -56,7 +68,82 @@ func NewNode(a *agent.Agent, c *chain.Chain, eng *consensus.Engine, t network.Tr
 		// Default: 50 msgs burst, 10 msgs/sec per peer.
 		InboundLimiter: network.NewPeerLimiter(50, 10),
 	}
+
+	// Wire real enforcement: a SlashingTracker whose penalties actually
+	// debit the misbehaving validator's real chain balance, not just an
+	// internal shadow number. Penalty sizes are deliberately modest
+	// defaults (documented here, not hidden) -- operators running a real
+	// deployment should tune SlashingParams for their own stake economics.
+	tracker := consensus.NewSlashingTracker(consensus.SlashingParams{
+		DoubleSignPenalty:   1000,
+		InvalidBlockPenalty: 250,
+		DowntimePenalty:     50,
+	})
+	tracker.SetExecuteSlash(func(validatorID string, penalty uint64) {
+		addr, ok := n.addressForAgentID(validatorID)
+		if !ok || c == nil {
+			return
+		}
+		acc := c.State.Get(addr)
+		if acc.Balance > penalty {
+			acc.Balance -= penalty
+		} else {
+			acc.Balance = 0
+		}
+		c.State.Set(addr, acc)
+	})
+	n.Slashing = tracker
+	if eng != nil {
+		eng.SetSlashingTracker(tracker)
+	}
+
 	return n
+}
+
+// addressForAgentID resolves an AgentID (the string consensus code uses,
+// e.g. block proposer/voter IDs) to the real chain.Address that actually
+// holds that identity's balance, so real penalties and rewards land on the
+// right account. It checks this node's own identity first, then its known
+// peers.
+func (n *Node) addressForAgentID(agentID string) (chain.Address, bool) {
+	if n.Agent != nil && n.Agent.Identity.AgentID == agentID {
+		pubBytes, err := synthoscrypto.PublicKeyBytes(n.Agent.Identity.PublicKey)
+		if err != nil {
+			return "", false
+		}
+		return chain.AddressFromPublicKey(pubBytes), true
+	}
+	if pubBytes, ok := n.Peers[agentID]; ok {
+		return chain.AddressFromPublicKey(pubBytes), true
+	}
+	return "", false
+}
+
+// RefreshReputation recomputes this node's own agent's reputation from real
+// chain, governance, and slashing history (see agent.Agent.RefreshReputation)
+// and returns the new score.
+func (n *Node) RefreshReputation() int {
+	if n.Agent == nil {
+		return 0
+	}
+	return n.Agent.RefreshReputation(n.Chain, n.Governance, n.Slashing)
+}
+
+// InitGovernance wires up real treasury governance for this node: founder
+// address, treasury address, and a real GetStake function backed by the
+// same chain state every balance/transfer uses (see chain.State.TotalStake
+// for how the RPC layer measures quorum against it). Deployments that don't
+// configure a founder/treasury address simply never call this, and
+// n.Governance stays nil -- the RPC layer reports governance as
+// unconfigured rather than silently accepting requests against an empty
+// address.
+func (n *Node) InitGovernance(founder, treasury chain.Address) {
+	n.Governance = chain.NewTreasuryGovernance(founder, treasury, func(addr chain.Address) uint64 {
+		if n.Chain == nil {
+			return 0
+		}
+		return n.Chain.State.Get(addr).Balance
+	})
 }
 
 func (n *Node) IsValidator(agentID string) bool {
@@ -270,10 +357,25 @@ func (n *Node) TryFinalize(blockHash string) error {
 	if err := n.Chain.FinalizeBlock(b); err != nil {
 		return err
 	}
+	// Reputation is recomputed from real chain history every time this
+	// node's chain advances, rather than left as a static number nothing
+	// ever touches.
+	n.RefreshReputation()
 	if n.OnFinalize != nil {
 		return n.OnFinalize(n.Chain)
 	}
 	return nil
+}
+
+// NoteMissedSlot tells the consensus engine's slashing tracker that the
+// validator expected to propose at this height did not do so before its
+// slot passed, so it counts toward real downtime tracking. This function
+// only forwards the observation -- deciding when a slot has actually been
+// missed (round-robin schedule + timeout) is the caller's job.
+func (n *Node) NoteMissedSlot(expectedProposerID string, height uint64) {
+	if n.Consensus != nil {
+		n.Consensus.NoteMissedSlot(expectedProposerID, height)
+	}
 }
 
 // ProposeBlock builds and broadcasts a block proposal.

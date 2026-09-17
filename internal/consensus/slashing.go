@@ -43,6 +43,14 @@ type SlashingTracker struct {
 	jailedUntil     map[string]time.Time // Validator -> jail end time
 	signedBlocks    map[string][]uint64  // Validator -> heights of blocks signed (for double-sign detection)
 	missedBlocks    map[string]uint64    // Validator -> count of blocks missed in window
+	votedHashes     map[string]map[uint64]string // Validator -> height -> first block hash voted for (equivocation detection)
+
+	// executeSlash, when set, is called with the real penalty amount right
+	// after a slashing event is recorded, so the punishment actually lands
+	// on the validator's real balance in chain state instead of only living
+	// inside this tracker's own shadow bookkeeping. Wired by whoever
+	// constructs the tracker (see internal/node.NewNode); nil-safe if unset.
+	executeSlash func(validatorID string, penalty uint64)
 }
 
 // NewSlashingTracker creates a new slashing tracker with default penalties
@@ -60,7 +68,20 @@ func NewSlashingTracker(params SlashingParams) *SlashingTracker {
 		jailedUntil:     make(map[string]time.Time),
 		signedBlocks:    make(map[string][]uint64),
 		missedBlocks:    make(map[string]uint64),
+		votedHashes:     make(map[string]map[uint64]string),
 	}
+}
+
+// SetExecuteSlash wires a real penalty-execution callback. Call this with a
+// function that actually debits the validator's balance in chain state
+// (e.g. from internal/node wiring, closing over *chain.State). Without it,
+// SlashingTracker still records events and its own internal stake ledger
+// correctly, but nothing outside the tracker feels the penalty -- so real
+// deployments should always set this.
+func (st *SlashingTracker) SetExecuteSlash(fn func(validatorID string, penalty uint64)) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	st.executeSlash = fn
 }
 
 // SetValidatorStake records or updates a validator's stake amount
@@ -112,6 +133,34 @@ func (st *SlashingTracker) RecordInvalidBlock(validatorID string, blockHeight ui
 	return st.recordSlashingLocked(validatorID, InvalidBlock, blockHeight, evidence)
 }
 
+// RecordEquivocation checks whether a validator voted for two different
+// block hashes at the same height (a real BFT safety violation -- voting
+// both ways lets a validator help finalize conflicting forks) and slashes
+// them if so. Callers should invoke this on every vote a validator casts;
+// the first vote at a given height is simply recorded, only a conflicting
+// second vote at that same height triggers a slash.
+func (st *SlashingTracker) RecordEquivocation(validatorID string, blockHeight uint64, blockHash string) error {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	byHeight, exists := st.votedHashes[validatorID]
+	if !exists {
+		byHeight = make(map[uint64]string)
+		st.votedHashes[validatorID] = byHeight
+	}
+	prior, seen := byHeight[blockHeight]
+	if !seen {
+		byHeight[blockHeight] = blockHash
+		return nil
+	}
+	if prior == blockHash {
+		// Same vote seen again (e.g. a retransmit) -- not a violation.
+		return nil
+	}
+	return st.recordSlashingLocked(validatorID, Equivocation, blockHeight,
+		fmt.Sprintf("validator voted for both %s and %s at height %d", prior, blockHash, blockHeight))
+}
+
 // recordSlashingLocked (internal) records a slashing event and reduces validator stake
 func (st *SlashingTracker) recordSlashingLocked(validatorID string, eventType SlashingType, blockHeight uint64, evidence string) error {
 	// Record the event
@@ -133,11 +182,15 @@ func (st *SlashingTracker) recordSlashingLocked(validatorID string, eventType Sl
 		penalty = st.params.InvalidBlockPenalty
 	case Downtime:
 		penalty = st.params.DowntimePenalty
+	case Equivocation:
+		// Equivocation is a BFT safety violation, same severity class as
+		// double-signing a block.
+		penalty = st.params.DoubleSignPenalty
 	default:
 		penalty = 0
 	}
 
-	// Apply penalty (slash stake)
+	// Apply penalty (slash stake) in this tracker's own bookkeeping.
 	if stake, exists := st.validatorStakes[validatorID]; exists {
 		if stake > penalty {
 			st.validatorStakes[validatorID] = stake - penalty
@@ -149,8 +202,54 @@ func (st *SlashingTracker) recordSlashingLocked(validatorID string, eventType Sl
 	// Jail validator
 	st.jailedUntil[validatorID] = time.Now().Add(st.params.JailDuration)
 
+	// Make the penalty real: hand it to whoever wired a real executor
+	// (normally something that debits the validator's actual balance in
+	// chain state). Called synchronously but outside any lock the caller
+	// might reasonably want to take -- callers should keep this fast and
+	// non-reentrant into the tracker.
+	if st.executeSlash != nil && penalty > 0 {
+		go st.executeSlash(validatorID, penalty)
+	}
+
 	return fmt.Errorf("validator %s slashed for %s: penalty=%d stake_remaining=%d",
 		validatorID, eventType, penalty, st.validatorStakes[validatorID])
+}
+
+// SlashCount returns how many slashing events have been recorded against a
+// given validator. Used by reputation scoring so reputation reflects real
+// history instead of a self-reported number.
+func (st *SlashingTracker) SlashCount(validatorID string) int {
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+	count := 0
+	for _, ev := range st.events {
+		if ev.ValidatorID == validatorID {
+			count++
+		}
+	}
+	return count
+}
+
+// TotalSlashEvents returns the total number of slashing events recorded
+// across all validators.
+func (st *SlashingTracker) TotalSlashEvents() int {
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+	return len(st.events)
+}
+
+// HistoryFor returns the slashing events recorded against a single
+// validator, most recent last.
+func (st *SlashingTracker) HistoryFor(validatorID string) []SlashingEvent {
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+	var out []SlashingEvent
+	for _, ev := range st.events {
+		if ev.ValidatorID == validatorID {
+			out = append(out, ev)
+		}
+	}
+	return out
 }
 
 // IsJailed checks if a validator is currently jailed

@@ -10,8 +10,20 @@ import (
 	"sync"
 	"time"
 
+	"synthos-collective/internal/chain"
+	"synthos-collective/internal/consensus"
 	synthoscrypto "synthos-collective/internal/crypto"
 	"synthos-collective/internal/network"
+)
+
+// Reputation scoring weights. Documented as constants (not a black box)
+// because CanPerformRole's thresholds only mean something if the number
+// they're compared against reflects real, independently-checkable history.
+const (
+	ReputationBase              = 10  // floor for a brand-new, unproven identity
+	ReputationPerFinalizedBlock = 2   // per block this agent proposed that the chain actually finalized
+	ReputationPerGovernanceVote = 1   // per governance proposal this agent has actually cast a vote on
+	ReputationPerSlashEvent     = 100 // lost per real slashing event recorded against this agent
 )
 
 // Role represents the built-in roles every agent performs.
@@ -309,6 +321,70 @@ func (a *Agent) VerifyIdentity() error {
 	}
 
 	return nil
+}
+
+// RefreshReputation recomputes this agent's reputation from real,
+// externally-verifiable chain history instead of trusting a self-reported
+// number that only ever goes up because nothing ever sets it: blocks it
+// actually got finalized, governance proposals it actually voted on, and
+// slashing events actually recorded against it by the network's own
+// consensus engine. Any other node holding the same chain data, governance
+// state, and slashing history can run this exact computation and reach the
+// same answer -- that reproducibility is what makes it a real score rather
+// than an assertion. Call it periodically (e.g. after every block this
+// node finalizes) rather than treating the result as permanent.
+//
+// c, gov, and slashing may each be nil (e.g. a node not yet wired to
+// governance) -- their contributions are simply skipped.
+func (a *Agent) RefreshReputation(c *chain.Chain, gov *chain.TreasuryGovernance, slashing *consensus.SlashingTracker) int {
+	score := ReputationBase
+
+	if c != nil {
+		blocksFinalized := 0
+		for _, b := range c.Blocks {
+			if b != nil && b.Finalized && b.Header.ProposerID == a.Identity.AgentID {
+				blocksFinalized++
+			}
+		}
+		a.mu.Lock()
+		a.Identity.BlocksValidated = blocksFinalized
+		a.mu.Unlock()
+		score += blocksFinalized * ReputationPerFinalizedBlock
+	}
+
+	if gov != nil {
+		if addr, err := a.selfAddress(); err == nil {
+			votes := gov.VotesCastBy(addr)
+			a.mu.Lock()
+			a.Identity.ProposalsVoted = votes
+			a.mu.Unlock()
+			score += votes * ReputationPerGovernanceVote
+		}
+	}
+
+	if slashing != nil {
+		score -= slashing.SlashCount(a.Identity.AgentID) * ReputationPerSlashEvent
+	}
+
+	if score < 0 {
+		score = 0
+	}
+
+	a.mu.Lock()
+	a.Identity.Reputation = score
+	a.mu.Unlock()
+	return score
+}
+
+// selfAddress derives this agent's chain.Address from its own public key,
+// the same way every other part of the codebase derives an address from a
+// key (see chain.AddressFromPublicKey).
+func (a *Agent) selfAddress() (chain.Address, error) {
+	pubBytes, err := hexToBytes(a.Identity.PublicKey)
+	if err != nil {
+		return "", err
+	}
+	return chain.AddressFromPublicKey(pubBytes), nil
 }
 
 // CanPerformRole checks if agent has sufficient reputation for the given role.

@@ -72,6 +72,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/submitTx", s.handleSubmitTx)
 	mux.HandleFunc("/proposeBlock", s.handleProposeBlock)
 	mux.HandleFunc("/gossip/block", s.handleGossipBlock)
+	mux.HandleFunc("/governance/propose", s.handleGovernancePropose)
+	mux.HandleFunc("/governance/vote", s.handleGovernanceVote)
+	mux.HandleFunc("/governance/execute", s.handleGovernanceExecute)
+	mux.HandleFunc("/governance/proposals", s.handleGovernanceProposals)
+	mux.HandleFunc("/simulate/tx", s.handleSimulateTx)
+	mux.HandleFunc("/simulate/block", s.handleSimulateBlock)
+	mux.HandleFunc("/economy/stats", s.handleEconomyStats)
 
 	// Wrap with rate limiting and input size limit middleware
 	handler := s.RateLimiter.Middleware(mux)

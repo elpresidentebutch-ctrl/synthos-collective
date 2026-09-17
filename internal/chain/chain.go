@@ -128,6 +128,69 @@ func (c *Chain) SubmitTx(tx Tx) error {
 	return nil
 }
 
+// SimulationResult reports what would happen if a transaction were applied,
+// without it ever touching live state or the mempool.
+type SimulationResult struct {
+	TxID               string `json:"tx_id"`
+	Applied            bool   `json:"applied"`
+	Error              string `json:"error,omitempty"`
+	FromBalanceBefore  uint64 `json:"from_balance_before"`
+	FromBalanceAfter   uint64 `json:"from_balance_after"`
+	ToBalanceBefore    uint64 `json:"to_balance_before"`
+	ToBalanceAfter     uint64 `json:"to_balance_after"`
+	ResultingStateRoot string `json:"resulting_state_root,omitempty"`
+}
+
+// SimulateTx dry-runs a single transaction against a fresh clone of the
+// live state. It runs the exact same checks and the exact same state
+// transition function real transactions go through (tx.Verify, chain ID,
+// nonce, State.ApplyTx) -- not a separate, simplified reimplementation that
+// could silently drift and report an outcome the real chain wouldn't
+// actually produce. c.State and c.Mempool are never written to: the clone
+// is discarded once the result is read off it.
+func (c *Chain) SimulateTx(tx Tx) (SimulationResult, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	result := SimulationResult{TxID: tx.ID}
+
+	if err := tx.Verify(); err != nil {
+		result.Error = err.Error()
+		return result, err
+	}
+	if tx.ChainID != c.transactionChainIDLocked() {
+		err := fmt.Errorf("wrong transaction chain ID: got %d, want %d", tx.ChainID, c.transactionChainIDLocked())
+		result.Error = err.Error()
+		return result, err
+	}
+	expectedNonce := c.State.GetNextNonce(tx.From)
+	if tx.Nonce != expectedNonce {
+		err := fmt.Errorf("nonce mismatch: got %d, expected %d for address %s", tx.Nonce, expectedNonce, tx.From)
+		result.Error = err.Error()
+		return result, err
+	}
+
+	tmp := c.State.Clone()
+	fromBefore := tmp.Get(tx.From)
+	toBefore := tmp.Get(tx.To)
+
+	if err := tmp.ApplyTx(tx); err != nil {
+		result.Error = err.Error()
+		return result, err
+	}
+
+	fromAfter := tmp.Get(tx.From)
+	toAfter := tmp.Get(tx.To)
+
+	result.Applied = true
+	result.FromBalanceBefore = fromBefore.Balance
+	result.FromBalanceAfter = fromAfter.Balance
+	result.ToBalanceBefore = toBefore.Balance
+	result.ToBalanceAfter = toAfter.Balance
+	result.ResultingStateRoot = tmp.Root()
+	return result, nil
+}
+
 // BuildBlock creates a candidate block from mempool against the current state.
 func (c *Chain) BuildBlock(proposerID string, proposerPoCRoot string, maxTx int) (*Block, error) {
 	c.mu.RLock()

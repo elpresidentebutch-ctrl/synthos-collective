@@ -107,6 +107,7 @@ func main() {
 		return st.Save(c)
 	}
 	bootstrapImmuneNode(cfg, ch, st, a, keys.Public)
+	initGovernance(n, gen)
 
 	if len(validators) > 0 {
 		n.SetValidators(validators)
@@ -219,6 +220,48 @@ func startRegistryHeartbeat(nodeID string, chainID string, publicKey ed25519.Pub
 			post()
 		}
 	}()
+}
+
+// initGovernance wires real treasury governance for this node, if this
+// deployment has configured a founder address. The founder address is
+// deliberately NOT hardcoded anywhere in this binary -- it's read from
+// either an env var (operator override, useful for key rotation without
+// touching genesis) or the genesis file's metadata, so which address can
+// create treasury proposals is an explicit, auditable, per-deployment
+// choice rather than a value baked into the code. Deployments that set
+// neither simply have no Governor endpoint available (the RPC layer reports
+// "governance not configured" rather than accepting requests against an
+// empty address).
+func initGovernance(n *node.Node, gen chain.Genesis) {
+	founder := strings.TrimSpace(os.Getenv("SYNTHOS_FOUNDER_ADDRESS"))
+	if founder == "" {
+		founder = metadataString(gen.Metadata, "founder_address")
+	}
+	if founder == "" {
+		log.Printf("governance: no founder address configured (SYNTHOS_FOUNDER_ADDRESS or genesis metadata.founder_address) -- Governor RPC endpoints disabled for this node")
+		return
+	}
+	treasury := strings.TrimSpace(os.Getenv("SYNTHOS_TREASURY_ADDRESS"))
+	if treasury == "" {
+		treasury = metadataString(gen.Metadata, "treasury_address")
+	}
+	if treasury == "" {
+		log.Printf("governance: founder address configured but no treasury address (SYNTHOS_TREASURY_ADDRESS or genesis metadata.treasury_address) -- proposals can be created and voted on, but Execute will fail until a treasury is set")
+	}
+	n.InitGovernance(chain.Address(founder), chain.Address(treasury))
+	log.Printf("governance: initialized (founder=%s treasury=%s)", founder, treasury)
+}
+
+func metadataString(meta map[string]any, key string) string {
+	if meta == nil {
+		return ""
+	}
+	v, ok := meta[key]
+	if !ok {
+		return ""
+	}
+	s, _ := v.(string)
+	return strings.TrimSpace(s)
 }
 
 func bootstrapImmuneNode(cfg *config.NodeConfig, ch *chain.Chain, st *storage.Store, a *agent.Agent, publicKey ed25519.PublicKey) {

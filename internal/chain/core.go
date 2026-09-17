@@ -283,6 +283,30 @@ func NewState() *State {
 	}
 }
 
+// TotalStake returns the real sum of every account's current on-chain
+// balance. Governance quorum is measured against this, not the static
+// MAX_SUPPLY constant, so it reflects coins actually in circulation (e.g.
+// tokens burned via a recycling burn no longer count) rather than a number
+// nobody has to keep honest.
+func (s *State) TotalStake() uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var total uint64
+	for _, acc := range s.Accounts {
+		total += acc.Balance
+	}
+	return total
+}
+
+// AccountCount returns how many distinct addresses currently have any
+// recorded state (balance, nonce, or assets). Used for real economic
+// reporting rather than an invented figure.
+func (s *State) AccountCount() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.Accounts)
+}
+
 func (s *State) Get(a Address) Account {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
