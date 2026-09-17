@@ -16,7 +16,8 @@
     "readiness:contracts": "hardhat compile && hardhat test && hardhat run scripts/readiness-check.js --network hardhat",
     "merkle:adopters": "node scripts/build-adopter-merkle.js",
     "merkle:adopters:example": "node scripts/build-adopter-merkle.js merkle/adopters.example.json merkle/adopter-merkle.example.json",
-    "merkle:set": "hardhat run scripts/set-adopter-merkle-root.js"
+    "merkle:set": "hardhat run scripts/set-adopter-merkle-root.js",
+    "relayer:native-to-syn-mint": "node scripts/relay-native-locks-to-syn-mint.js"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.0",

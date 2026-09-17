@@ -74,6 +74,13 @@ func TestBridgeNativeLockRecordsReceipt(t *testing.T) {
 	if events[0].DestinationChainID != "84532" || events[0].Amount != 50_000 {
 		t.Fatalf("unexpected bridge event: %+v", events[0])
 	}
+	// The event must record where the funds actually landed (tx.To), not
+	// just who sent them -- a relayer minting on the strength of this lock
+	// needs to verify the funds really reached the expected escrow address,
+	// not just trust the sender's self-reported destination metadata.
+	if events[0].Recipient != bridgeEscrow {
+		t.Fatalf("recipient=%s want %s", events[0].Recipient, bridgeEscrow)
+	}
 }
 
 func TestBridgeReleaseRejectsSourceReplay(t *testing.T) {

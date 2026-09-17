@@ -208,6 +208,14 @@ type BridgeRecord struct {
 	ID                   string  `json:"id"`
 	Type                 string  `json:"type"`
 	Address              Address `json:"address"`
+	// Recipient is who the locked funds actually went to on THIS chain
+	// (tx.To), recorded so a relayer can verify a lock really moved funds
+	// into a specific, expected escrow/lock account before treating it as
+	// backing for a mint elsewhere -- rather than trusting the sender's
+	// self-reported destination metadata alone. Only populated for
+	// bridge_lock_native; empty for bridge_release_native, where Address
+	// already carries the recipient.
+	Recipient            Address `json:"recipient,omitempty"`
 	Amount               uint64  `json:"amount"`
 	AssetID              string  `json:"asset_id,omitempty"`
 	SourceChainID        string  `json:"source_chain_id,omitempty"`
@@ -446,6 +454,7 @@ func (s *State) applyBridgeMetadata(tx Tx) error {
 			ID:                   eventID,
 			Type:                 txType,
 			Address:              tx.From,
+			Recipient:            tx.To,
 			Amount:               tx.Amount,
 			AssetID:              assetID,
 			DestinationChainID:   destinationChainID,
