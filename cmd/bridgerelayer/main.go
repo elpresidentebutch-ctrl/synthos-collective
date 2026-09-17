@@ -20,6 +20,22 @@ import (
 
 const bridgeLockedTopic = "0x50f709ab204aa3a58cdfc578dffa863d2b371f796ec7a5f3b01ec247d686ea98"
 
+// synBurnedForNativeReleaseTopic is keccak256("SynBurnedForNativeRelease(bytes32,address,bytes,uint256,uint256)"),
+// emitted by SYNTHOSSynBridgeMinter.burnToNative when a holder sends their
+// wrapped SYN home for release on the native chain.
+const synBurnedForNativeReleaseTopic = "0xa24b8f1fbe9297092be42f355cae9efc17ac2f4086a52b7d8577707a458ca97d"
+
+// wrappedSynUnitScale converts between the EVM-side wrapped SYN ERC20's
+// 18-decimal units and the native chain's own SYN, which the native chain
+// represents as whole, indivisible units (decimals = 0, see genesis
+// metadata across cmd/opennet, cmd/rpcnode, etc.). Every amount that
+// crosses this specific bridge has to pass through this scale factor
+// exactly once, in the right direction, or value is created or destroyed
+// at the boundary. This does not apply to SYNTHOSBridgeVault's foreign
+// assets, which are a separate flow with their own (currently unscaled)
+// accounting.
+var wrappedSynUnitScale = new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil)
+
 type bridgeEvent struct {
 	ID                   string        `json:"id"`
 	Type                 string        `json:"type"`
@@ -64,7 +80,9 @@ func main() {
 	rpcURL := flag.String("rpc", env("SYNTHOS_NATIVE_RPC_URL", "http://127.0.0.1:8080"), "SYNTHOS native RPC URL")
 	evmRPCURL := flag.String("evm-rpc", os.Getenv("SYNTHOS_BRIDGE_EVM_RPC_URL"), "EVM JSON-RPC URL")
 	evmVault := flag.String("evm-vault", os.Getenv("SYNTHOS_BRIDGE_EVM_VAULT"), "EVM SYNTHOSBridgeVault address")
-	startBlock := flag.Uint64("from-block", envUint64("SYNTHOS_BRIDGE_EVM_FROM_BLOCK", 0), "EVM start block")
+	evmSynMinter := flag.String("evm-syn-minter", os.Getenv("SYNTHOS_BRIDGE_EVM_SYN_MINTER"), "EVM SYNTHOSSynBridgeMinter address (watches wrapped-SYN burn-for-release events)")
+	startBlock := flag.Uint64("from-block", envUint64("SYNTHOS_BRIDGE_EVM_FROM_BLOCK", 0), "EVM start block for SYNTHOSBridgeVault")
+	synMinterStartBlock := flag.Uint64("syn-minter-from-block", envUint64("SYNTHOS_BRIDGE_EVM_SYN_MINTER_FROM_BLOCK", 0), "EVM start block for SYNTHOSSynBridgeMinter")
 	minConfirmations := flag.Uint64("min-confirmations", envUint64("SYNTHOS_BRIDGE_MIN_CONFIRMATIONS", 12), "EVM confirmations required before proof/release")
 	autoSubmitNative := flag.Bool("auto-submit-native", os.Getenv("SYNTHOS_BRIDGE_AUTO_SUBMIT_NATIVE") == "true", "submit native releases from confirmed EVM BridgeLocked logs")
 	poll := flag.Duration("poll", envDuration("SYNTHOS_BRIDGE_POLL_INTERVAL", 15*time.Second), "poll interval")
@@ -82,7 +100,7 @@ func main() {
 			fatal(err)
 		}
 	case "watch-evm":
-		err := watchEVM(*evmRPCURL, *evmVault, *rpcURL, *proofOutbox, *privateKey, *fee, *startBlock, *minConfirmations, *poll, *once, *autoSubmitNative)
+		err := watchEVM(*evmRPCURL, *evmVault, *evmSynMinter, *rpcURL, *proofOutbox, *privateKey, *fee, *startBlock, *synMinterStartBlock, *minConfirmations, *poll, *once, *autoSubmitNative)
 		if err != nil {
 			fatal(err)
 		}
@@ -120,19 +138,64 @@ func watchNative(rpcURL, outbox string, poll time.Duration, once bool) error {
 	}
 }
 
-func watchEVM(evmRPCURL, vault, nativeRPCURL, proofOutbox, privHex string, fee uint64, startBlock, minConfirmations uint64, poll time.Duration, once bool, autoSubmitNative bool) error {
+// evmLogSource is one EVM contract this relayer watches for release-worthy
+// events, each tracked with its own block cursor and dedup set since the
+// vault and the SYN bridge minter are independent contracts that can start
+// at different blocks and confirm independently.
+type evmLogSource struct {
+	label     string
+	address   string
+	topic     string
+	nextBlock uint64
+	seen      map[string]bool
+	decode    func(log evmLog, currentHead, minConfirmations uint64) (externalLockProof, error)
+}
+
+func watchEVM(evmRPCURL, vault, synMinter, nativeRPCURL, proofOutbox, privHex string, fee uint64, startBlock, synMinterStartBlock, minConfirmations uint64, poll time.Duration, once bool, autoSubmitNative bool) error {
 	if evmRPCURL == "" {
 		return fmt.Errorf("evm-rpc required")
 	}
-	if vault == "" {
-		return fmt.Errorf("evm-vault required")
+	if vault == "" && synMinter == "" {
+		return fmt.Errorf("at least one of evm-vault or evm-syn-minter is required")
 	}
-	vault = strings.ToLower(vault)
-	if !strings.HasPrefix(vault, "0x") || len(vault) != 42 {
-		return fmt.Errorf("evm-vault must be a 20-byte hex address")
+
+	var sources []*evmLogSource
+	if vault != "" {
+		vault = strings.ToLower(vault)
+		if !strings.HasPrefix(vault, "0x") || len(vault) != 42 {
+			return fmt.Errorf("evm-vault must be a 20-byte hex address")
+		}
+		sources = append(sources, &evmLogSource{
+			label:     "bridge vault lock",
+			address:   vault,
+			topic:     bridgeLockedTopic,
+			nextBlock: startBlock,
+			seen:      map[string]bool{},
+			decode:    proofFromBridgeLockedLog,
+		})
 	}
-	nextBlock := startBlock
-	seen := map[string]bool{}
+	if synMinter != "" {
+		synMinter = strings.ToLower(synMinter)
+		if !strings.HasPrefix(synMinter, "0x") || len(synMinter) != 42 {
+			return fmt.Errorf("evm-syn-minter must be a 20-byte hex address")
+		}
+		chainID, err := evmChainID(evmRPCURL)
+		if err != nil {
+			return fmt.Errorf("fetching EVM chain id for syn bridge minter: %w", err)
+		}
+		sourceChainID := new(big.Int).SetUint64(chainID).String()
+		sources = append(sources, &evmLogSource{
+			label:     "SYN burn-for-release",
+			address:   synMinter,
+			topic:     synBurnedForNativeReleaseTopic,
+			nextBlock: synMinterStartBlock,
+			seen:      map[string]bool{},
+			decode: func(log evmLog, currentHead, minConfirmations uint64) (externalLockProof, error) {
+				return proofFromSynBurnedLog(log, sourceChainID, currentHead, minConfirmations)
+			},
+		})
+	}
+
 	for {
 		head, err := evmBlockNumber(evmRPCURL)
 		if err != nil {
@@ -140,34 +203,37 @@ func watchEVM(evmRPCURL, vault, nativeRPCURL, proofOutbox, privHex string, fee u
 		}
 		if head >= minConfirmations {
 			confirmedHead := head - minConfirmations
-			if nextBlock == 0 {
-				nextBlock = confirmedHead
-			}
-			if nextBlock <= confirmedHead {
-				logs, err := evmBridgeLockedLogs(evmRPCURL, vault, nextBlock, confirmedHead)
+			for _, source := range sources {
+				if source.nextBlock == 0 {
+					source.nextBlock = confirmedHead
+				}
+				if source.nextBlock > confirmedHead {
+					continue
+				}
+				logs, err := evmLogsForAddress(evmRPCURL, source.address, source.topic, source.nextBlock, confirmedHead)
 				if err != nil {
 					return err
 				}
 				for _, log := range logs {
-					proof, err := proofFromBridgeLockedLog(log, head, minConfirmations)
+					proof, err := source.decode(log, head, minConfirmations)
 					if err != nil {
 						return err
 					}
-					if seen[proof.SourceEventID] {
+					if source.seen[proof.SourceEventID] {
 						continue
 					}
 					if err := appendJSONL(proofOutbox, proof); err != nil {
 						return err
 					}
-					seen[proof.SourceEventID] = true
-					fmt.Printf("observed confirmed EVM bridge lock: source_event=%s amount=%d recipient=%s confirmations=%d\n", proof.SourceEventID, proof.Amount, proof.Recipient, proof.Confirmations)
+					source.seen[proof.SourceEventID] = true
+					fmt.Printf("observed confirmed %s: source_event=%s amount=%d recipient=%s confirmations=%d\n", source.label, proof.SourceEventID, proof.Amount, proof.Recipient, proof.Confirmations)
 					if autoSubmitNative {
 						if err := submitNativeReleaseProof(nativeRPCURL, proof, privHex, fee); err != nil {
 							return err
 						}
 					}
 				}
-				nextBlock = confirmedHead + 1
+				source.nextBlock = confirmedHead + 1
 			}
 		}
 		if once {
@@ -274,18 +340,29 @@ func evmBlockNumber(rpcURL string) (uint64, error) {
 	return parseHexUint64(out)
 }
 
-func evmBridgeLockedLogs(rpcURL string, vault string, fromBlock uint64, toBlock uint64) ([]evmLog, error) {
+// evmLogsForAddress fetches logs for a single event topic emitted by a
+// single contract address, shared by both the bridge vault watcher and the
+// SYN bridge minter watcher below.
+func evmLogsForAddress(rpcURL string, address string, topic string, fromBlock uint64, toBlock uint64) ([]evmLog, error) {
 	var logs []evmLog
 	filter := map[string]any{
-		"address":   vault,
+		"address":   address,
 		"fromBlock": uint64Hex(fromBlock),
 		"toBlock":   uint64Hex(toBlock),
-		"topics":    []any{bridgeLockedTopic},
+		"topics":    []any{topic},
 	}
 	if err := evmRPC(rpcURL, "eth_getLogs", []any{filter}, &logs); err != nil {
 		return nil, err
 	}
 	return logs, nil
+}
+
+func evmChainID(rpcURL string) (uint64, error) {
+	var out string
+	if err := evmRPC(rpcURL, "eth_chainId", []any{}, &out); err != nil {
+		return 0, err
+	}
+	return parseHexUint64(out)
 }
 
 func proofFromBridgeLockedLog(log evmLog, currentHead uint64, minConfirmations uint64) (externalLockProof, error) {
@@ -335,6 +412,123 @@ func proofFromBridgeLockedLog(log evmLog, currentHead uint64, minConfirmations u
 		ObservedTxHash:     log.TransactionHash,
 		DestinationChainID: destinationChainID,
 	}, nil
+}
+
+// proofFromSynBurnedLog builds a native release proof from a
+// SynBurnedForNativeRelease log emitted by SYNTHOSSynBridgeMinter.
+// burnId and sender are indexed (topics[1], topics[2]); nativeRecipient,
+// amount, and nonce are ABI-encoded in the log data. sourceChainID is
+// passed in because, unlike SYNTHOSBridgeVault's BridgeLocked event, this
+// event doesn't index the chain id itself.
+func proofFromSynBurnedLog(log evmLog, sourceChainID string, currentHead uint64, minConfirmations uint64) (externalLockProof, error) {
+	if log.Removed {
+		return externalLockProof{}, fmt.Errorf("removed EVM log")
+	}
+	if len(log.Topics) < 3 || strings.ToLower(log.Topics[0]) != synBurnedForNativeReleaseTopic {
+		return externalLockProof{}, fmt.Errorf("not a SynBurnedForNativeRelease log")
+	}
+	blockNumber, err := parseHexUint64(log.BlockNumber)
+	if err != nil {
+		return externalLockProof{}, err
+	}
+	if currentHead < blockNumber {
+		return externalLockProof{}, fmt.Errorf("log block is above current head")
+	}
+	confirmations := currentHead - blockNumber + 1
+	recipientBytes, rawAmount, _, err := decodeSynBurnedData(log.Data)
+	if err != nil {
+		return externalLockProof{}, err
+	}
+	recipient, err := nativeRecipientFromBytes(recipientBytes)
+	if err != nil {
+		return externalLockProof{}, err
+	}
+	nativeAmount, err := nativeAmountFromWrappedSynUnits(rawAmount)
+	if err != nil {
+		return externalLockProof{}, fmt.Errorf("converting burned wrapped-SYN amount to native units: %w", err)
+	}
+	sourceEventID := strings.ToLower(log.Topics[1])
+	if log.TransactionHash != "" && log.LogIndex != "" {
+		sourceEventID = strings.ToLower(log.TransactionHash + ":" + log.LogIndex)
+	}
+	return externalLockProof{
+		SourceChainID:    sourceChainID,
+		SourceEventID:    sourceEventID,
+		Recipient:        recipient,
+		Amount:           nativeAmount,
+		AssetID:          "syn",
+		Confirmations:    confirmations,
+		MinConfirmations: minConfirmations,
+		ObservedBlock:    blockNumber,
+		ObservedTxHash:   log.TransactionHash,
+	}, nil
+}
+
+// decodeSynBurnedData decodes the non-indexed fields of
+// SynBurnedForNativeRelease(bytes32 indexed, address indexed, bytes
+// nativeRecipient, uint256 amount, uint256 nonce): a 3-word head (an offset
+// to the dynamic nativeRecipient tail, then amount, then nonce) followed by
+// the length-prefixed nativeRecipient bytes. amount is returned as a
+// big.Int, uncapped at uint64, because wrapped SYN carries 18 decimals and
+// realistic amounts overflow uint64 well before they overflow the native
+// chain's own whole-unit accounting.
+func decodeSynBurnedData(dataHex string) (nativeRecipient []byte, amount *big.Int, nonce uint64, err error) {
+	dataHex = strings.TrimPrefix(dataHex, "0x")
+	data, err := hex.DecodeString(dataHex)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	if len(data) < 3*32 {
+		return nil, nil, 0, fmt.Errorf("SynBurnedForNativeRelease data too short")
+	}
+	offset, err := wordUint64(data[0:32])
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("recipient offset: %w", err)
+	}
+	amount = wordBig(data[32:64])
+	nonce, err = wordUint64(data[64:96])
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("nonce: %w", err)
+	}
+	if offset > uint64(len(data)) || offset+32 > uint64(len(data)) {
+		return nil, nil, 0, fmt.Errorf("recipient offset out of range")
+	}
+	length, err := wordUint64(data[offset : offset+32])
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("recipient length: %w", err)
+	}
+	start := offset + 32
+	end := start + length
+	if end > uint64(len(data)) {
+		return nil, nil, 0, fmt.Errorf("recipient bytes out of range")
+	}
+	return data[start:end], amount, nonce, nil
+}
+
+// nativeAmountFromWrappedSynUnits converts an 18-decimal wrapped-SYN amount
+// into the native chain's own whole-unit SYN accounting. It refuses to
+// round: a burn that isn't an exact multiple of one whole SYN can't be
+// released natively without either creating or destroying a fraction of a
+// coin, so the relayer must not process it (the underlying transfer that
+// produced such a fractional wrapped balance is a bug or an attack
+// elsewhere, not something to paper over here).
+func nativeAmountFromWrappedSynUnits(raw *big.Int) (uint64, error) {
+	if raw == nil || raw.Sign() <= 0 {
+		return 0, fmt.Errorf("burned amount must be positive")
+	}
+	quotient, remainder := new(big.Int).QuoRem(raw, wrappedSynUnitScale, new(big.Int))
+	if remainder.Sign() != 0 {
+		return 0, fmt.Errorf("burned amount %s is not a whole number of SYN (not a multiple of 10^18)", raw.String())
+	}
+	if !quotient.IsUint64() {
+		return 0, fmt.Errorf("converted native amount overflows uint64")
+	}
+	return quotient.Uint64(), nil
+}
+
+// wordBig reads a 32-byte big-endian ABI word as an unsigned big.Int.
+func wordBig(word []byte) *big.Int {
+	return new(big.Int).SetBytes(word)
 }
 
 func decodeBridgeLockedData(dataHex string) (asset string, sender string, destinationRecipient []byte, amount uint64, err error) {
