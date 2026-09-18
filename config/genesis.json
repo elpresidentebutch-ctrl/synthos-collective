@@ -23,6 +23,7 @@
               "network": "SYNTHOS Collective",
               "public_rpc_url": "https://rpc.ishamwilliamsblockchains.com",
               "founder_allocation": 499978940,
+              "founder_address": "0x7c8edee564a7e884717f5f71cce09b2bfb8bf904",
               "treasury_address": "0xa4aabbc7e5841259b61afb4b4fbfcd7dae7b0501",
               "citizen_reward_rate_bps_per_year": 650,
               "coin_name": "syn coins",
