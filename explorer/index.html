@@ -37,15 +37,23 @@
     overflow-wrap:anywhere}
   .stat small{color:var(--muted);font-weight:600;font-size:.72rem}
   section{border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:18px 18px 6px;margin-bottom:20px}
-  section h2{margin:0 0 12px;font-size:1.05rem}
+  section h2{margin:0 0 4px;font-size:1.05rem}
+  section .sec-sub{margin:0 0 12px;color:var(--muted);font-size:.82rem}
   .row-head,.row{display:grid;grid-template-columns:90px 1fr 1fr 130px;gap:12px;padding:10px 8px;align-items:center}
   .row-head{color:var(--muted);font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;
     border-bottom:1px solid var(--line)}
   .row{border-bottom:1px solid rgba(255,255,255,.06);font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.85rem}
   .row:last-child{border-bottom:0}
+  .prop-row-head,.prop-row{display:grid;grid-template-columns:70px 1.6fr 1fr 1fr 110px;gap:12px;padding:10px 8px;align-items:center}
+  .prop-row-head{color:var(--muted);font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;
+    border-bottom:1px solid var(--line)}
+  .prop-row{border-bottom:1px solid rgba(255,255,255,.06);font-size:.85rem}
+  .prop-row:last-child{border-bottom:0}
+  .prop-row .mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
   .mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere}
   .tag{display:inline-block;font-size:.68rem;font-weight:800;padding:3px 8px;border-radius:6px;
     background:rgba(49,211,159,.12);color:var(--green);border:1px solid rgba(49,211,159,.3)}
+  .tag.muted{background:rgba(154,169,189,.14);color:var(--muted);border-color:rgba(154,169,189,.3)}
   .lookup{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
   .lookup input{flex:1;min-width:220px;min-height:44px;border:1px solid var(--line);border-radius:9px;
     padding:10px 13px;color:var(--text);background:#07090d;font:inherit;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
@@ -55,11 +63,13 @@
   .acct.show{display:grid}
   .acct .stat dd{font-size:1.15rem}
   .err{color:var(--warn)}
+  .notice{color:var(--muted);font-size:.85rem;padding:10px 8px}
   footer{width:min(1120px,calc(100% - 32px));margin:0 auto;padding:24px 0 40px;color:var(--muted);
     border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:.82rem}
   .updated{color:var(--muted);font-size:.76rem;margin:-14px 0 20px}
   @media (max-width:820px){.grid{grid-template-columns:1fr 1fr}
     .row-head,.row{grid-template-columns:60px 1fr 96px}.row .hide-sm,.row-head .hide-sm{display:none}
+    .prop-row-head,.prop-row{grid-template-columns:1fr 90px}.prop-row .hide-sm,.prop-row-head .hide-sm{display:none}
     .acct{grid-template-columns:1fr}}
 </style>
 </head>
@@ -95,6 +105,30 @@
     </section>
 
     <section>
+      <h2>Governance</h2>
+      <p class="sec-sub">Treasury proposals from the Governor role, read directly from the network's RPC node.</p>
+      <div class="prop-row-head">
+        <span>ID</span><span>Description</span><span class="hide-sm">Amount</span><span class="hide-sm">Votes For / Against</span><span>Status</span>
+      </div>
+      <div data-proposals><div class="notice">loading…</div></div>
+    </section>
+
+    <section>
+      <h2>Citizen Staking</h2>
+      <p class="sec-sub">Look up an address's staked balance and pending rewards. Staking and claiming require a signed request from your own wallet, not something this page can do for you.</p>
+      <div class="lookup">
+        <input data-citizen-input placeholder="0x… SYNTHOS address" autocomplete="off" spellcheck="false" />
+        <button data-citizen-btn type="button">Look up</button>
+      </div>
+      <p class="err" data-citizen-err style="display:none"></p>
+      <dl class="acct" data-citizen-out>
+        <div class="stat"><dt>Staked</dt><dd data-citizen-amt>—</dd><small>SYN</small></div>
+        <div class="stat"><dt>Pending Rewards</dt><dd data-citizen-pending>—</dd><small>SYN</small></div>
+        <div class="stat"><dt>Reward Rate</dt><dd data-citizen-rate>—</dd><small>per year</small></div>
+      </dl>
+    </section>
+
+    <section>
       <h2>Latest Blocks</h2>
       <div class="row-head">
         <span>Height</span><span>Hash</span><span class="hide-sm">Proposer</span><span>Status</span>
@@ -111,6 +145,10 @@
 <script>
 (function(){
   var RPC = "https://synthos-www.onrender.com/api/explorer";
+  // Governance and Citizen data isn't aggregated by the registry -- it comes
+  // straight from a chain node's own RPC, which sets Access-Control-Allow-Origin: *
+  // specifically so a public page like this one can call it directly.
+  var RAW_RPC = "https://rpc.ishamwilliamsblockchains.com";
   var $ = function(s){ return document.querySelector(s); };
   function set(sel,v){ var n=document.querySelector(sel); if(n) n.textContent=v; }
   function shortHash(h){ if(!h) return "—"; h=String(h); return h.length>16 ? h.slice(0,10)+"…"+h.slice(-6) : h; }
@@ -124,6 +162,12 @@
   async function j(path){
     var r = await fetch(RPC+path, {cache:"no-store"});
     if(!r.ok) throw new Error(path+" → HTTP "+r.status);
+    return r.json();
+  }
+
+  async function rawJ(path){
+    var r = await fetch(RAW_RPC+path, {cache:"no-store"});
+    if(!r.ok){ var e = new Error(path+" → HTTP "+r.status); e.status = r.status; throw e; }
     return r.json();
   }
 
@@ -155,6 +199,42 @@
       }).join("");
       var box=$("[data-blocks]"); if(box) box.innerHTML = html || '<div class="row"><span>—</span><span>no blocks</span><span class="hide-sm"></span><span></span></div>';
     }catch(e){}
+
+    await refreshProposals();
+  }
+
+  async function refreshProposals(){
+    var box = $("[data-proposals]");
+    if(!box) return;
+    try{
+      var g = await rawJ("/governance/proposals");
+      if(g.governance_configured === false){
+        box.innerHTML = '<div class="notice">Governance is not configured on this network yet.</div>';
+        return;
+      }
+      var proposals = g.proposals || [];
+      if(!proposals.length){
+        box.innerHTML = '<div class="notice">No treasury proposals yet.</div>';
+        return;
+      }
+      box.innerHTML = proposals.map(function(p){
+        var status = p.Executed ? '<span class="tag">executed</span>'
+          : p.IsActive ? '<span class="tag" style="background:rgba(115,215,255,.12);color:var(--cyan);border-color:rgba(115,215,255,.3)">active</span>'
+          : '<span class="tag muted">closed</span>';
+        return '<div class="prop-row">'+
+          '<span class="mono">'+(p.ID||"—")+'</span>'+
+          '<span>'+(p.Description||"—")+'</span>'+
+          '<span class="hide-sm mono">'+(p.Amount!=null? p.Amount : "—")+'</span>'+
+          '<span class="hide-sm mono">'+(p.VotesFor!=null? p.VotesFor : 0)+' / '+(p.VotesAgainst!=null? p.VotesAgainst : 0)+'</span>'+
+          '<span>'+status+'</span></div>';
+      }).join("");
+    }catch(e){
+      // A 404 here means this network's deployed node predates the Governor
+      // RPC routes -- say so plainly rather than showing a generic error.
+      box.innerHTML = e.status === 404
+        ? '<div class="notice">Governance endpoints aren\'t live on the deployed network yet.</div>'
+        : '<div class="notice err">Couldn\'t reach governance data right now.</div>';
+    }
   }
 
   async function lookup(){
@@ -169,8 +249,32 @@
     err.style.display="block";
   }
 
+  async function citizenLookup(){
+    var addr = $("[data-citizen-input]").value.trim();
+    var err = $("[data-citizen-err]"), out = $("[data-citizen-out]");
+    err.style.display="none"; out.classList.remove("show");
+    if(!addr){ err.textContent="Enter a SYNTHOS address."; err.style.display="block"; return; }
+    try{
+      var c = await rawJ("/citizen/status?address="+encodeURIComponent(addr));
+      var stake = c.stake || {};
+      set("[data-citizen-amt]", stake.amount!=null? stake.amount : 0);
+      set("[data-citizen-pending]", c.pending_rewards!=null? c.pending_rewards : 0);
+      set("[data-citizen-rate]", c.rewards_configured
+        ? ((c.reward_rate_bps_per_year/100).toFixed(2)+"%")
+        : "not configured");
+      out.classList.add("show");
+    }catch(e){
+      err.textContent = e.status === 404
+        ? "Citizen staking isn't live on the deployed network yet."
+        : "Couldn't reach citizen staking data right now.";
+      err.style.display="block";
+    }
+  }
+
   $("[data-acct-btn]").addEventListener("click", lookup);
   $("[data-acct-input]").addEventListener("keydown", function(e){ if(e.key==="Enter") lookup(); });
+  $("[data-citizen-btn]").addEventListener("click", citizenLookup);
+  $("[data-citizen-input]").addEventListener("keydown", function(e){ if(e.key==="Enter") citizenLookup(); });
 
   refresh();
   setInterval(refresh, 10000);
