@@ -11,14 +11,16 @@ Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
 Status as of August 12, 2026:
 
 - Live RPC endpoint: `https://rpc.ishamwilliamsblockchains.com`
-- Render service: `https://synthos-collective.onrender.com`
-- Live explorer route: `https://synthos-collective.onrender.com/explorer.html`
-- Early access route: `https://synthos-collective.onrender.com/early-access`
+- Public website: `https://www.ishamwilliamsblockchains.com` (the bare domain without `www.` does not currently resolve -- a DNS fix is still needed)
+- Live explorer (linked from the public website): `https://synthos-explorer.onrender.com`
+- Render registry/backend service: `https://synthos-www.onrender.com` (serves `/explorer.html`, `/api/explorer/*`, and the early-access routes; matches what `render.yaml` actually deploys)
 - Network name: `synthos-mainnet-1`
 - Coin display name: `SYN coins`
 - Coin symbol: `SYN`
 
 The network service is online and serving RPC/status routes. Public sale/payment execution remains intentionally gated until production custody, legal, and deployment controls are finalized.
+
+Note: an old Render service at `https://synthos-collective.onrender.com` may still exist under this account, disconnected from the live network (it reports zero active nodes). It predates the current `synthos-www` / `synthos-explorer` setup and should be retired or redirected in the Render dashboard so it doesn't get shared as the live site by mistake.
 
 ## Important Security Notice
 
@@ -170,11 +172,11 @@ The active hosted backend is deployed on Render from this repository.
 Useful public URLs:
 
 - RPC/status: `https://rpc.ishamwilliamsblockchains.com`
-- Render backend: `https://synthos-collective.onrender.com`
-- Explorer: `https://synthos-collective.onrender.com/explorer.html`
-- Early access page: `https://synthos-collective.onrender.com/early-access`
+- Render backend (registry + early access): `https://synthos-www.onrender.com`
+- Explorer: `https://synthos-explorer.onrender.com`
+- Early access page: `https://synthos-www.onrender.com/early-access`
 
-If GitLab becomes the main repo host, update Render's connected repository to the GitLab project or continue deploying from the existing Render service until the host migration is complete.
+This repository on GitHub (`elpresidentebutch-ctrl/synthos-collective`) is the only repo Render should ever be connected to for deploys. No GitLab project is authorized to host or deploy this code.
 
 ## Contributions
 
