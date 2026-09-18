@@ -3,6 +3,7 @@ package node
 import (
 	"encoding/json"
 	"errors"
+	"sync"
 	"time"
 
 	"synthos-collective/internal/agent"
@@ -50,6 +51,45 @@ type Node struct {
 	// proposal creation, stake-weighted voting, and fund release all run
 	// through this rather than a simulated/no-op path.
 	Governance *chain.TreasuryGovernance
+
+	// Inbox holds recently received Communicator role messages (see
+	// docs/AGENTS_SPECIFICATION.md role 4, "communicator_message" in
+	// handleRaw below). It's a small ring buffer, not a durable message
+	// store: RPC layer only, not persisted via storage.Store snapshots.
+	inboxMu sync.Mutex
+	inbox   []CommunicatorMessage
+}
+
+// CommunicatorMessage is one real, envelope-verified message this node has
+// received from a known, verified peer via the Communicator role's
+// send_message/handle_incoming_message path.
+type CommunicatorMessage struct {
+	FromAgentID string    `json:"from_agent_id"`
+	Body        string    `json:"body"`
+	ReceivedAt  time.Time `json:"received_at"`
+}
+
+// maxInboxSize bounds the in-memory Communicator inbox so a chatty or
+// malicious (but verified, rate-limited) peer can't grow it unboundedly.
+const maxInboxSize = 200
+
+func (n *Node) appendInbox(msg CommunicatorMessage) {
+	n.inboxMu.Lock()
+	defer n.inboxMu.Unlock()
+	n.inbox = append(n.inbox, msg)
+	if len(n.inbox) > maxInboxSize {
+		n.inbox = n.inbox[len(n.inbox)-maxInboxSize:]
+	}
+}
+
+// Inbox returns a copy of the recently received Communicator messages,
+// newest last.
+func (n *Node) Inbox() []CommunicatorMessage {
+	n.inboxMu.Lock()
+	defer n.inboxMu.Unlock()
+	out := make([]CommunicatorMessage, len(n.inbox))
+	copy(out, n.inbox)
+	return out
 }
 
 var (
@@ -337,6 +377,25 @@ func (n *Node) handleRaw(from string, payload []byte) {
 		if finalized {
 			_ = n.TryFinalize(v.BlockHash)
 		}
+
+	case network.MessageCommunicator:
+		// Communicator role (docs/AGENTS_SPECIFICATION.md role 4):
+		// handle_incoming_message. Everything above this switch already
+		// verified the sender is a known peer, checked their hardware-hash
+		// consistency, and rate-limited them, so this only needs its own
+		// envelope signature check before recording the message.
+		payload, err := consensus.VerifyAndUnmarshalEnvelope[network.CommunicatorPayload](n.Agent.VerifyEnvelope, env, pub, now)
+		if err != nil {
+			if n.Logf != nil {
+				n.Logf("drop: bad communicator message verify from_agent=%s err=%v", env.FromAgentID, err)
+			}
+			return
+		}
+		n.appendInbox(CommunicatorMessage{
+			FromAgentID: env.FromAgentID,
+			Body:        payload.Body,
+			ReceivedAt:  now,
+		})
 	}
 }
 

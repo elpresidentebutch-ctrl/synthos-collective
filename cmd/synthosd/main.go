@@ -250,6 +250,25 @@ func initGovernance(n *node.Node, gen chain.Genesis) {
 	}
 	n.InitGovernance(chain.Address(founder), chain.Address(treasury))
 	log.Printf("governance: initialized (founder=%s treasury=%s)", founder, treasury)
+
+	// Citizen staking rewards (internal/chain/citizen.go) draw from this
+	// exact same treasury balance, so keep State.TreasuryAddress in sync
+	// with whatever value governance actually resolved above -- an env var
+	// override should not leave Citizen rewards pointed at a stale genesis
+	// address. Genesis.ToState already set a default from genesis metadata;
+	// this only overrides it when an env var was actually given.
+	if treasury != "" && os.Getenv("SYNTHOS_TREASURY_ADDRESS") != "" {
+		n.Chain.State.TreasuryAddress = chain.Address(treasury)
+	}
+	if rateRaw := strings.TrimSpace(os.Getenv("SYNTHOS_CITIZEN_REWARD_RATE_BPS_PER_YEAR")); rateRaw != "" {
+		rate, err := strconv.ParseUint(rateRaw, 10, 64)
+		if err != nil {
+			log.Printf("governance: invalid SYNTHOS_CITIZEN_REWARD_RATE_BPS_PER_YEAR=%q, ignoring: %v", rateRaw, err)
+		} else {
+			n.Chain.State.CitizenRewardRateBpsPerYear = rate
+		}
+	}
+	log.Printf("citizen staking: treasury=%s reward_rate_bps_per_year=%d", n.Chain.State.TreasuryAddress, n.Chain.State.CitizenRewardRateBpsPerYear)
 }
 
 func metadataString(meta map[string]any, key string) string {

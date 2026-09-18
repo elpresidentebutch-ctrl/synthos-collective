@@ -205,9 +205,9 @@ type SovereignProofRecord struct {
 }
 
 type BridgeRecord struct {
-	ID                   string  `json:"id"`
-	Type                 string  `json:"type"`
-	Address              Address `json:"address"`
+	ID      string  `json:"id"`
+	Type    string  `json:"type"`
+	Address Address `json:"address"`
 	// Recipient is who the locked funds actually went to on THIS chain
 	// (tx.To), recorded so a relayer can verify a lock really moved funds
 	// into a specific, expected escrow/lock account before treating it as
@@ -277,6 +277,15 @@ type State struct {
 	LastBridgeEventID     string
 	mu                    sync.RWMutex
 	TotalSupply           uint64
+
+	// Citizen staking (see citizen.go). CitizenStakes and
+	// CitizenRewardRateBpsPerYear are genesis/runtime state; TreasuryAddress
+	// mirrors the same address cmd/synthosd wires into Node.Governance so
+	// Citizen rewards and Governor treasury spends draw from one real
+	// balance, not two independently-tracked pools.
+	CitizenStakes               map[Address]CitizenStake
+	TreasuryAddress             Address
+	CitizenRewardRateBpsPerYear uint64
 }
 
 func NewState() *State {
@@ -287,6 +296,7 @@ func NewState() *State {
 		BridgeEvents:          make(map[string]BridgeRecord),
 		ProcessedBridgeEvents: make(map[string]bool),
 		BridgeValidators:      make(map[string]string),
+		CitizenStakes:         make(map[Address]CitizenStake),
 		TotalSupply:           MAX_SUPPLY,
 	}
 }

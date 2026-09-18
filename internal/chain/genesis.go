@@ -64,6 +64,26 @@ func (g Genesis) ToState() (*State, error) {
 		}
 		s.BridgeQuorum = parsed
 	}
+	// treasury_address and citizen_reward_rate_bps_per_year configure
+	// Citizen staking rewards (see citizen.go). Both default to their zero
+	// value, which is exactly what ClaimCitizenRewards treats as "rewards
+	// not configured for this deployment" -- so a genesis file that omits
+	// them simply never pays Citizen rewards, the same way omitting
+	// founder_address/treasury_address leaves Governor unconfigured.
+	if treasury, ok := g.Metadata["treasury_address"]; ok {
+		addr, _ := treasury.(string)
+		if addr == "" {
+			return nil, fmt.Errorf("treasury_address must be a non-empty string")
+		}
+		s.TreasuryAddress = Address(addr)
+	}
+	if rate, ok := g.Metadata["citizen_reward_rate_bps_per_year"]; ok {
+		parsed, err := parseMetadataUint64(rate)
+		if err != nil {
+			return nil, fmt.Errorf("invalid citizen_reward_rate_bps_per_year: %w", err)
+		}
+		s.CitizenRewardRateBpsPerYear = parsed
+	}
 	return s, nil
 }
 
