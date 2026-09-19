@@ -22,7 +22,7 @@ import (
 	"time"
 )
 
-const defaultRelayURLs = "https://synthos-collective.onrender.com"
+const defaultRelayURLs = "https://synthos-www.onrender.com"
 const heartbeatEvery = 15 * time.Second
 
 var coreCapabilities = []string{
