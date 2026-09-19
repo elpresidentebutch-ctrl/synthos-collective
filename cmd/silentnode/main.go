@@ -404,3 +404,4 @@ func writeStatus(node silentNode) {
 	}
 	body, _ := json.MarshalIndent(node, "", "  ")
 	_ = os.WriteFile(node.StatusPath, body, 0o600)
+}
