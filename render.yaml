@@ -171,7 +171,7 @@ services:
     autoDeploy: true
     envVars:
       - key: SYNTHOS_NATIVE_RPC_URL
-        value: https://synthos-validator-11.onrender.com
+        value: https://synthos-rpc.onrender.com
       - key: SYNTHOS_DISTRIBUTION_AGENT_ID
         value: synthos-early-adopter-distributor
       - key: SYNTHOS_EARLY_ACCESS_TREASURY_WALLET
@@ -185,7 +185,7 @@ services:
       - key: SYNTHOS_EARLY_ACCESS_CHAIN_NAME
         value: synthos-mainnet-1
       - key: SYNTHOS_EARLY_ACCESS_RPC_URLS
-        value: https://synthos-validator-11.onrender.com,https://synthos-validator-12.onrender.com,https://synthos-validator-13.onrender.com,https://synthos-validator-14.onrender.com,https://synthos-validator-15.onrender.com
+        value: https://synthos-rpc.onrender.com,https://synthos-validator-12.onrender.com,https://synthos-validator-13.onrender.com
       - key: SYNTHOS_CORS_ORIGINS
         value: https://www.ishamwilliamsblockchains.com,https://ishamwilliamsblockchains.com,https://lovable.dev
       - key: SYNTHOS_EARLY_ACCESS_WIDGET_PATH

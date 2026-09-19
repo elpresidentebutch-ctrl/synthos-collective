@@ -119,11 +119,17 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
+	// immune.ActiveImmuneNodes comes straight from chain state -- the real,
+	// verified count of nodes that have actually completed immune-node
+	// bootstrap. It used to get silently overwritten with
+	// live.ImmuneCapableNodes (how many currently-reachable peers merely
+	// self-report the immune_node capability label) whenever that number was
+	// bigger, which made this endpoint report a number nobody had actually
+	// earned. live.ImmuneCapableNodes is still reported below, under "live",
+	// honestly labeled as a live/self-reported count, not folded into the
+	// verified figure.
 	immune := s.Chain.State.ImmuneStatus()
 	live := s.liveStatusSnapshot()
-	if live.ImmuneCapableNodes > immune.ActiveImmuneNodes {
-		immune.ActiveImmuneNodes = live.ImmuneCapableNodes
-	}
 	body := map[string]any{
 		"chain_id":    s.Chain.ChainID,
 		"tx_chain_id": s.Chain.TxChainID,
