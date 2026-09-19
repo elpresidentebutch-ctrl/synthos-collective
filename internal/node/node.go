@@ -321,10 +321,32 @@ func (n *Node) handleRaw(from string, payload []byte) {
 			}
 			return
 		}
-		// Basic chain validation.
+		// Basic chain validation. Everything needed to safely act on a
+		// failure here is already true at this point: the envelope's
+		// signature was verified above against env.FromAgentID's known
+		// public key (VerifyAndUnmarshalEnvelope), the block's own
+		// ProposerID was checked to match that verified sender (so a
+		// forged block can't pin blame on an innocent validator), and the
+		// height check above already restricts this to a proposal
+		// extending our current tip -- so a stale-but-formerly-valid old
+		// block can never land here after it's been superseded. That
+		// means a ValidateBlock failure at this point is real,
+		// independently-checked proof that a known validator proposed a
+		// genuinely invalid block, not a bare accusation.
+		//
+		// This is the Enforcer wiring: SlashingTracker.RecordInvalidBlock
+		// already existed but had no caller anywhere, so a validator could
+		// propose a malformed/invalid block and nothing but a log line
+		// ever happened. Every validator that receives the bad proposal
+		// now independently detects and records it, the same way
+		// double-signing and equivocation already do via OnProposal/OnVote
+		// below.
 		if err := n.Chain.ValidateBlock(&b); err != nil {
 			if n.Logf != nil {
 				n.Logf("warn: proposal validate failed hash=%s err=%v", b.Hash, err)
+			}
+			if n.Slashing != nil {
+				_ = n.Slashing.RecordInvalidBlock(env.FromAgentID, b.Header.Height, err.Error())
 			}
 			return
 		}
