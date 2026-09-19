@@ -38,6 +38,7 @@ var coreCapabilities = []string{
 var cliKeyPath string
 var cliRelayURLs string
 var cliStatusPath string
+var cliPrintKey bool
 
 type nodeKey struct {
 	NodeID     string `json:"node_id"`
@@ -70,12 +71,19 @@ func main() {
 	flag.StringVar(&cliKeyPath, "key", "", "path to persistent Ed25519 node key JSON")
 	flag.StringVar(&cliStatusPath, "status", "", "path to write node status JSON")
 	flag.StringVar(&cliRelayURLs, "relay", "", "comma-separated SYNTHOS registry/backend URLs")
+	flag.BoolVar(&cliPrintKey, "print-key", false, "print this node's identity (ID, public key, key file location) and exit, without starting the node")
 	flag.Parse()
 
-	key, privateKey, err := loadOrCreateNodeKey()
+	key, privateKey, created, err := loadOrCreateNodeKey()
 	if err != nil {
 		log.Fatalf("node key error: %v", err)
 	}
+
+	printIdentity(key, created)
+	if cliPrintKey {
+		return
+	}
+
 	node := silentNode{
 		NodeID:              key.NodeID,
 		PublicKey:           key.PublicKey,
@@ -96,6 +104,7 @@ func main() {
 	log.Printf("SYNTHOS background validator node started: %s", node.NodeID)
 	log.Printf("Mode: outbound-only Ed25519 signed heartbeats every %s", heartbeatEvery)
 	log.Printf("Relay set: %s", strings.Join(relayURLs, ", "))
+	log.Printf("Look this node up on the website's node lookup page with ID: %s", node.NodeID)
 
 	heartbeatAll(ctx, relayURLs, &node, privateKey)
 	pollMailboxAll(ctx, relayURLs, node.NodeID)
@@ -114,26 +123,26 @@ func main() {
 	}
 }
 
-func loadOrCreateNodeKey() (nodeKey, ed25519.PrivateKey, error) {
+func loadOrCreateNodeKey() (nodeKey, ed25519.PrivateKey, bool, error) {
 	path := keyPath()
 	if body, err := os.ReadFile(path); err == nil {
 		var key nodeKey
 		if err := json.Unmarshal(body, &key); err != nil {
-			return nodeKey{}, nil, err
+			return nodeKey{}, nil, false, err
 		}
 		privateKey, err := privateKeyFromHex(key.PrivateKey)
 		if err != nil {
-			return nodeKey{}, nil, err
+			return nodeKey{}, nil, false, err
 		}
 		if key.NodeID == "" || key.PublicKey == "" {
-			return nodeKey{}, nil, fmt.Errorf("stored key is missing node_id or public_key")
+			return nodeKey{}, nil, false, fmt.Errorf("stored key is missing node_id or public_key")
 		}
-		return key, privateKey, nil
+		return key, privateKey, false, nil
 	}
 
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
-		return nodeKey{}, nil, err
+		return nodeKey{}, nil, false, err
 	}
 	key := nodeKey{
 		NodeID:     "syn-" + hardwareCommitment()[:12],
@@ -143,13 +152,30 @@ func loadOrCreateNodeKey() (nodeKey, ed25519.PrivateKey, error) {
 		Format:     "synthos-background-ed25519-v1",
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return nodeKey{}, nil, err
+		return nodeKey{}, nil, false, err
 	}
 	body, _ := json.MarshalIndent(key, "", "  ")
 	if err := os.WriteFile(path, body, 0o600); err != nil {
-		return nodeKey{}, nil, err
+		return nodeKey{}, nil, false, err
 	}
-	return key, privateKey, nil
+	return key, privateKey, true, nil
+}
+
+// printIdentity prints this node's public identity (never the private key)
+// to stderr via the standard logger, so it's always visible on startup and
+// via -print-key, instead of being silently written to disk with no
+// on-screen confirmation. The private key itself is deliberately never
+// printed: it stays in the key file on disk (owner-read-only permissions).
+func printIdentity(key nodeKey, created bool) {
+	log.Printf("Node identity: %s", key.NodeID)
+	log.Printf("Public key:    %s", key.PublicKey)
+	log.Printf("Key file:      %s", keyPath())
+	if created {
+		log.Printf("New identity created. This key file IS your node's identity.")
+		log.Printf("Back it up now. If it's lost, this node ID cannot be recovered,")
+		log.Printf("and all uptime proven under %s is orphaned for good.", key.NodeID)
+		log.Printf("Keep it private: anyone who has this file can act as this node.")
+	}
 }
 
 func privateKeyFromHex(value string) (ed25519.PrivateKey, error) {
@@ -378,4 +404,3 @@ func writeStatus(node silentNode) {
 	}
 	body, _ := json.MarshalIndent(node, "", "  ")
 	_ = os.WriteFile(node.StatusPath, body, 0o600)
-}
