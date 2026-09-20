@@ -20,5 +20,6 @@
   "peer_keys": {
     "synthos-validator-13": "0xc0985da91bf00d997d6f9731e681af62bfa1ae13b10ea67e0e7d901b45ae38f1",
     "synthos-render-validator-1": "0x14d371a7ed892a1fe5a16413f483c3730b3d52ef0ac8b6663e70389fae10e4f5"
-  }
+  },
+  "auth_enforce_from_height": 15300
 }

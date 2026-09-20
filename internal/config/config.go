@@ -37,6 +37,16 @@ type NodeConfig struct {
 	// existing behavior for deployments that don't set it.
 	TrustedValidators []string `json:"trusted_validators"`
 
+	// AuthEnforceFromHeight, when set, is passed to chain.Chain.
+	// SetAuthEnforceFromHeight: it grandfathers in any block below this height
+	// from the ProposerSignature/QuorumSignatures check, for a chain whose
+	// history predates that feature (those old blocks were never signed, so
+	// requiring signatures on them would make catch-up permanently impossible
+	// past that point). Must be the same value on every node sharing this
+	// chain, and should exactly match the real height at which block-signing
+	// was actually deployed for this chain -- not a per-node value.
+	AuthEnforceFromHeight uint64 `json:"auth_enforce_from_height"`
+
 	// Runtime configuration (can be set from environment variables)
 	ChainID            uint64
 	ConsensusTimeout   time.Duration

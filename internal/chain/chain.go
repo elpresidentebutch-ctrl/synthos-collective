@@ -45,6 +45,19 @@ type Chain struct {
 	// automatically; a chain restored from a storage snapshot must call
 	// SeedGenesisState explicitly before TryReorg is usable.
 	genesisState *State
+
+	// authEnforceFromHeight is the lowest block height at which
+	// validateBlockLocked requires ProposerSignature/QuorumSignatures (see
+	// SetAuthEnforceFromHeight). It defaults to 0, meaning "enforce from
+	// height 1 onward" -- i.e. every non-genesis block once validatorKeys is
+	// configured, exactly as SetValidatorSet originally behaved. It exists
+	// so a chain that already has a long history predating this
+	// authentication feature can grandfather that existing history in
+	// (those blocks were never signed -- the fields didn't exist yet -- so
+	// requiring signatures on them would make it permanently impossible for
+	// any node to sync past that point) while still strictly requiring
+	// signatures on every block from the given height onward.
+	authEnforceFromHeight uint64
 }
 
 var (
@@ -302,7 +315,7 @@ func (c *Chain) validateBlockLocked(b *Block) error {
 	if b.Header.Height > 0 && !b.Header.Timestamp.IsZero() {
 		return ErrBadBlock
 	}
-	if b.Header.Height > 0 && len(c.validatorKeys) > 0 {
+	if b.Header.Height > 0 && len(c.validatorKeys) > 0 && b.Header.Height >= c.authEnforceFromHeight {
 		if err := c.verifyBlockAuthorizationLocked(b); err != nil {
 			return err
 		}
@@ -470,6 +483,24 @@ func (c *Chain) SetValidatorSet(keys map[string]ed25519.PublicKey, requiredQuoru
 		requiredQuorum = 1
 	}
 	c.requiredQuorum = requiredQuorum
+}
+
+// SetAuthEnforceFromHeight grandfathers in any existing chain history below
+// height by exempting it from the ProposerSignature/QuorumSignatures check
+// that SetValidatorSet's key set would otherwise apply to every non-genesis
+// block. Call it once, alongside SetValidatorSet, with the height of the
+// first block that was actually produced under real block-signing (i.e. the
+// height at which this feature was deployed chain-wide) -- never with an
+// arbitrary or per-node value, since every node must agree on exactly which
+// blocks are exempt or they will disagree about which chain is valid. Blocks
+// at or above height are held to full verification exactly as before; this
+// only relaxes the check for the genuinely pre-existing, never-signed
+// prefix. Not calling this at all preserves the original behavior (enforce
+// from height 1 onward).
+func (c *Chain) SetAuthEnforceFromHeight(height uint64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.authEnforceFromHeight = height
 }
 
 // SeedGenesisState records the chain's state at height 0, needed to safely

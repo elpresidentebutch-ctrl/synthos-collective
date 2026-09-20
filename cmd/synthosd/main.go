@@ -157,6 +157,9 @@ func main() {
 			panic(fmt.Errorf("building validator key set: %w", err))
 		}
 		ch.SetValidatorSet(valKeys, chainQuorum)
+		if cfg.AuthEnforceFromHeight > 0 {
+			ch.SetAuthEnforceFromHeight(cfg.AuthEnforceFromHeight)
+		}
 	}
 	if err := n.Start(); err != nil {
 		panic(err)
