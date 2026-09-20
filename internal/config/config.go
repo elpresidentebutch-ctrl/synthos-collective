@@ -25,6 +25,18 @@ type NodeConfig struct {
 	Validators  []string          `json:"validators"`  // validator agent IDs used for finality threshold
 	PeerKeys    map[string]string `json:"peer_keys"`   // agentID -> hex encoded ed25519 public key
 
+	// TrustedValidators, when set, is the roster of validator IDs this node's
+	// Chain should accept finalized-block signatures from (resolved to keys via
+	// PeerKeys, same as Validators/AddPeer), independently of Validators above.
+	// It exists for deployments like a single-sequencer setup with read-only
+	// catch-up nodes: those nodes need to recognize the sequencer's key to
+	// accept its blocks, but must NOT have that inflate their own Engine's
+	// totalValidators/finality-quorum math (see cmd/synthosd/main.go), since no
+	// real multi-party signature-gathering transport exists to ever satisfy a
+	// quorum above 1 here. Falls back to Validators when unset, preserving
+	// existing behavior for deployments that don't set it.
+	TrustedValidators []string `json:"trusted_validators"`
+
 	// Runtime configuration (can be set from environment variables)
 	ChainID            uint64
 	ConsensusTimeout   time.Duration

@@ -129,11 +129,34 @@ func main() {
 		// SetValidatorSet) using the same roster and keys just configured
 		// above, so this closes the same unauthenticated-finalization gap for
 		// both the gossip/HTTP catch-up path and local self-finalization.
-		valKeys, err := buildValidatorKeySet(validators, a.Identity.AgentID, keys.Public, cfg.PeerKeys)
+		//
+		// chainValidators/chainQuorum are deliberately kept separate from
+		// validators/eng above: cfg.TrustedValidators lets this node recognize
+		// (and accept catch-up blocks signed by) other known validators -- e.g.
+		// the other nodes in a single-sequencer deployment, which all need to
+		// trust the sequencer's key -- without inflating totalValidators and
+		// therefore the *local* self-vote quorum this node's own Engine
+		// requires before it will ever call TryFinalize on its own proposals.
+		// When cfg.TrustedValidators isn't set, behavior is unchanged: the
+		// roster and quorum come straight from cfg.Validators and the engine's
+		// real BFT threshold, exactly as before.
+		chainValidators := cfg.TrustedValidators
+		chainQuorum := eng.RequiredForFinality()
+		if len(chainValidators) > 0 {
+			// No real multi-party signature-gathering transport is wired for
+			// this deployment (see cfg.Peers / cfg.ListenAddr, both effectively
+			// unused here), so only ONE signature -- the proposer's own
+			// self-approval -- is ever actually gathered on any block,
+			// regardless of how many keys are registered as trusted signers.
+			chainQuorum = 1
+		} else {
+			chainValidators = validators
+		}
+		valKeys, err := buildValidatorKeySet(chainValidators, a.Identity.AgentID, keys.Public, cfg.PeerKeys)
 		if err != nil {
 			panic(fmt.Errorf("building validator key set: %w", err))
 		}
-		ch.SetValidatorSet(valKeys, eng.RequiredForFinality())
+		ch.SetValidatorSet(valKeys, chainQuorum)
 	}
 	if err := n.Start(); err != nil {
 		panic(err)

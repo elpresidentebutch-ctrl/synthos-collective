@@ -180,16 +180,65 @@ func newSoloValidatorNode(c *chain.Chain, st *storage.Store) (*node.Node, error)
 	eng := consensus.NewEngine(1) // 1 total validator: itself.
 	n := node.NewNode(a, c, eng, t)
 	n.SetValidators([]string{a.Identity.AgentID})
-	// Register this node's own key as the (sole) validator, so block
-	// finalization requires a real signature from it rather than accepting
-	// any block handed to Chain.FinalizeBlock (see internal/chain.Chain's
+	// Register this node's own key as a validator, so block finalization
+	// requires a real signature from it rather than accepting any block
+	// handed to Chain.FinalizeBlock (see internal/chain.Chain's
 	// SetValidatorSet and internal/rpc/server.go's applyPeerBlock, the path
 	// that used to accept an unsigned block from any peer unconditionally).
-	c.SetValidatorSet(map[string]ed25519.PublicKey{a.Identity.AgentID: keys.Public}, 1)
+	valKeys := map[string]ed25519.PublicKey{a.Identity.AgentID: keys.Public}
+	trusted, err := parseTrustedValidators(os.Getenv("SYNTHOS_TRUSTED_VALIDATORS"))
+	if err != nil {
+		return nil, fmt.Errorf("invalid SYNTHOS_TRUSTED_VALIDATORS: %w", err)
+	}
+	for id, hexKey := range trusted {
+		if id == a.Identity.AgentID {
+			continue // self is already registered above with our own verified key
+		}
+		pubBytes, err := synthoscrypto.PublicKeyBytes(hexKey)
+		if err != nil {
+			return nil, fmt.Errorf("invalid public key for trusted validator %q: %w", id, err)
+		}
+		if len(pubBytes) != ed25519.PublicKeySize {
+			return nil, fmt.Errorf("public key for trusted validator %q must be %d bytes, got %d", id, ed25519.PublicKeySize, len(pubBytes))
+		}
+		valKeys[id] = ed25519.PublicKey(pubBytes)
+	}
+	// This solo node only ever gathers its own self-approval signature (no
+	// real multi-party signature-gathering transport is wired -- see the
+	// MemoryTransport below), so quorum stays 1 regardless of how many extra
+	// validators are registered as trusted signers above: they're trusted so
+	// this node can accept catch-up blocks proposed by them, not because a
+	// real multi-party quorum is ever gathered here.
+	c.SetValidatorSet(valKeys, 1)
 	n.OnFinalize = func(chn *chain.Chain) error {
 		return st.Save(chn)
 	}
 	return n, nil
+}
+
+// parseTrustedValidators parses SYNTHOS_TRUSTED_VALIDATORS, a comma-separated
+// list of "validatorID=hexpubkey" pairs (e.g.
+// "synthos-validator-12=0xabc...,synthos-validator-13=0xdef..."), into a
+// validatorID -> hex-pubkey map. Returns an empty, non-nil map for an empty
+// input so callers don't need a separate nil check.
+func parseTrustedValidators(raw string) (map[string]string, error) {
+	out := make(map[string]string)
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return out, nil
+	}
+	for _, pair := range strings.Split(raw, ",") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		parts := strings.SplitN(pair, "=", 2)
+		if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+			return nil, fmt.Errorf("malformed entry %q, expected id=hexpubkey", pair)
+		}
+		out[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+	}
+	return out, nil
 }
 
 func validatorKeys(privateKeyHex string) (synthoscrypto.KeyPair, error) {
