@@ -180,6 +180,12 @@ func newSoloValidatorNode(c *chain.Chain, st *storage.Store) (*node.Node, error)
 	eng := consensus.NewEngine(1) // 1 total validator: itself.
 	n := node.NewNode(a, c, eng, t)
 	n.SetValidators([]string{a.Identity.AgentID})
+	// Register this node's own key as the (sole) validator, so block
+	// finalization requires a real signature from it rather than accepting
+	// any block handed to Chain.FinalizeBlock (see internal/chain.Chain's
+	// SetValidatorSet and internal/rpc/server.go's applyPeerBlock, the path
+	// that used to accept an unsigned block from any peer unconditionally).
+	c.SetValidatorSet(map[string]ed25519.PublicKey{a.Identity.AgentID: keys.Public}, 1)
 	n.OnFinalize = func(chn *chain.Chain) error {
 		return st.Save(chn)
 	}

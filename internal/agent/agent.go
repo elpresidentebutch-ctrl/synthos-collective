@@ -242,6 +242,22 @@ func (a *Agent) BuildEnvelope(messageType string, toAgentID string, topic string
 	return env, nil
 }
 
+// SignRaw signs arbitrary bytes with this agent's private key and returns
+// the raw ed25519 signature bytes. Used for signing chain-level artifacts
+// (block hashes, vote approvals) that internal/chain verifies independently
+// -- see Node.ProposeBlock and Node.voteAndFinalizeSelfProposal. Unlike
+// BuildEnvelope, this does not wrap the data in a transport envelope;
+// callers encode/attach the signature themselves.
+func (a *Agent) SignRaw(data []byte) ([]byte, error) {
+	a.mu.RLock()
+	priv := a.keys.Private
+	a.mu.RUnlock()
+	if priv == nil {
+		return nil, ErrNoKeys
+	}
+	return synthoscrypto.Sign(priv, data), nil
+}
+
 // BuildCoverNoiseEnvelope creates authenticated privacy cover traffic.
 //
 // Cover-noise envelopes are transport-only. Receivers verify and drop them;

@@ -1,6 +1,7 @@
 package node
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"sync"
@@ -366,6 +367,11 @@ func (n *Node) handleRaw(from string, payload []byte) {
 			VoterID:   n.Agent.Identity.AgentID,
 			Vote:      vote,
 		}
+		if vote == 1 {
+			if sig, err := n.Agent.SignRaw(b.QuorumApprovalMessage()); err == nil {
+				v.Signature = "0x" + hex.EncodeToString(sig)
+			}
+		}
 		envOut, err := n.Agent.BuildEnvelope("block_vote", "", consensus.TopicVotes, v)
 		if err == nil {
 			_ = n.Agent.SendEnvelope(envOut)
@@ -435,6 +441,11 @@ func (n *Node) TryFinalize(blockHash string) error {
 	if tip := n.Chain.Tip(); tip != nil && tip.Hash == blockHash {
 		return nil
 	}
+	// Embed the real, independently-verifiable approval signatures gathered
+	// for this exact block hash so Chain can verify quorum was genuinely
+	// reached, rather than trusting that this node's own vote-tallying is
+	// correct.
+	b.QuorumSignatures = n.Consensus.CollectedApprovals(b.Header.Height, blockHash)
 	if err := n.Chain.FinalizeBlock(b); err != nil {
 		return err
 	}
@@ -459,6 +470,19 @@ func (n *Node) NoteMissedSlot(expectedProposerID string, height uint64) {
 	}
 }
 
+// signProposalBlock attaches this node's proposer signature to a freshly
+// built block before it is broadcast or self-finalized, so every recipient
+// (and Chain itself, once a validator set is configured) can independently
+// verify the block genuinely came from this validator.
+func (n *Node) signProposalBlock(b *chain.Block) error {
+	sig, err := n.Agent.SignRaw([]byte(b.Hash))
+	if err != nil {
+		return err
+	}
+	b.ProposerSignature = "0x" + hex.EncodeToString(sig)
+	return nil
+}
+
 // ProposeBlock builds and broadcasts a block proposal.
 func (n *Node) ProposeBlock() error {
 	if !n.IsValidator(n.Agent.Identity.AgentID) {
@@ -468,6 +492,9 @@ func (n *Node) ProposeBlock() error {
 	height := n.Chain.Height() + 1
 	b, err := n.Chain.BuildBlock(n.Agent.Identity.AgentID, n.Agent.ProofRoot(), 1000)
 	if err != nil {
+		return err
+	}
+	if err := n.signProposalBlock(b); err != nil {
 		return err
 	}
 	n.Consensus.OnProposal(b)
@@ -491,6 +518,9 @@ func (n *Node) ProposeBlockHash() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if err := n.signProposalBlock(b); err != nil {
+		return "", err
+	}
 	n.Consensus.OnProposal(b)
 	env, err := n.Agent.BuildEnvelope("block_proposal", "", consensus.TopicProposals, consensus.BlockProposal{Block: *b, Height: height})
 	if err != nil {
@@ -511,6 +541,9 @@ func (n *Node) voteAndFinalizeSelfProposal(b *chain.Block) error {
 		Height:    b.Header.Height,
 		VoterID:   n.Agent.Identity.AgentID,
 		Vote:      1,
+	}
+	if sig, err := n.Agent.SignRaw(b.QuorumApprovalMessage()); err == nil {
+		v.Signature = "0x" + hex.EncodeToString(sig)
 	}
 	finalized, _, _, _ := n.Consensus.OnVote(v)
 	if finalized {

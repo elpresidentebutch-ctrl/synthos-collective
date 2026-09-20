@@ -56,6 +56,7 @@ func (e *Engine) NoteMissedSlot(expectedProposerID string, height uint64) {
 type voteRecord struct {
 	BlockHash string
 	Vote      int
+	Signature string
 }
 
 var (
@@ -207,7 +208,7 @@ func (e *Engine) OnVote(v BlockVote) (finalized bool, votesFor int, required int
 		e.votes[h] = make(map[string]voteRecord)
 	}
 	if _, exists := e.votes[h][v.VoterID]; !exists {
-		e.votes[h][v.VoterID] = voteRecord{BlockHash: v.BlockHash, Vote: v.Vote}
+		e.votes[h][v.VoterID] = voteRecord{BlockHash: v.BlockHash, Vote: v.Vote, Signature: v.Signature}
 	}
 
 	required = e.RequiredForFinality()
@@ -220,6 +221,25 @@ func (e *Engine) OnVote(v BlockVote) (finalized bool, votesFor int, required int
 	e.mu.Unlock()
 
 	return finalized, votesFor, required, nil
+}
+
+// CollectedApprovals returns the raw approval signatures gathered so far for
+// the given block hash at height, keyed by voter ID -- every accept vote
+// (Vote == 1) that arrived with a non-empty Signature. This is a local,
+// unverified view (Chain independently re-verifies every signature against
+// its own registered validator keys before ever trusting it -- see
+// Chain.verifyBlockAuthorizationLocked); it exists so a finalizing node can
+// assemble a block's QuorumSignatures before calling Chain.FinalizeBlock.
+func (e *Engine) CollectedApprovals(height uint64, blockHash string) map[string]string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	out := make(map[string]string)
+	for voterID, rec := range e.votes[height] {
+		if rec.BlockHash == blockHash && rec.Vote == 1 && rec.Signature != "" {
+			out[voterID] = rec.Signature
+		}
+	}
+	return out
 }
 
 const (

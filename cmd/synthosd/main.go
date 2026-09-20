@@ -71,6 +71,12 @@ func main() {
 				Mempool:   make(map[string]chain.Tx),
 			}
 		}
+		// A restored chain starts from its saved State, not from genesis, so it
+		// doesn't have the pre-block-1 state TryReorg needs to safely replay an
+		// alternative branch. Seed it from a freshly-computed genesis chain
+		// (already built above for the snapshot-freshness check) so fork-choice
+		// reorgs work after a restart too.
+		ch.SeedGenesisState(genesisChain.State)
 	} else {
 		ch, err = chain.NewChain(gen)
 		if err != nil {
@@ -117,6 +123,18 @@ func main() {
 			panic(err)
 		}
 	}
+	if len(validators) > 0 {
+		// Require every finalized block to carry a real proposer signature
+		// plus quorum-threshold validator approvals (see chain.Chain.
+		// SetValidatorSet) using the same roster and keys just configured
+		// above, so this closes the same unauthenticated-finalization gap for
+		// both the gossip/HTTP catch-up path and local self-finalization.
+		valKeys, err := buildValidatorKeySet(validators, a.Identity.AgentID, keys.Public, cfg.PeerKeys)
+		if err != nil {
+			panic(fmt.Errorf("building validator key set: %w", err))
+		}
+		ch.SetValidatorSet(valKeys, eng.RequiredForFinality())
+	}
 	if err := n.Start(); err != nil {
 		panic(err)
 	}
@@ -131,6 +149,34 @@ func main() {
 	if err := http.ListenAndServe(cfg.RPCListen, srv.Handler()); err != nil {
 		panic(err)
 	}
+}
+
+// buildValidatorKeySet resolves the public key for every ID in the
+// validator roster, so Chain.SetValidatorSet can verify proposer and quorum
+// signatures against the real keys already configured for this node: this
+// node's own key for its own ID, and cfg.PeerKeys (the same source
+// n.AddPeer already uses) for every other validator.
+func buildValidatorKeySet(validators []string, selfID string, selfPub ed25519.PublicKey, peerKeys map[string]string) (map[string]ed25519.PublicKey, error) {
+	out := make(map[string]ed25519.PublicKey, len(validators))
+	for _, id := range validators {
+		if id == selfID {
+			out[id] = selfPub
+			continue
+		}
+		hexKey, ok := peerKeys[id]
+		if !ok {
+			return nil, fmt.Errorf("no public key configured for validator %q (add it to cfg.PeerKeys)", id)
+		}
+		pubBytes, err := synthoscrypto.PublicKeyBytes(hexKey)
+		if err != nil {
+			return nil, fmt.Errorf("invalid public key for validator %q: %w", id, err)
+		}
+		if len(pubBytes) != ed25519.PublicKeySize {
+			return nil, fmt.Errorf("public key for validator %q must be %d bytes, got %d", id, ed25519.PublicKeySize, len(pubBytes))
+		}
+		out[id] = ed25519.PublicKey(pubBytes)
+	}
+	return out, nil
 }
 
 // startBlockProducer runs the automatic block-proposal loop on the single

@@ -16,4 +16,13 @@ type BlockVote struct {
 	Height    uint64 `json:"height"`
 	VoterID   string `json:"voter_id"`
 	Vote      int    `json:"vote"` // -1, 0, 1
+
+	// Signature is the voter's ed25519 signature (hex, "0x"-prefixed) over
+	// chain.Block.QuorumApprovalMessage() ("APPROVE|"+BlockHash), present only
+	// on an accept (Vote == 1) vote. The engine collects these per block hash
+	// (see Engine.CollectedApprovals) so the finalizing node can embed them as
+	// the block's QuorumSignatures -- independently-verifiable proof that a
+	// real quorum of registered validators approved this exact block, not
+	// just a claim from whoever is relaying it.
+	Signature string `json:"signature,omitempty"`
 }

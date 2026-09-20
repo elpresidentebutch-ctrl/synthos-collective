@@ -504,7 +504,26 @@ func (s *Server) applyPeerBlock(b *chain.Block) (bool, error) {
 	}
 	tip := s.Chain.Tip()
 	if tip != nil && b.Header.Height <= tip.Header.Height {
-		return false, nil
+		// This block is for a height we've already finalized. Rather than
+		// silently dropping it (the old behavior, which meant a real fork was
+		// never detected or resolved), let Chain.TryReorg decide: it only
+		// ever switches to this block if it is fully valid and
+		// cryptographically heavier -- more verified validator approvals --
+		// than what we already have, so an unauthenticated or under-signed
+		// block from a malicious or merely out-of-date peer can never cause a
+		// rollback.
+		existing := s.Chain.BlockAt(b.Header.Height)
+		if existing != nil && existing.Hash == b.Hash {
+			return false, nil
+		}
+		reorged, err := s.Chain.TryReorg(b.Header.Height, []*chain.Block{b})
+		if err != nil || !reorged {
+			return false, err
+		}
+		if s.Store != nil {
+			_ = s.Store.Save(s.Chain)
+		}
+		return true, nil
 	}
 	if err := s.Chain.FinalizeBlock(b); err != nil {
 		return false, err
