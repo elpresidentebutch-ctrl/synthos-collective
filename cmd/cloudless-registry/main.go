@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
@@ -11,6 +12,7 @@ import (
 	"io"
 	"log"
 	"math/big"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -236,7 +238,8 @@ func main() {
 	if secret == "" {
 		log.Printf("REGISTRY_SECRET is not set; destructive/mailbox writes are open for local/dev use")
 	}
-	if err := http.ListenAndServe(listen, cors(mux)); err != nil {
+	limiter := newRegistryRateLimiter()
+	if err := http.ListenAndServe(listen, cors(limitRequest(limiter, mux))); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -1019,7 +1022,16 @@ func (s *server) handleAPINodeHeartbeat(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "node is not registered", http.StatusNotFound)
 		return
 	}
-	if entry.LastNonce != "" && body.Nonce <= entry.LastNonce {
+	// entry.LastNonce < body.Nonce, in the "numeric-ish" sense nonceLess
+	// implements below -- not a plain Go string "<=". See nonceLess's doc
+	// comment for the exact bug this closes: real nonces
+	// (cmd/silentnode/main.go's node.LastNonce) are fixed-width
+	// "<19-digit ms timestamp>-<8-digit counter>" strings, for which
+	// lexicographic order happens to match numeric order, but nothing here
+	// enforced that shape, so a captured, validly-signed heartbeat with a
+	// shorter numeral could lexicographically compare as "less" than the
+	// last-seen nonce and bypass replay rejection entirely.
+	if entry.LastNonce != "" && !nonceLess(entry.LastNonce, body.Nonce) {
 		s.mu.Unlock()
 		http.Error(w, "replayed or non-increasing nonce", http.StatusBadRequest)
 		return
@@ -1328,7 +1340,7 @@ func (s *server) handleAPIEarlyAccessPaymentIntents(w http.ResponseWriter, r *ht
 
 	now := time.Now().UnixMilli()
 	intent := earlyAccessPaymentIntent{
-		ID:              "syn-presale-" + shortID(),
+		ID:              "syn-presale-" + paymentIntentID(),
 		Status:          "pending_payment",
 		BuyerWallet:     truncate(body.BuyerWallet, 128),
 		SynthosAddress:  body.SynthosAddress,
@@ -1954,11 +1966,22 @@ func (s *server) proxyRPCJSON(w http.ResponseWriter, r *http.Request, rpcPath st
 	return true
 }
 
+// authorized used to compare the caller-supplied secret with a plain Go
+// == , which returns as soon as it finds the first mismatched byte. How
+// long that comparison takes leaks how many leading characters of a guess
+// were correct, letting a network attacker recover this registry's shared
+// secret one character at a time via a timing side-channel -- entirely
+// bypassing the secret's own randomness. Fixed with
+// crypto/subtle.ConstantTimeCompare, mirroring the same fix already
+// applied to internal/rpc/communicator.go's CommunicatorToken check, which
+// takes the same time regardless of where (or whether) the strings first
+// differ.
 func (s *server) authorized(r *http.Request) bool {
 	if s.secret == "" {
 		return true
 	}
-	return r.Header.Get("X-Registry-Secret") == s.secret
+	given := r.Header.Get("X-Registry-Secret")
+	return given != "" && subtle.ConstantTimeCompare([]byte(given), []byte(s.secret)) == 1
 }
 
 func (s *server) load() error {
@@ -2015,6 +2038,133 @@ func (s *server) persist() error {
 		return closeErr
 	}
 	return os.Rename(tmp, s.stateFile)
+}
+
+// -----------------------------------------------------------------------
+// Rate limiting and request body size caps.
+//
+// This registry had neither: every POST handler read the request body with
+// json.NewDecoder(r.Body).Decode(&body) directly, with no cap on how much
+// it would read, and nothing limited how many requests one caller could
+// make. Both gaps were live, not theoretical -- this binary is exposed
+// directly on the Internet (Render serves it as a public HTTP service),
+// and several endpoints (/register, /api/nodes/heartbeat, /api/contact,
+// /api/early-access/payment-intents) are intentionally unauthenticated so
+// real clients can self-service. An attacker could send an arbitrarily
+// large request body to force unbounded per-request memory use, or simply
+// fire requests as fast as the network allows to burn CPU, memory, and (for
+// handlers that call s.persist()) disk I/O.
+//
+// registryRateLimiter below is a deliberate, minimal reimplementation of
+// internal/rpc.RateLimiter's token-bucket-per-client-IP design (same
+// capacity/refill/cleanup shape, same client-IP extraction via
+// net.SplitHostPort(r.RemoteAddr)), not an import of internal/rpc itself:
+// internal/rpc transitively pulls in internal/chain, internal/node,
+// internal/storage and their full dependency graphs (agent, consensus,
+// network, crypto, wallet) -- too much unrelated weight for a binary that
+// today only imports internal/chain and internal/wallet.
+// -----------------------------------------------------------------------
+
+const (
+	registryRateLimitRPS = 20        // sustained requests/sec allowed per client IP
+	registryRateBurst    = 40        // token bucket capacity, i.e. how far a burst may exceed the sustained rate
+	registryMaxBodyBytes = 64 * 1024 // no legitimate request to this registry needs anywhere near this
+)
+
+type registryTokenBucket struct {
+	capacity   float64
+	tokens     float64
+	refillRate float64
+	lastRefill time.Time
+	mu         sync.Mutex
+}
+
+func newRegistryTokenBucket(capacity int, tokensPerSecond float64) *registryTokenBucket {
+	return &registryTokenBucket{
+		capacity:   float64(capacity),
+		tokens:     float64(capacity),
+		refillRate: tokensPerSecond,
+		lastRefill: time.Now(),
+	}
+}
+
+func (tb *registryTokenBucket) allow() bool {
+	tb.mu.Lock()
+	defer tb.mu.Unlock()
+	now := time.Now()
+	elapsed := now.Sub(tb.lastRefill).Seconds()
+	tb.tokens += elapsed * tb.refillRate
+	if tb.tokens > tb.capacity {
+		tb.tokens = tb.capacity
+	}
+	tb.lastRefill = now
+	if tb.tokens >= 1 {
+		tb.tokens--
+		return true
+	}
+	return false
+}
+
+type registryRateLimiter struct {
+	buckets map[string]*registryTokenBucket
+	mu      sync.Mutex
+}
+
+func newRegistryRateLimiter() *registryRateLimiter {
+	rl := &registryRateLimiter{buckets: make(map[string]*registryTokenBucket)}
+	go rl.cleanupLoop()
+	return rl
+}
+
+func (rl *registryRateLimiter) allow(clientIP string) bool {
+	rl.mu.Lock()
+	bucket, ok := rl.buckets[clientIP]
+	if !ok {
+		bucket = newRegistryTokenBucket(registryRateBurst, registryRateLimitRPS)
+		rl.buckets[clientIP] = bucket
+	}
+	rl.mu.Unlock()
+	return bucket.allow()
+}
+
+// cleanupLoop periodically forgets buckets for clients that haven't made a
+// request in a while, so a long-running process doesn't accumulate one
+// bucket per distinct IP forever.
+func (rl *registryRateLimiter) cleanupLoop() {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		cutoff := time.Now().Add(-10 * time.Minute)
+		rl.mu.Lock()
+		for ip, bucket := range rl.buckets {
+			bucket.mu.Lock()
+			stale := bucket.lastRefill.Before(cutoff)
+			bucket.mu.Unlock()
+			if stale {
+				delete(rl.buckets, ip)
+			}
+		}
+		rl.mu.Unlock()
+	}
+}
+
+// limitRequest wraps next with per-client-IP rate limiting and a cap on
+// request body size, applied ahead of every handler -- including the
+// unauthenticated self-service ones, which need it most since a shared
+// secret can't gate them.
+func limitRequest(rl *registryRateLimiter, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		clientIP, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			clientIP = r.RemoteAddr
+		}
+		if !rl.allow(clientIP) {
+			http.Error(w, "429 too many requests", http.StatusTooManyRequests)
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, registryMaxBodyBytes)
+		next.ServeHTTP(w, r)
+	})
 }
 
 func cors(next http.Handler) http.Handler {
@@ -2398,6 +2548,80 @@ func validatorRewardPolicy() map[string]any {
 		"target_validator_operators":     5_000,
 		"ten_year_max_per_validator_syn": 910_000,
 	}
+}
+
+// nonceLess reports whether heartbeat nonce a should be treated as
+// strictly earlier than nonce b, for the replay/staleness rejection in
+// handleAPINodeHeartbeat.
+//
+// The registry used to compare nonces with a plain Go string "<=", which
+// is lexicographic, not numeric. Real nonces (see cmd/silentnode/main.go's
+// node.LastNonce assignment) look like
+// "<19-digit millisecond timestamp>-<8-digit heartbeat counter>", e.g.
+// "0000001700000000000-00000005". Lexicographic comparison only agrees
+// with the intended numeric ordering when both operands happen to have
+// identical length: a shorter numeral compares as "less" purely because
+// its first differing byte is smaller, even when it represents a larger
+// number ("9" is lexicographically greater than "10", the opposite of
+// numeric order, because '9' > '1'). Nothing on the server enforced that
+// every nonce actually has the same width, so a captured, validly-signed
+// heartbeat carrying a differently-formatted-but-numerically-later nonce
+// could dodge the replay check entirely.
+//
+// This compares each '-'-delimited segment as a non-negative decimal
+// integer (by digit-string length first, then lexicographically among
+// equal-length digit strings -- equivalent to numeric comparison without
+// parsing into a fixed-width Go integer type that an attacker-supplied,
+// arbitrarily long digit string could overflow), left to right, matching
+// how the two-part timestamp-counter format is meant to be read. A segment
+// that isn't all digits, or a differing segment count, falls back to plain
+// string comparison for that pair, so this never panics and never
+// regresses behavior for a nonce that isn't in the expected shape (which,
+// for real clients, doesn't happen).
+func nonceLess(a, b string) bool {
+	as := strings.Split(a, "-")
+	bs := strings.Split(b, "-")
+	n := len(as)
+	if len(bs) < n {
+		n = len(bs)
+	}
+	for i := 0; i < n; i++ {
+		if c := compareDecimalSegment(as[i], bs[i]); c != 0 {
+			return c < 0
+		}
+	}
+	if len(as) != len(bs) {
+		return len(as) < len(bs)
+	}
+	return false
+}
+
+// compareDecimalSegment compares two strings as non-negative base-10
+// integers when both consist entirely of ASCII digits (digit count first,
+// then lexicographically among equal-length digit strings -- exactly
+// numeric order). Falls back to a plain string comparison when either
+// isn't purely digits, which is also what a bare "<=" would have done, so
+// this never behaves worse than the code it replaces.
+func compareDecimalSegment(a, b string) int {
+	if isAllDigits(a) && isAllDigits(b) && len(a) != len(b) {
+		if len(a) < len(b) {
+			return -1
+		}
+		return 1
+	}
+	return strings.Compare(a, b)
+}
+
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func canonicalHeartbeatMessage(nodeID string, height int64, tip string, stateRoot string, timestamp string, nonce string) []byte {
@@ -2866,6 +3090,31 @@ func shortID() string {
 	var b [5]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b[:])
+}
+
+// paymentIntentID returns a payment-intent identifier with far more
+// entropy (16 random bytes = 128 bits) than shortID's 5 bytes (40 bits).
+// Unlike the other identifiers shortID produces -- node IDs, contact
+// message IDs, hosted-proof placeholders, none of which are, by
+// themselves, a credential -- a payment intent's ID is the ONLY thing
+// gating GET /api/early-access/payment-intents/<id> (which returns the
+// buyer's wallet address, USD value, and status) and POST
+// .../<id>/verify. Both are intentionally unauthenticated self-service
+// endpoints, so the ID itself is the sole barrier between an attacker and
+// reading or probing someone else's pending purchase. 2^40 possibilities
+// is within reach of a determined attacker enumerating IDs over a payment
+// intent's lifetime; 2^128 is not.
+func paymentIntentID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// crypto/rand.Read failing is effectively unrecoverable for a
+		// value that must be unguessable -- fall back to something that
+		// at least isn't a short, low-entropy, easily-enumerable value
+		// (shortID's own fallback would be exactly the weakness this
+		// function exists to avoid).
+		return fmt.Sprintf("fallback-%d-%d", time.Now().UnixNano(), os.Getpid())
 	}
 	return hex.EncodeToString(b[:])
 }
