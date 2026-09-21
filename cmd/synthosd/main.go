@@ -161,6 +161,13 @@ func main() {
 			ch.SetAuthEnforceFromHeight(cfg.AuthEnforceFromHeight)
 		}
 	}
+	// Unconditional (not gated on len(validators) > 0): the state-root check
+	// it relaxes applies to every block regardless of whether a validator set
+	// is configured, so a node with StateRootEnforceFromHeight set but no
+	// validators/trusted_validators should still get the grandfathering.
+	if cfg.StateRootEnforceFromHeight > 0 {
+		ch.SetStateRootEnforceFromHeight(cfg.StateRootEnforceFromHeight)
+	}
 	if err := n.Start(); err != nil {
 		panic(err)
 	}

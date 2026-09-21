@@ -58,6 +58,20 @@ type Chain struct {
 	// any node to sync past that point) while still strictly requiring
 	// signatures on every block from the given height onward.
 	authEnforceFromHeight uint64
+
+	// stateRootEnforceFromHeight is the lowest block height at which
+	// validateBlockLocked/FinalizeBlock require the replayed state root to
+	// match Header.StateRoot exactly (see SetStateRootEnforceFromHeight).
+	// Below it, that one check is skipped -- hash, tx-merkle-root, parent
+	// linkage, timestamp, and (once enforced) signature checks still apply in
+	// full. This exists for the same reason as authEnforceFromHeight: a prior
+	// version of State.Root() folded in self-attested, node-local immune/
+	// sovereign-proof data (see core.go's Root()), so blocks produced while
+	// that was true have a declared StateRoot no independently-bootstrapped
+	// node can ever reproduce, through no fault of their real transaction
+	// history. Grandfathering that range in is the only way a new or
+	// resyncing node can ever get past it.
+	stateRootEnforceFromHeight uint64
 }
 
 var (
@@ -329,6 +343,7 @@ func (c *Chain) validateBlockLocked(b *Block) error {
 	if err != nil || expectedTxRoot != b.Header.TxMerkleRoot {
 		return ErrBadBlock
 	}
+	enforceStateRoot := b.Header.Height >= c.stateRootEnforceFromHeight
 
 	for _, tx := range b.Tx {
 		if tx.ChainID != c.transactionChainIDLocked() {
@@ -348,7 +363,7 @@ func (c *Chain) validateBlockLocked(b *Block) error {
 	if err := applyBlockEconomics(tmp, b.Tx, b.Header.ProposerID); err != nil {
 		return err
 	}
-	if tmp.Root() != b.Header.StateRoot {
+	if enforceStateRoot && tmp.Root() != b.Header.StateRoot {
 		return ErrBadBlock
 	}
 	return nil
@@ -371,7 +386,7 @@ func (c *Chain) FinalizeBlock(b *Block) error {
 	if err := applyBlockEconomics(nextState, b.Tx, b.Header.ProposerID); err != nil {
 		return err
 	}
-	if nextState.Root() != b.Header.StateRoot {
+	if b.Header.Height >= c.stateRootEnforceFromHeight && nextState.Root() != b.Header.StateRoot {
 		return ErrBadBlock
 	}
 
@@ -501,6 +516,18 @@ func (c *Chain) SetAuthEnforceFromHeight(height uint64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.authEnforceFromHeight = height
+}
+
+// SetStateRootEnforceFromHeight grandfathers in existing chain history below
+// height by skipping the replayed-state-root-must-match-Header.StateRoot
+// check for it (see stateRootEnforceFromHeight's doc comment). Must be the
+// same value on every node sharing this chain, chosen at or above the
+// height live when this fix is deployed -- never per-node, or nodes will
+// disagree about which history is valid.
+func (c *Chain) SetStateRootEnforceFromHeight(height uint64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.stateRootEnforceFromHeight = height
 }
 
 // SeedGenesisState records the chain's state at height 0, needed to safely

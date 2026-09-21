@@ -47,6 +47,14 @@ type NodeConfig struct {
 	// was actually deployed for this chain -- not a per-node value.
 	AuthEnforceFromHeight uint64 `json:"auth_enforce_from_height"`
 
+	// StateRootEnforceFromHeight, when set, is passed to chain.Chain.
+	// SetStateRootEnforceFromHeight: it grandfathers in any block below this
+	// height from the replayed-state-root-must-match check, for a chain whose
+	// history includes state roots computed before a fix to what State.Root()
+	// covers (see internal/chain/core.go's Root()). Must be the same value on
+	// every node sharing this chain.
+	StateRootEnforceFromHeight uint64 `json:"state_root_enforce_from_height"`
+
 	// Runtime configuration (can be set from environment variables)
 	ChainID            uint64
 	ConsensusTimeout   time.Duration

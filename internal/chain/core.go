@@ -745,19 +745,27 @@ func (s *State) Root() string {
 		acc := s.Accounts[Address(a)]
 		leaves = append(leaves, acc.LeafHash(Address(a)))
 	}
+	// ImmuneNodes/SovereignProofs/LastSovereignProofID are deliberately left
+	// out of this payload. They are self-attested, node-local records (see
+	// ImmuneNodeRecord.OptInLocalOnly and the scope restriction in
+	// applyImmuneMetadata's "sovereign_noise_proof" case, which never allows
+	// scope "external") -- every node bootstraps its OWN, different entry
+	// (see cmd/synthosd's bootstrapImmuneNode), so no two nodes can ever
+	// agree on their contents. Including them here made State.Root() diverge
+	// between any two independently-bootstrapped nodes even when their real,
+	// transaction-derived state (accounts, bridge activity) was identical --
+	// which made cross-node block validation (Chain.validateBlockLocked)
+	// permanently impossible once any node had a locally-bootstrapped immune
+	// record. BridgeEvents/BridgeValidators/etc. stay in: those are real
+	// quorum-verified cross-chain state, not self-attested local status, and
+	// must stay part of consensus.
 	immunePayload := struct {
-		ImmuneNodes           map[Address]ImmuneNodeRecord    `json:"immune_nodes"`
-		SovereignProofs       map[string]SovereignProofRecord `json:"sovereign_proofs"`
-		LastSovereignProofID  string                          `json:"last_sovereign_proof_id"`
-		BridgeEvents          map[string]BridgeRecord         `json:"bridge_events"`
-		ProcessedBridgeEvents map[string]bool                 `json:"processed_bridge_events"`
-		BridgeValidators      map[string]string               `json:"bridge_validators"`
-		BridgeQuorum          uint64                          `json:"bridge_quorum"`
-		LastBridgeEventID     string                          `json:"last_bridge_event_id"`
+		BridgeEvents          map[string]BridgeRecord `json:"bridge_events"`
+		ProcessedBridgeEvents map[string]bool         `json:"processed_bridge_events"`
+		BridgeValidators      map[string]string       `json:"bridge_validators"`
+		BridgeQuorum          uint64                  `json:"bridge_quorum"`
+		LastBridgeEventID     string                  `json:"last_bridge_event_id"`
 	}{
-		ImmuneNodes:           s.ImmuneNodes,
-		SovereignProofs:       s.SovereignProofs,
-		LastSovereignProofID:  s.LastSovereignProofID,
 		BridgeEvents:          s.BridgeEvents,
 		ProcessedBridgeEvents: s.ProcessedBridgeEvents,
 		BridgeValidators:      s.BridgeValidators,

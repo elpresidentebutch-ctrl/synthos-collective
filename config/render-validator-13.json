@@ -21,5 +21,6 @@
     "synthos-validator-12": "0x5528a57c397d8539d88b3ef5dbecdec3ec8ca261afd2eb44e9992098c652c355",
     "synthos-render-validator-1": "0x14d371a7ed892a1fe5a16413f483c3730b3d52ef0ac8b6663e70389fae10e4f5"
   },
-  "auth_enforce_from_height": 15300
+  "auth_enforce_from_height": 15300,
+  "state_root_enforce_from_height": 19500
 }
