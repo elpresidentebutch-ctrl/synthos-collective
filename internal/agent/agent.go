@@ -191,6 +191,7 @@ var (
 	ErrNoTransport               = errors.New("agent has no transport attached")
 	ErrNoKeys                    = errors.New("agent has no signing keys attached")
 	ErrReplay                    = errors.New("replay detected")
+	ErrStaleEnvelope             = errors.New("envelope timestamp outside freshness window")
 	ErrBadSignature              = errors.New("bad signature")
 	ErrBadEnvelope               = errors.New("invalid envelope")
 	ErrInvalidPublicKey          = errors.New("invalid public key format")
@@ -456,11 +457,32 @@ func hexToBytes(s string) ([]byte, error) {
 	return hex.DecodeString(s)
 }
 
-// VerifyEnvelope performs basic validation, replay protection, and signature verification.
-// The caller supplies the expected public key bytes for the sender.
+// VerifyEnvelope performs basic validation, freshness and replay
+// protection, and signature verification. The caller supplies the expected
+// public key bytes for the sender.
 func (a *Agent) VerifyEnvelope(env network.Envelope, senderPublicKeyBytes []byte, now time.Time) error {
 	if err := env.ValidateBasic(); err != nil {
 		return ErrBadEnvelope
+	}
+
+	// Freshness: reject an envelope whose signed Timestamp (SigningBytes
+	// includes it, so it can't be altered without invalidating the
+	// signature below) is too far from now in either direction.
+	// consensus.FreshEnough existed and was fully tested but had no caller
+	// anywhere in this codebase -- replay protection rested entirely on
+	// the nonce-based replayCache below, which only remembers a nonce for
+	// its own TTL (10 minutes, see NewAgent). Past that TTL the entry is
+	// evicted and forgotten, so a captured, validly-signed envelope --
+	// unchanged, same nonce, same old timestamp -- could be replayed
+	// successfully once its original nonce fell out of the cache, with
+	// nothing else in this function ever looking at how old it actually
+	// was. Checking freshness here closes that gap independently of the
+	// replay cache: an envelope has to be recent to be accepted at all, so
+	// by the time a nonce could age out of the cache, the envelope carrying
+	// it is already long past being fresh enough to accept on a first
+	// sighting either.
+	if !consensus.FreshEnough(env.Timestamp, now, 0) {
+		return ErrStaleEnvelope
 	}
 
 	// Replay protection.
