@@ -171,20 +171,26 @@ func (n *Node) RefreshReputation() int {
 }
 
 // InitGovernance wires up real treasury governance for this node: founder
-// address, treasury address, and a real GetStake function backed by the
-// same chain state every balance/transfer uses (see chain.State.TotalStake
-// for how the RPC layer measures quorum against it). Deployments that don't
-// configure a founder/treasury address simply never call this, and
-// n.Governance stays nil -- the RPC layer reports governance as
-// unconfigured rather than silently accepting requests against an empty
-// address.
+// address and treasury address, both recorded on n.Chain.State
+// (GovernanceFounder/TreasuryAddress) since that's what ApplyTx actually
+// enforces when a governance_propose/governance_execute transaction is
+// applied (see core.go's applyCitizenGovernanceTx and governance.go) --
+// n.Governance itself is only a thin read facade over that same state now,
+// not an independent copy. Deployments that don't configure a founder/
+// treasury address simply never call this, and n.Governance stays nil --
+// the RPC layer reports governance as unconfigured rather than silently
+// accepting requests against an empty address.
 func (n *Node) InitGovernance(founder, treasury chain.Address) {
-	n.Governance = chain.NewTreasuryGovernance(founder, treasury, func(addr chain.Address) uint64 {
-		if n.Chain == nil {
-			return 0
-		}
-		return n.Chain.State.Get(addr).Balance
-	})
+	if n.Chain == nil {
+		// Nothing to wire governance onto; leave n.Governance nil the same
+		// way an unconfigured deployment does.
+		return
+	}
+	n.Chain.State.GovernanceFounder = founder
+	if treasury != "" {
+		n.Chain.State.TreasuryAddress = treasury
+	}
+	n.Governance = chain.NewTreasuryGovernance(founder, treasury, n.Chain)
 }
 
 func (n *Node) IsValidator(agentID string) bool {

@@ -1,194 +1,64 @@
 package rpc
 
 import (
-	"encoding/hex"
-	"encoding/json"
-	"errors"
-	"fmt"
 	"net/http"
-	"strings"
-	"time"
 
 	"synthos-collective/internal/chain"
-	synthoscrypto "synthos-collective/internal/crypto"
 )
 
 // -----------------------------------------------------------------------
 // Governor: real, signature-gated treasury governance over RPC.
 //
-// "Founder-gated" only means something if the RPC layer actually proves the
-// caller controls the founder's private key. Earlier designs that would
-// accept a bare address string in a JSON body let anyone claim to be the
-// founder just by typing their address in the request. Every state-changing
-// governance call here instead requires a real ed25519 signature; the
-// caller's address is derived from the public key that produced that
-// signature (never from a client-supplied field), and chain.TreasuryGovernance
-// independently re-checks founder identity on top of that for proposal
-// creation. Voting is signature-gated the same way, so a vote's stake
-// weight can only ever be cast by whoever actually holds that address's key
-// -- not by anyone who happens to know the address.
+// propose/vote/execute used to call straight through to
+// *chain.TreasuryGovernance, which mutated its own node-local Proposals map
+// (and, for execute, s.Chain.State.Accounts directly) the instant this
+// handler ran -- completely outside any transaction or block. See the
+// audit fix comments on State.GovernanceProposals (internal/chain/
+// governance.go) and applyCitizenGovernanceTx (internal/chain/core.go) for
+// why that broke consensus on this chain's real multi-node deployment the
+// same way the immune-node bootstrap bug and the bridge quorum bypass did.
+//
+// The fix follows internal/rpc/citizen.go's: these endpoints now require a
+// real, ed25519-signed chain.Tx (Tx.Verify(), not a bespoke payload) with
+// the matching tx.Metadata "type", and just hand it to the ordinary
+// mempool -> block pipeline. Founder identity for governance_propose,
+// vote weight for governance_vote, and quorum for governance_execute are
+// all still fully enforced -- just at block-application time (see
+// createGovernanceProposal/voteGovernance/executeGovernanceProposal in
+// governance.go) rather than synchronously in this handler, which now only
+// does a type/shape check before submitting.
 // -----------------------------------------------------------------------
 
-const governanceSignatureFreshness = 5 * time.Minute
-
-// verifySignedGovernanceRequest checks that sig is a real ed25519 signature
-// by pubHex over payload, and that the request timestamp is fresh (bounding
-// replay of a captured request to a 5 minute window). It returns the
-// chain.Address derived from the verified public key -- this is the only
-// address the caller is ever treated as acting for.
-func verifySignedGovernanceRequest(pubHex, sigHex string, timestamp int64, payload []byte) (chain.Address, error) {
-	if pubHex == "" || sigHex == "" {
-		return "", errors.New("missing public_key or signature")
-	}
-	now := time.Now().Unix()
-	skew := int64(governanceSignatureFreshness / time.Second)
-	if timestamp <= 0 || timestamp < now-skew || timestamp > now+skew {
-		return "", errors.New("request timestamp is missing or outside the freshness window")
-	}
-	pubBytes, err := synthoscrypto.PublicKeyBytes(pubHex)
-	if err != nil || len(pubBytes) != 32 {
-		return "", errors.New("invalid public key")
-	}
-	sigBytes, err := hex.DecodeString(strings.TrimPrefix(sigHex, "0x"))
-	if err != nil || len(sigBytes) != 64 {
-		return "", errors.New("invalid signature")
-	}
-	if !synthoscrypto.Verify(pubBytes, payload, sigBytes) {
-		return "", errors.New("signature does not verify")
-	}
-	return chain.AddressFromPublicKey(pubBytes), nil
-}
-
-type governanceProposeRequest struct {
-	ID          string `json:"id"`
-	Description string `json:"description"`
-	Amount      uint64 `json:"amount"`
-	Recipient   string `json:"recipient"`
-	Timestamp   int64  `json:"timestamp"`
-	PublicKey   string `json:"public_key"`
-	Signature   string `json:"signature"`
-}
-
-// signingPayload is the canonical byte string the caller must sign. Field
-// order and delimiters are fixed, so the server and any client compute the
-// exact same bytes.
-func (r governanceProposeRequest) signingPayload() []byte {
-	return []byte(fmt.Sprintf("synthos-governance-propose|%s|%s|%d|%s|%d",
-		r.ID, r.Description, r.Amount, r.Recipient, r.Timestamp))
-}
-
-type governanceVoteRequest struct {
-	ProposalID string `json:"proposal_id"`
-	InFavor    bool   `json:"in_favor"`
-	Timestamp  int64  `json:"timestamp"`
-	PublicKey  string `json:"public_key"`
-	Signature  string `json:"signature"`
-}
-
-func (r governanceVoteRequest) signingPayload() []byte {
-	return []byte(fmt.Sprintf("synthos-governance-vote|%s|%t|%d",
-		r.ProposalID, r.InFavor, r.Timestamp))
-}
-
-type governanceExecuteRequest struct {
-	ProposalID string `json:"proposal_id"`
-}
-
 func (s *Server) handleGovernancePropose(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	if s.Node == nil || s.Node.Governance == nil {
 		http.Error(w, "governance not configured for this deployment", http.StatusServiceUnavailable)
 		return
 	}
-	var req governanceProposeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	if req.ID == "" || req.Recipient == "" || req.Amount == 0 {
-		http.Error(w, "id, recipient, and a non-zero amount are required", http.StatusBadRequest)
-		return
-	}
-	caller, err := verifySignedGovernanceRequest(req.PublicKey, req.Signature, req.Timestamp, req.signingPayload())
-	if err != nil {
-		http.Error(w, "unauthorized: "+err.Error(), http.StatusUnauthorized)
-		return
-	}
-	if err := s.Node.Governance.CreateProposal(caller, req.ID, req.Description, req.Amount, chain.Address(req.Recipient)); err != nil {
-		http.Error(w, err.Error(), http.StatusForbidden)
-		return
-	}
-	writeJSON(w, map[string]any{"ok": true, "id": req.ID, "proposer": caller})
+	s.decodeAndSubmitCitizenGovernanceTx(w, r, "governance_propose")
 }
 
 func (s *Server) handleGovernanceVote(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	if s.Node == nil || s.Node.Governance == nil {
 		http.Error(w, "governance not configured for this deployment", http.StatusServiceUnavailable)
 		return
 	}
-	var req governanceVoteRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	if req.ProposalID == "" {
-		http.Error(w, "missing proposal_id", http.StatusBadRequest)
-		return
-	}
-	voter, err := verifySignedGovernanceRequest(req.PublicKey, req.Signature, req.Timestamp, req.signingPayload())
-	if err != nil {
-		http.Error(w, "unauthorized: "+err.Error(), http.StatusUnauthorized)
-		return
-	}
-	if err := s.Node.Governance.Vote(voter, req.ProposalID, req.InFavor); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	writeJSON(w, map[string]any{"ok": true, "proposal_id": req.ProposalID, "voter": voter, "in_favor": req.InFavor})
+	s.decodeAndSubmitCitizenGovernanceTx(w, r, "governance_vote")
 }
 
 // handleGovernanceExecute pays out a proposal that has already passed and
-// reached quorum. Deliberately not signature-gated to a specific caller --
-// chain.TreasuryGovernance.Execute itself is the real gate (must be active,
-// not already executed, majority FOR, and at quorum against the chain's
-// real current total stake), so anyone observing that a proposal has passed
-// can trigger the payout, same as anyone can call /proposeBlock once
-// conditions are met. It cannot be used to move funds a proposal wasn't
-// already, legitimately voted to release.
+// reached quorum. Deliberately not gated to a specific caller identity --
+// executeGovernanceProposal itself is the real gate (must be active, not
+// already executed, majority FOR, and at quorum against the chain's real
+// current total stake), so any account that can pay the transaction fee
+// can submit the transaction that triggers payout, same as anyone could
+// call this endpoint before. It cannot be used to move funds a proposal
+// wasn't already, legitimately voted to release.
 func (s *Server) handleGovernanceExecute(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	if s.Node == nil || s.Node.Governance == nil {
 		http.Error(w, "governance not configured for this deployment", http.StatusServiceUnavailable)
 		return
 	}
-	var req governanceExecuteRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	if req.ProposalID == "" {
-		http.Error(w, "missing proposal_id", http.StatusBadRequest)
-		return
-	}
-	totalStake := s.Chain.State.TotalStake()
-	if err := s.Node.Governance.Execute(req.ProposalID, s.Chain.State, totalStake); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	if s.Store != nil {
-		_ = s.Store.Save(s.Chain)
-	}
-	writeJSON(w, map[string]any{"ok": true, "proposal_id": req.ProposalID})
+	s.decodeAndSubmitCitizenGovernanceTx(w, r, "governance_execute")
 }
 
 func (s *Server) handleGovernanceProposals(w http.ResponseWriter, r *http.Request) {

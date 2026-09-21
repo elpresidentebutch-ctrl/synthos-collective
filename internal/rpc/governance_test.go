@@ -2,9 +2,12 @@ package rpc
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -18,7 +21,8 @@ import (
 
 // governanceTestFixture builds a real chain + node with governance wired up
 // exactly the way cmd/synthosd/main.go wires it, so these tests exercise the
-// actual RPC->TreasuryGovernance path, not a mock of it.
+// actual RPC->mempool->block->State.GovernanceProposals path, not a mock of
+// it.
 type governanceTestFixture struct {
 	server   *Server
 	founder  synthoscrypto.KeyPair
@@ -50,7 +54,7 @@ func newGovernanceTestFixture(t *testing.T) *governanceTestFixture {
 		ChainID:   "test-governance-chain",
 		TxChainID: 999,
 		Alloc: map[chain.Address]uint64{
-			founderAddr:  10,
+			founderAddr:  1_000,
 			voterAddr:    1_000,
 			treasuryAddr: 5_000,
 		},
@@ -76,31 +80,90 @@ func newGovernanceTestFixture(t *testing.T) *governanceTestFixture {
 	}
 }
 
-func signHex(priv []byte, msg []byte) string {
-	sig := synthoscrypto.Sign(priv, msg)
-	return "0x" + hex.EncodeToString(sig)
+// signedGovernanceTx builds and signs a real chain.Tx carrying a
+// governance_* metadata type -- the same shape /governance/propose,
+// /governance/vote, and /governance/execute now require (see governance.go's
+// audit fix comment): a normal, Tx.Verify()-checked signature, not a
+// bespoke per-endpoint payload.
+func signedGovernanceTx(t *testing.T, c *chain.Chain, priv ed25519.PrivateKey, txType string, metadata []chain.KeyValuePair) chain.Tx {
+	t.Helper()
+	pub := priv.Public().(ed25519.PublicKey)
+	from := chain.AddressFromPublicKey(pub)
+	tx := chain.Tx{
+		ChainID:   c.TransactionChainID(),
+		From:      from,
+		To:        from,
+		Amount:    1, // nominal: these actions don't move tx.Amount, Tx.validateBasic just requires it non-zero
+		Fee:       chain.MIN_FEE,
+		Nonce:     c.State.GetNextNonce(from),
+		PublicKey: "0x" + hex.EncodeToString(pub),
+		Metadata:  append([]chain.KeyValuePair{{Key: "type", Value: txType}}, metadata...),
+		Timestamp: time.Now().UTC().Unix(),
+	}
+	if err := tx.Sign(priv); err != nil {
+		t.Fatalf("sign governance tx: %v", err)
+	}
+	return tx
+}
+
+func proposeMetadata(id, description string, amount uint64, recipient chain.Address) []chain.KeyValuePair {
+	return []chain.KeyValuePair{
+		{Key: "id", Value: id},
+		{Key: "description", Value: description},
+		{Key: "amount", Value: strconv.FormatUint(amount, 10)},
+		{Key: "recipient", Value: string(recipient)},
+	}
+}
+
+func voteMetadata(proposalID string, inFavor bool) []chain.KeyValuePair {
+	return []chain.KeyValuePair{
+		{Key: "proposal_id", Value: proposalID},
+		{Key: "in_favor", Value: strconv.FormatBool(inFavor)},
+	}
+}
+
+func executeMetadata(proposalID string) []chain.KeyValuePair {
+	return []chain.KeyValuePair{{Key: "proposal_id", Value: proposalID}}
+}
+
+// submitAndMine posts tx to the given handler, then -- only when the
+// submission itself was accepted -- mines it into a real block, mirroring
+// postTxAndMine in citizen_test.go. Returns both the submit response and
+// how many tx actually landed in the mined block, so a test can tell a
+// rejected submission (never queued) apart from one that was queued but
+// excluded at build time (invalid once the real chain logic ran).
+func submitAndMine(t *testing.T, srv *Server, path string, handler func(w http.ResponseWriter, r *http.Request), tx chain.Tx) (submitCode int, minedTxCount int) {
+	t.Helper()
+	body, _ := json.Marshal(tx)
+	w := httptest.NewRecorder()
+	handler(w, httptest.NewRequest("POST", path, bytes.NewReader(body)))
+	if w.Code != 200 {
+		return w.Code, -1
+	}
+	block, err := srv.Chain.BuildBlock("validator-1", "proof", 10)
+	if err != nil {
+		t.Fatalf("build block: %v", err)
+	}
+	if len(block.Tx) == 0 {
+		return w.Code, 0
+	}
+	if err := srv.Chain.FinalizeBlock(block); err != nil {
+		t.Fatalf("finalize block: %v", err)
+	}
+	return w.Code, len(block.Tx)
 }
 
 func TestGovernancePropose_OnlyRealFounderSignatureSucceeds(t *testing.T) {
 	f := newGovernanceTestFixture(t)
 
-	req := governanceProposeRequest{
-		ID:          "prop-1",
-		Description: "test payout",
-		Amount:      100,
-		Recipient:   "0xrecipient00000000000000000000000000000",
-		Timestamp:   time.Now().Unix(),
+	tx := signedGovernanceTx(t, f.server.Chain, f.founder.Private, "governance_propose",
+		proposeMetadata("prop-1", "test payout", 100, "0xrecipient00000000000000000000000000000"))
+	submitCode, mined := submitAndMine(t, f.server, "/governance/propose", f.server.handleGovernancePropose, tx)
+	if submitCode != 200 {
+		t.Fatalf("expected submission to be accepted, got %d", submitCode)
 	}
-	req.PublicKey = synthoscrypto.PublicKeyHex(f.founder.Public)
-	req.Signature = signHex(f.founder.Private, req.signingPayload())
-
-	body, _ := json.Marshal(req)
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/governance/propose", bytes.NewReader(body))
-	f.server.handleGovernancePropose(w, r)
-
-	if w.Code != 200 {
-		t.Fatalf("expected 200 from real founder signature, got %d: %s", w.Code, w.Body.String())
+	if mined != 1 {
+		t.Fatalf("expected the founder's proposal to be mined, got %d tx in block", mined)
 	}
 
 	p, ok := f.server.Node.Governance.Get("prop-1")
@@ -116,27 +179,15 @@ func TestGovernancePropose_ImpersonationFails(t *testing.T) {
 	f := newGovernanceTestFixture(t)
 
 	// The imposter signs with their OWN real key -- there's no field to lie
-	// about who they are, since the caller's address is derived from
-	// whichever key actually produced the signature. This proves signing as
-	// yourself, even honestly, doesn't let you create proposals unless your
-	// derived address is the configured founder.
-	req := governanceProposeRequest{
-		ID:          "prop-imposter",
-		Description: "should not be allowed",
-		Amount:      100,
-		Recipient:   "0xrecipient00000000000000000000000000000",
-		Timestamp:   time.Now().Unix(),
-	}
-	req.PublicKey = synthoscrypto.PublicKeyHex(f.imposter.Public)
-	req.Signature = signHex(f.imposter.Private, req.signingPayload())
-
-	body, _ := json.Marshal(req)
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/governance/propose", bytes.NewReader(body))
-	f.server.handleGovernancePropose(w, r)
-
-	if w.Code == 200 {
-		t.Fatalf("expected non-founder signer to be rejected, got 200: %s", w.Body.String())
+	// about who they are, since tx.From must match the key that produced
+	// tx.Signature (Tx.Verify enforces this for every transaction type).
+	// This proves signing as yourself, even honestly, doesn't let you
+	// create proposals unless your address is the configured founder.
+	tx := signedGovernanceTx(t, f.server.Chain, f.imposter.Private, "governance_propose",
+		proposeMetadata("prop-imposter", "should not be allowed", 100, "0xrecipient00000000000000000000000000000"))
+	submitCode, mined := submitAndMine(t, f.server, "/governance/propose", f.server.handleGovernancePropose, tx)
+	if submitCode == 200 && mined > 0 {
+		t.Fatalf("expected non-founder proposal to never be mined, got submitCode=%d mined=%d", submitCode, mined)
 	}
 	if _, ok := f.server.Node.Governance.Get("prop-imposter"); ok {
 		t.Fatal("proposal must not have been created by a non-founder signature")
@@ -146,25 +197,15 @@ func TestGovernancePropose_ImpersonationFails(t *testing.T) {
 func TestGovernancePropose_TamperedSignatureFails(t *testing.T) {
 	f := newGovernanceTestFixture(t)
 
-	req := governanceProposeRequest{
-		ID:          "prop-tamper",
-		Description: "tampered",
-		Amount:      100,
-		Recipient:   "0xrecipient00000000000000000000000000000",
-		Timestamp:   time.Now().Unix(),
-	}
-	req.PublicKey = synthoscrypto.PublicKeyHex(f.founder.Public)
-	sig := synthoscrypto.Sign(f.founder.Private, req.signingPayload())
-	sig[0] ^= 0xFF // corrupt one byte
-	req.Signature = "0x" + hex.EncodeToString(sig)
+	tx := signedGovernanceTx(t, f.server.Chain, f.founder.Private, "governance_propose",
+		proposeMetadata("prop-tamper", "tampered", 100, "0xrecipient00000000000000000000000000000"))
+	tx.Amount = 999 // tamper after signing
 
-	body, _ := json.Marshal(req)
+	body, _ := json.Marshal(tx)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/governance/propose", bytes.NewReader(body))
-	f.server.handleGovernancePropose(w, r)
-
-	if w.Code != 401 {
-		t.Fatalf("expected 401 for a tampered signature, got %d: %s", w.Code, w.Body.String())
+	f.server.handleGovernancePropose(w, httptest.NewRequest("POST", "/governance/propose", bytes.NewReader(body)))
+	if w.Code != 400 {
+		t.Fatalf("expected 400 for a tampered signature, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -172,35 +213,18 @@ func TestGovernanceVote_WeightedByRealSignerStakeOnly(t *testing.T) {
 	f := newGovernanceTestFixture(t)
 
 	// Founder creates the proposal for real.
-	propose := governanceProposeRequest{
-		ID:          "prop-vote",
-		Description: "vote test",
-		Amount:      100,
-		Recipient:   "0xrecipient00000000000000000000000000000",
-		Timestamp:   time.Now().Unix(),
-	}
-	propose.PublicKey = synthoscrypto.PublicKeyHex(f.founder.Public)
-	propose.Signature = signHex(f.founder.Private, propose.signingPayload())
-	body, _ := json.Marshal(propose)
-	w := httptest.NewRecorder()
-	f.server.handleGovernancePropose(w, httptest.NewRequest("POST", "/governance/propose", bytes.NewReader(body)))
-	if w.Code != 200 {
-		t.Fatalf("setup: propose failed: %d %s", w.Code, w.Body.String())
+	propose := signedGovernanceTx(t, f.server.Chain, f.founder.Private, "governance_propose",
+		proposeMetadata("prop-vote", "vote test", 100, "0xrecipient00000000000000000000000000000"))
+	submitCode, mined := submitAndMine(t, f.server, "/governance/propose", f.server.handleGovernancePropose, propose)
+	if submitCode != 200 || mined != 1 {
+		t.Fatalf("setup: propose failed: submitCode=%d mined=%d", submitCode, mined)
 	}
 
 	// Real voter (1000 stake in genesis) votes FOR, signing for themselves.
-	vote := governanceVoteRequest{
-		ProposalID: "prop-vote",
-		InFavor:    true,
-		Timestamp:  time.Now().Unix(),
-	}
-	vote.PublicKey = synthoscrypto.PublicKeyHex(f.voter.Public)
-	vote.Signature = signHex(f.voter.Private, vote.signingPayload())
-	body, _ = json.Marshal(vote)
-	w = httptest.NewRecorder()
-	f.server.handleGovernanceVote(w, httptest.NewRequest("POST", "/governance/vote", bytes.NewReader(body)))
-	if w.Code != 200 {
-		t.Fatalf("expected real voter's signed vote to succeed, got %d: %s", w.Code, w.Body.String())
+	vote := signedGovernanceTx(t, f.server.Chain, f.voter.Private, "governance_vote", voteMetadata("prop-vote", true))
+	submitCode, mined = submitAndMine(t, f.server, "/governance/vote", f.server.handleGovernanceVote, vote)
+	if submitCode != 200 || mined != 1 {
+		t.Fatalf("expected real voter's signed vote to be mined, got submitCode=%d mined=%d", submitCode, mined)
 	}
 
 	p, ok := f.server.Node.Governance.Get("prop-vote")
@@ -211,14 +235,10 @@ func TestGovernanceVote_WeightedByRealSignerStakeOnly(t *testing.T) {
 	// An imposter cannot inflate the tally by signing their own (zero-stake)
 	// key and voting again on behalf of themselves -- and definitely cannot
 	// vote as the real voter without that voter's private key.
-	imposterVote := governanceVoteRequest{ProposalID: "prop-vote", InFavor: true, Timestamp: time.Now().Unix()}
-	imposterVote.PublicKey = synthoscrypto.PublicKeyHex(f.imposter.Public)
-	imposterVote.Signature = signHex(f.imposter.Private, imposterVote.signingPayload())
-	body, _ = json.Marshal(imposterVote)
-	w = httptest.NewRecorder()
-	f.server.handleGovernanceVote(w, httptest.NewRequest("POST", "/governance/vote", bytes.NewReader(body)))
-	if w.Code == 200 {
-		t.Fatalf("expected zero-stake imposter vote to fail (no stake), got 200: %s", w.Body.String())
+	imposterVote := signedGovernanceTx(t, f.server.Chain, f.imposter.Private, "governance_vote", voteMetadata("prop-vote", true))
+	submitCode, mined = submitAndMine(t, f.server, "/governance/vote", f.server.handleGovernanceVote, imposterVote)
+	if submitCode == 200 && mined > 0 {
+		t.Fatalf("expected zero-stake imposter vote to never be mined, got submitCode=%d mined=%d", submitCode, mined)
 	}
 	p, _ = f.server.Node.Governance.Get("prop-vote")
 	if p.VotesFor != 1_000 {
@@ -229,40 +249,29 @@ func TestGovernanceVote_WeightedByRealSignerStakeOnly(t *testing.T) {
 func TestGovernanceExecute_MovesRealFundsOnceQuorumReachedAndNotTwice(t *testing.T) {
 	f := newGovernanceTestFixture(t)
 
-	propose := governanceProposeRequest{
-		ID:          "prop-exec",
-		Description: "execute test",
-		Amount:      500,
-		Recipient:   "0xrecipient00000000000000000000000000000",
-		Timestamp:   time.Now().Unix(),
-	}
-	propose.PublicKey = synthoscrypto.PublicKeyHex(f.founder.Public)
-	propose.Signature = signHex(f.founder.Private, propose.signingPayload())
-	body, _ := json.Marshal(propose)
-	w := httptest.NewRecorder()
-	f.server.handleGovernancePropose(w, httptest.NewRequest("POST", "/governance/propose", bytes.NewReader(body)))
-	if w.Code != 200 {
-		t.Fatalf("setup: propose failed: %d %s", w.Code, w.Body.String())
+	propose := signedGovernanceTx(t, f.server.Chain, f.founder.Private, "governance_propose",
+		proposeMetadata("prop-exec", "execute test", 500, "0xrecipient00000000000000000000000000000"))
+	submitCode, mined := submitAndMine(t, f.server, "/governance/propose", f.server.handleGovernancePropose, propose)
+	if submitCode != 200 || mined != 1 {
+		t.Fatalf("setup: propose failed: submitCode=%d mined=%d", submitCode, mined)
 	}
 
-	vote := governanceVoteRequest{ProposalID: "prop-exec", InFavor: true, Timestamp: time.Now().Unix()}
-	vote.PublicKey = synthoscrypto.PublicKeyHex(f.voter.Public)
-	vote.Signature = signHex(f.voter.Private, vote.signingPayload())
-	body, _ = json.Marshal(vote)
-	w = httptest.NewRecorder()
-	f.server.handleGovernanceVote(w, httptest.NewRequest("POST", "/governance/vote", bytes.NewReader(body)))
-	if w.Code != 200 {
-		t.Fatalf("setup: vote failed: %d %s", w.Code, w.Body.String())
+	vote := signedGovernanceTx(t, f.server.Chain, f.voter.Private, "governance_vote", voteMetadata("prop-exec", true))
+	submitCode, mined = submitAndMine(t, f.server, "/governance/vote", f.server.handleGovernanceVote, vote)
+	if submitCode != 200 || mined != 1 {
+		t.Fatalf("setup: vote failed: submitCode=%d mined=%d", submitCode, mined)
 	}
 
 	treasuryBefore := f.server.Chain.State.Get("0xtreasury000000000000000000000000000000").Balance
 	recipientBefore := f.server.Chain.State.Get("0xrecipient00000000000000000000000000000").Balance
 
-	execBody, _ := json.Marshal(governanceExecuteRequest{ProposalID: "prop-exec"})
-	w = httptest.NewRecorder()
-	f.server.handleGovernanceExecute(w, httptest.NewRequest("POST", "/governance/execute", bytes.NewReader(execBody)))
-	if w.Code != 200 {
-		t.Fatalf("expected execute to succeed once quorum reached, got %d: %s", w.Code, w.Body.String())
+	// Anyone can submit the execute transaction -- here, the voter, who has
+	// no special execute permission; executeGovernanceProposal's own checks
+	// (passed + quorum) are the real gate, not who signs this tx.
+	exec := signedGovernanceTx(t, f.server.Chain, f.voter.Private, "governance_execute", executeMetadata("prop-exec"))
+	submitCode, mined = submitAndMine(t, f.server, "/governance/execute", f.server.handleGovernanceExecute, exec)
+	if submitCode != 200 || mined != 1 {
+		t.Fatalf("expected execute to be mined once quorum reached, got submitCode=%d mined=%d", submitCode, mined)
 	}
 
 	treasuryAfter := f.server.Chain.State.Get("0xtreasury000000000000000000000000000000").Balance
@@ -274,11 +283,13 @@ func TestGovernanceExecute_MovesRealFundsOnceQuorumReachedAndNotTwice(t *testing
 		t.Fatalf("expected recipient credited by 500, got %d -> %d", recipientBefore, recipientAfter)
 	}
 
-	// Second execute must fail -- no double payout.
-	w = httptest.NewRecorder()
-	f.server.handleGovernanceExecute(w, httptest.NewRequest("POST", "/governance/execute", bytes.NewReader(execBody)))
-	if w.Code == 200 {
-		t.Fatal("expected second execute of the same proposal to fail")
+	// Second execute of the same proposal must never be mined -- no double
+	// payout. Use a fresh nonce/tx (same signer) since the first execute
+	// tx's nonce is now spent.
+	exec2 := signedGovernanceTx(t, f.server.Chain, f.voter.Private, "governance_execute", executeMetadata("prop-exec"))
+	submitCode, mined = submitAndMine(t, f.server, "/governance/execute", f.server.handleGovernanceExecute, exec2)
+	if submitCode == 200 && mined > 0 {
+		t.Fatalf("expected second execute of the same proposal to never be mined, got submitCode=%d mined=%d", submitCode, mined)
 	}
 	treasuryFinal := f.server.Chain.State.Get("0xtreasury000000000000000000000000000000").Balance
 	if treasuryFinal != treasuryAfter {

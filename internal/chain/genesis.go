@@ -84,6 +84,21 @@ func (g Genesis) ToState() (*State, error) {
 		}
 		s.CitizenRewardRateBpsPerYear = parsed
 	}
+	// founder_address configures who may create governance proposals (see
+	// governance.go, State.GovernanceFounder). Same default-empty,
+	// deployment-optional treatment as treasury_address above. An operator
+	// env var can still override this after the fact -- see
+	// cmd/synthosd/main.go's initGovernance, which re-syncs
+	// State.GovernanceFounder the same way it already re-syncs
+	// State.TreasuryAddress when SYNTHOS_FOUNDER_ADDRESS/
+	// SYNTHOS_TREASURY_ADDRESS are set.
+	if founder, ok := g.Metadata["founder_address"]; ok {
+		addr, _ := founder.(string)
+		if addr == "" {
+			return nil, fmt.Errorf("founder_address must be a non-empty string")
+		}
+		s.GovernanceFounder = Address(addr)
+	}
 	return s, nil
 }
 

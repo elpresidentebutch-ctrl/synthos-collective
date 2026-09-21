@@ -38,6 +38,11 @@ func TestStateClone_CopiesEveryExportedField(t *testing.T) {
 	s.CitizenStakes[addr2] = CitizenStake{Amount: 999, StakedAt: 1000, LastClaimAt: 1000}
 	s.TreasuryAddress = addr1
 	s.CitizenRewardRateBpsPerYear = 250
+	s.GovernanceProposals["prop-1"] = &Proposal{
+		ID: "prop-1", Description: "test", Amount: 42, Recipient: addr2,
+		VotesFor: 10, IsActive: true, Voters: map[Address]bool{addr1: true},
+	}
+	s.GovernanceFounder = addr1
 
 	clone := s.Clone()
 
@@ -54,5 +59,17 @@ func TestStateClone_CopiesEveryExportedField(t *testing.T) {
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("Clone did not copy field %q: source=%#v clone=%#v", field.Name, want, got)
 		}
+	}
+
+	// GovernanceProposals must be a deep copy, not merely a map with equal
+	// contents: mutating the clone's proposal must never reach back into
+	// the source's proposal through a shared *Proposal pointer (see the
+	// aliasing note on Clone). Checked after the DeepEqual sweep above,
+	// since this mutation would otherwise make that sweep's comparison
+	// meaningless (both sides would trivially differ from the pre-mutation
+	// values it captured).
+	clone.GovernanceProposals["prop-1"].VotesFor = 999999
+	if s.GovernanceProposals["prop-1"].VotesFor == 999999 {
+		t.Fatal("Clone aliased a *Proposal instead of deep-copying it: mutating the clone's proposal changed the source's proposal")
 	}
 }

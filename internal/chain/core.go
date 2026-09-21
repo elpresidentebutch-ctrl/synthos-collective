@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -286,6 +287,25 @@ type State struct {
 	CitizenStakes               map[Address]CitizenStake
 	TreasuryAddress             Address
 	CitizenRewardRateBpsPerYear uint64
+
+	// Governance (see governance.go). GovernanceProposals and
+	// GovernanceFounder used to live entirely inside a separate
+	// *TreasuryGovernance object owned by each Node, held in memory only --
+	// never part of *State, never included in Root(), and never applied
+	// through a block. That meant every node in a multi-node deployment had
+	// its OWN, independent view of what proposals existed and how they'd
+	// been voted on (lost completely on restart), and a call to
+	// /governance/execute mutated whichever single node received the HTTP
+	// request's Accounts map directly -- immediately forking that node's
+	// state root away from every peer that didn't happen to receive the
+	// identical call, permanently (the same failure class as the
+	// immune-node sync-stall bug, just for governance/treasury instead of
+	// bootstrap data). Moving both fields into *State and routing every
+	// mutation through ApplyTx (see applyCitizenGovernanceTx) makes
+	// governance real, replicated, consensus state like everything else in
+	// this struct.
+	GovernanceProposals map[string]*Proposal
+	GovernanceFounder   Address
 }
 
 func NewState() *State {
@@ -297,6 +317,7 @@ func NewState() *State {
 		ProcessedBridgeEvents: make(map[string]bool),
 		BridgeValidators:      make(map[string]string),
 		CitizenStakes:         make(map[Address]CitizenStake),
+		GovernanceProposals:   make(map[string]*Proposal),
 		TotalSupply:           MAX_SUPPLY,
 	}
 }
@@ -355,10 +376,38 @@ func (s *State) Set(a Address, ac Account) {
 }
 
 // ApplyTx applies a transaction to state.
+// citizenGovernanceTxTypes are the tx.Metadata "type" values whose entire
+// state effect -- nonce advancement, fee collection, and the action itself
+// -- is handled by applyCitizenGovernanceTx below, as a fully separate path
+// from the generic transfer logic later in this function. These used to be
+// direct method calls from RPC handlers straight onto *State/
+// *TreasuryGovernance, completely outside any transaction or block -- see
+// the doc comments on State.GovernanceProposals and governance.go for why
+// that broke consensus. Routing them through ApplyTx (and therefore through
+// SubmitTx -> mempool -> BuildBlock -> FinalizeBlock, the same replicated
+// path every ordinary transfer and bridge operation already uses) is the
+// fix. Kept as a fully separate branch that returns before the generic
+// transfer logic runs, rather than woven into it, specifically so this
+// change can't alter the behavior of an ordinary transfer, bridge, or
+// proposer-reward transaction by so much as one line.
+var citizenGovernanceTxTypes = map[string]bool{
+	"citizen_stake":         true,
+	"citizen_unstake":       true,
+	"citizen_claim_rewards": true,
+	"governance_propose":    true,
+	"governance_vote":       true,
+	"governance_execute":    true,
+}
+
 func (s *State) ApplyTx(tx Tx) error {
 	if err := tx.Verify(); err != nil {
 		return err
 	}
+
+	if txType := metadataValue(tx.Metadata, "type"); citizenGovernanceTxTypes[txType] {
+		return s.applyCitizenGovernanceTx(tx, txType)
+	}
+
 	from := s.Get(tx.From)
 	to := s.Get(tx.To)
 
@@ -424,6 +473,120 @@ func (s *State) ApplyTx(tx Tx) error {
 	s.Set(tx.To, nextRecipient)
 	s.Set(tx.From, from)
 	return nil
+}
+
+// applyCitizenGovernanceTx applies one of citizenGovernanceTxTypes. It
+// performs its own nonce check and fee collection (mirroring the generic
+// transfer logic above) and then dispatches the action itself to
+// citizen.go/governance.go's methods -- the same methods the RPC layer used
+// to call directly before this fix, now only ever reachable from here.
+//
+// tx.To is unused for every action here: none of them has a second party to
+// credit the way a transfer or bridge operation does (citizen_unstake and
+// citizen_claim_rewards pay the *sender* their own stake/rewards back;
+// governance_execute pays the treasury's configured recipient, not
+// tx.To). Callers still must set tx.To to something non-empty to satisfy
+// Tx.validateBasic; setting it to tx.From is the simplest choice and is
+// what every RPC handler that builds these does.
+//
+// Only citizen_stake also moves tx.Amount out of tx.From's own spendable
+// balance (into the stake ledger, via StakeCitizen) -- so it's the one case
+// that needs Amount and Fee validated together upfront, the same way the
+// generic transfer path validates Amount+Fee before touching balance, to
+// avoid an unsigned-integer underflow if the fee were collected afterward
+// against a balance StakeCitizen had already spent down to less than the
+// fee. Every other action here only ever costs the Fee.
+//
+// A block that fails to apply any single transaction is rejected wholesale
+// by validateBlockLocked/FinalizeBlock (the speculative clone they build
+// against is simply discarded) -- so unlike a hand-rolled multi-step
+// mutation, there's no need for this function to roll anything back on a
+// partial failure: returning an error here is enough to guarantee nothing
+// from this transaction, fee included, was committed.
+func (s *State) applyCitizenGovernanceTx(tx Tx, txType string) error {
+	acc := s.Get(tx.From)
+	if tx.Nonce != acc.Nonce {
+		return errors.New("bad nonce")
+	}
+
+	requiredUpfront := tx.Fee
+	if txType == "citizen_stake" {
+		total, err := safeAdd(tx.Amount, tx.Fee)
+		if err != nil {
+			return errors.New("amount overflow detected")
+		}
+		requiredUpfront = total
+	}
+	if acc.Balance < requiredUpfront {
+		return ErrInsufficientFunds
+	}
+
+	switch txType {
+	case "citizen_stake":
+		if err := s.StakeCitizen(tx.From, tx.Amount, tx.Timestamp); err != nil {
+			return err
+		}
+	case "citizen_unstake":
+		if err := s.UnstakeCitizen(tx.From, tx.Amount); err != nil {
+			return err
+		}
+	case "citizen_claim_rewards":
+		if _, err := s.ClaimCitizenRewards(tx.From, tx.Timestamp); err != nil {
+			return err
+		}
+	case "governance_propose":
+		amount, err := parseTxMetadataUint64(tx.Metadata, "amount")
+		if err != nil {
+			return fmt.Errorf("invalid amount in governance_propose metadata: %w", err)
+		}
+		id := metadataValue(tx.Metadata, "id")
+		description := metadataValue(tx.Metadata, "description")
+		recipient := Address(metadataValue(tx.Metadata, "recipient"))
+		if err := s.createGovernanceProposal(tx.From, id, description, amount, recipient); err != nil {
+			return err
+		}
+	case "governance_vote":
+		proposalID := metadataValue(tx.Metadata, "proposal_id")
+		inFavor := metadataValue(tx.Metadata, "in_favor") == "true"
+		if err := s.voteGovernance(tx.From, proposalID, inFavor); err != nil {
+			return err
+		}
+	case "governance_execute":
+		proposalID := metadataValue(tx.Metadata, "proposal_id")
+		// TotalStake() takes its own s.mu.RLock -- must be computed before
+		// executeGovernanceProposal takes s.mu.Lock, not from inside it.
+		totalStake := s.TotalStake()
+		if err := s.executeGovernanceProposal(proposalID, totalStake); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unhandled citizen/governance tx type %q", txType)
+	}
+
+	// Fee is collected only after the action itself succeeds, so a failed
+	// action (unknown proposal id, insufficient stake, quorum not reached,
+	// etc.) never costs a fee -- the same as before this fix, when a failed
+	// RPC call returned an error with nothing charged. Nonce only advances
+	// on success too, same as every other transaction type.
+	s.mu.Lock()
+	settled := s.Accounts[tx.From]
+	settled.Balance -= tx.Fee
+	settled.Nonce++
+	s.Accounts[tx.From] = settled
+	s.mu.Unlock()
+	return nil
+}
+
+// parseTxMetadataUint64 parses a base-10 unsigned integer out of a
+// transaction's string-valued metadata (see KeyValuePair) -- distinct from
+// genesis.go's parseMetadataUint64, which parses a JSON-typed (any) genesis
+// metadata value instead of a string.
+func parseTxMetadataUint64(items []KeyValuePair, key string) (uint64, error) {
+	raw := metadataValue(items, key)
+	if raw == "" {
+		return 0, fmt.Errorf("missing %s", key)
+	}
+	return strconv.ParseUint(raw, 10, 64)
 }
 
 func (s *State) applyBridgeMetadata(tx Tx) error {
@@ -859,6 +1022,19 @@ func (s *State) Clone() *State {
 	}
 	out.TreasuryAddress = s.TreasuryAddress
 	out.CitizenRewardRateBpsPerYear = s.CitizenRewardRateBpsPerYear
+	// Deep-copy each Proposal (via the same cloneProposal helper Get/
+	// Snapshot already use), not just the map -- GovernanceProposals holds
+	// *Proposal pointers, so a shallow map copy would leave this clone's
+	// proposals aliased to the exact same underlying Proposal objects as
+	// the source. Speculative validation (BuildBlock/validateBlockLocked
+	// both apply candidate txs to a Clone()) would then mutate the real,
+	// committed state's proposals in place through that shared pointer
+	// before the speculative block was ever finalized.
+	for k, v := range s.GovernanceProposals {
+		cloned := cloneProposal(v)
+		out.GovernanceProposals[k] = &cloned
+	}
+	out.GovernanceFounder = s.GovernanceFounder
 	return out
 }
 
