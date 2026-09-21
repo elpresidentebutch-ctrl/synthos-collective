@@ -839,6 +839,26 @@ func (s *State) Clone() *State {
 	out.LastSovereignProofID = s.LastSovereignProofID
 	out.LastBridgeEventID = s.LastBridgeEventID
 	out.TotalSupply = s.TotalSupply
+	// CitizenStakes/TreasuryAddress/CitizenRewardRateBpsPerYear were added
+	// to State after Clone was originally written and were never added
+	// here. FinalizeBlock builds every block's committed state as
+	// c.State.Clone() + applied txs, then replaces c.State with that clone
+	// wholesale -- so every block silently reset these three fields to
+	// their zero values. In practice that meant TreasuryAddress and
+	// CitizenRewardRateBpsPerYear were wiped within one block of genesis
+	// (Citizen rewards and Governor treasury spends would have looked
+	// "unconfigured" from block 2 onward regardless of genesis config), and
+	// any Citizen stake was debited from the staker's balance and then
+	// erased at the next block -- a real, permanent loss of the staked
+	// funds, not merely a display bug. See clone_test.go's
+	// TestStateClone_CopiesEveryExportedField, which uses reflection so a
+	// future new State field can't silently repeat this by being forgotten
+	// here the same way.
+	for k, v := range s.CitizenStakes {
+		out.CitizenStakes[k] = v
+	}
+	out.TreasuryAddress = s.TreasuryAddress
+	out.CitizenRewardRateBpsPerYear = s.CitizenRewardRateBpsPerYear
 	return out
 }
 
