@@ -59,6 +59,21 @@ type Node struct {
 	// store: RPC layer only, not persisted via storage.Store snapshots.
 	inboxMu sync.Mutex
 	inbox   []CommunicatorMessage
+
+	// peersMu guards Peers, Validators, and PeerHardwareHash above. These
+	// used to be plain map fields with no locking at all, but handleRaw
+	// runs concurrently -- once per actively connected peer, since
+	// SecureTCPTransport.acceptLoop spawns one goroutine per accepted
+	// connection (see handleConn) and each one calls straight through to
+	// this node's registered agentHandler. Two peers' messages arriving at
+	// nearly the same time -- an entirely ordinary occurrence under real
+	// multi-validator traffic, not an edge case -- meant two goroutines
+	// could read/write these maps at once, which Go maps do not support:
+	// at best a lost update, at worst a "fatal error: concurrent map
+	// writes" crash. AddPeer and SetValidators (typically called during
+	// startup/config, but not guaranteed to never race a live connection)
+	// needed the same protection.
+	peersMu sync.RWMutex
 }
 
 // CommunicatorMessage is one real, envelope-verified message this node has
@@ -154,7 +169,10 @@ func (n *Node) addressForAgentID(agentID string) (chain.Address, bool) {
 		}
 		return chain.AddressFromPublicKey(pubBytes), true
 	}
-	if pubBytes, ok := n.Peers[agentID]; ok {
+	n.peersMu.RLock()
+	pubBytes, ok := n.Peers[agentID]
+	n.peersMu.RUnlock()
+	if ok {
 		return chain.AddressFromPublicKey(pubBytes), true
 	}
 	return "", false
@@ -194,14 +212,19 @@ func (n *Node) InitGovernance(founder, treasury chain.Address) {
 }
 
 func (n *Node) IsValidator(agentID string) bool {
+	n.peersMu.RLock()
+	defer n.peersMu.RUnlock()
 	return n.Validators[agentID]
 }
 
 func (n *Node) SetValidators(validators []string) {
-	n.Validators = make(map[string]bool, len(validators))
+	set := make(map[string]bool, len(validators))
 	for _, v := range validators {
-		n.Validators[v] = true
+		set[v] = true
 	}
+	n.peersMu.Lock()
+	n.Validators = set
+	n.peersMu.Unlock()
 	if n.Consensus != nil {
 		n.Consensus.SetValidators(validators)
 	}
@@ -212,8 +235,22 @@ func (n *Node) AddPeer(agentID string, pubKeyHex string) error {
 	if err != nil {
 		return err
 	}
+	n.peersMu.Lock()
 	n.Peers[agentID] = b
+	n.peersMu.Unlock()
 	return nil
+}
+
+// HasPeer reports whether agentID is a known peer with a registered public
+// key. Safe for concurrent use, unlike reading the Peers field directly --
+// callers outside this package (e.g. internal/rpc/communicator.go) should
+// use this instead of that direct field access, which predated peersMu and
+// isn't synchronized against concurrent AddPeer/handleRaw calls.
+func (n *Node) HasPeer(agentID string) bool {
+	n.peersMu.RLock()
+	defer n.peersMu.RUnlock()
+	_, ok := n.Peers[agentID]
+	return ok
 }
 
 // Start registers message handlers on the transport.
@@ -247,7 +284,9 @@ func (n *Node) handleRaw(from string, payload []byte) {
 		}
 		return
 	}
+	n.peersMu.RLock()
 	pub, ok := n.Peers[env.FromAgentID]
+	n.peersMu.RUnlock()
 	if !ok {
 		// Unknown peer: drop.
 		if n.Logf != nil {
@@ -256,21 +295,13 @@ func (n *Node) handleRaw(from string, payload []byte) {
 		return
 	}
 
-	// Hardware-hash consistency check (clone/key-copy detection).
-	if prev, exists := n.PeerHardwareHash[env.FromAgentID]; exists {
-		if prev != env.HardwareIDHash {
-			if n.Logf != nil {
-				n.Logf("drop: hardware hash changed from_agent=%s prev=%s now=%s", env.FromAgentID, prev, env.HardwareIDHash)
-			}
-			return
-		}
-	} else {
-		n.PeerHardwareHash[env.FromAgentID] = env.HardwareIDHash
-	}
-
 	now := time.Now().UTC()
 
-	// Per-peer rate limiting to resist relay spam.
+	// Per-peer rate limiting to resist relay spam. Keyed by the envelope's
+	// claimed FromAgentID -- cheap and bounded regardless of whether that
+	// claim turns out to be genuine, so a flood of bogus envelopes naming
+	// one peer can't force this node to pay full signature-verification
+	// cost (below) for each one.
 	if n.InboundLimiter != nil && !n.InboundLimiter.Allow(env.FromAgentID, now) {
 		if n.Logf != nil {
 			n.Logf("drop: rate-limited from_agent=%s", env.FromAgentID)
@@ -278,8 +309,59 @@ func (n *Node) handleRaw(from string, payload []byte) {
 		return
 	}
 
+	// Verify the envelope's signature -- and therefore that env.FromAgentID
+	// really is who sent this, and that env.HardwareIDHash is a value that
+	// agent's own private key actually signed -- before trusting either
+	// field for anything else below, including the hardware-hash
+	// consistency check that used to run first. env.FromAgentID only has
+	// to NAME an already-known peer to reach this point (the n.Peers
+	// lookup above), not prove control of it, so any sender relayed to
+	// this node could previously send one incorrectly-signed envelope
+	// claiming to be a specific known peer, with a HardwareIDHash of the
+	// attacker's choosing. If that arrived before the real peer's first
+	// genuine message, this node silently pinned the attacker's fake hash
+	// as that peer's expected hardware hash -- and every subsequent
+	// GENUINE, correctly-signed message from the real peer would then be
+	// dropped as a "hardware hash changed" clone: a durable,
+	// unauthenticated denial of service against any peer an attacker got
+	// to first, requiring no valid signature at all.
+	if err := n.Agent.VerifyEnvelope(env, pub, now); err != nil {
+		if n.Logf != nil {
+			n.Logf("drop: envelope verify failed from_agent=%s err=%v", env.FromAgentID, err)
+		}
+		return
+	}
+	// alreadyVerified is passed to VerifyAndUnmarshalEnvelope below in
+	// place of n.Agent.VerifyEnvelope, so each message type's payload can
+	// still be decoded through that same helper without re-running
+	// signature verification a second time. Re-verifying isn't just
+	// redundant here: Agent.VerifyEnvelope's replay cache is
+	// test-and-set (ReplayCache.SeenBefore), so a second call for the
+	// exact same envelope would look identical to an actual replay and
+	// incorrectly drop this message.
+	alreadyVerified := func(network.Envelope, []byte, time.Time) error { return nil }
+
+	// Hardware-hash consistency check (clone/key-copy detection). Safe to
+	// trust env.FromAgentID/env.HardwareIDHash now that the envelope's
+	// signature has been verified above. The read-then-maybe-write below
+	// is done under a single write lock (not a read lock upgraded later)
+	// so two goroutines can't both observe "not yet seen" for the same
+	// never-before-seen agent and both proceed to pin it.
+	n.peersMu.Lock()
+	prev, exists := n.PeerHardwareHash[env.FromAgentID]
+	if !exists {
+		n.PeerHardwareHash[env.FromAgentID] = env.HardwareIDHash
+	}
+	n.peersMu.Unlock()
+	if exists && prev != env.HardwareIDHash {
+		if n.Logf != nil {
+			n.Logf("drop: hardware hash changed from_agent=%s prev=%s now=%s", env.FromAgentID, prev, env.HardwareIDHash)
+		}
+		return
+	}
+
 	if env.MessageType == network.MessageCoverNoise {
-		if _, err := consensus.VerifyAndUnmarshalEnvelope[network.CoverNoisePayload](n.Agent.VerifyEnvelope, env, pub, now); err != nil {
+		if _, err := consensus.VerifyAndUnmarshalEnvelope[network.CoverNoisePayload](alreadyVerified, env, pub, now); err != nil {
 			if n.Logf != nil {
 				n.Logf("drop: bad cover noise verify from_agent=%s err=%v", env.FromAgentID, err)
 			}
@@ -306,7 +388,7 @@ func (n *Node) handleRaw(from string, payload []byte) {
 			}
 			return
 		}
-		prop, err := consensus.VerifyAndUnmarshalEnvelope[consensus.BlockProposal](n.Agent.VerifyEnvelope, env, pub, now)
+		prop, err := consensus.VerifyAndUnmarshalEnvelope[consensus.BlockProposal](alreadyVerified, env, pub, now)
 		if err != nil {
 			if n.Logf != nil {
 				n.Logf("drop: bad proposal verify from_agent=%s err=%v", env.FromAgentID, err)
@@ -393,7 +475,7 @@ func (n *Node) handleRaw(from string, payload []byte) {
 			}
 			return
 		}
-		v, err := consensus.VerifyAndUnmarshalEnvelope[consensus.BlockVote](n.Agent.VerifyEnvelope, env, pub, now)
+		v, err := consensus.VerifyAndUnmarshalEnvelope[consensus.BlockVote](alreadyVerified, env, pub, now)
 		if err != nil {
 			if n.Logf != nil {
 				n.Logf("drop: bad vote verify from_agent=%s err=%v", env.FromAgentID, err)
@@ -415,13 +497,15 @@ func (n *Node) handleRaw(from string, payload []byte) {
 	case network.MessageCommunicator:
 		// Communicator role (docs/AGENTS_SPECIFICATION.md role 4):
 		// handle_incoming_message. Everything above this switch already
-		// verified the sender is a known peer, checked their hardware-hash
-		// consistency, and rate-limited them, so this only needs its own
-		// envelope signature check before recording the message.
-		payload, err := consensus.VerifyAndUnmarshalEnvelope[network.CommunicatorPayload](n.Agent.VerifyEnvelope, env, pub, now)
+		// verified the sender is a known peer, verified the envelope's
+		// signature, checked their hardware-hash consistency, and
+		// rate-limited them, so this only needs to decode the payload
+		// (alreadyVerified, not a real re-check -- see its doc comment
+		// above) before recording the message.
+		payload, err := consensus.VerifyAndUnmarshalEnvelope[network.CommunicatorPayload](alreadyVerified, env, pub, now)
 		if err != nil {
 			if n.Logf != nil {
-				n.Logf("drop: bad communicator message verify from_agent=%s err=%v", env.FromAgentID, err)
+				n.Logf("drop: bad communicator payload from_agent=%s err=%v", env.FromAgentID, err)
 			}
 			return
 		}

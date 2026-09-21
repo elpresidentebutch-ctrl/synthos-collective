@@ -75,7 +75,11 @@ func (s *Server) handleCommunicatorSend(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "missing body", http.StatusBadRequest)
 		return
 	}
-	if _, known := s.Node.Peers[req.ToAgentID]; !known {
+	// Node.HasPeer, not a direct Peers[...] read: Node.Peers is guarded by
+	// Node's own internal mutex (see node.go's peersMu doc comment) against
+	// concurrent AddPeer/handleRaw calls, and reading the field directly
+	// from here would bypass that.
+	if !s.Node.HasPeer(req.ToAgentID) {
 		http.Error(w, "unknown peer: "+req.ToAgentID+" (not in this node's peer registry)", http.StatusBadRequest)
 		return
 	}
