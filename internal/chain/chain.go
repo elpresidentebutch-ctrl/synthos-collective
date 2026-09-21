@@ -282,7 +282,7 @@ func (c *Chain) BuildBlock(proposerID string, proposerPoCRoot string, maxTx int)
 		}
 		txs = append(txs, tx)
 	}
-	if err := applyBlockEconomics(tmp, txs, proposerID); err != nil {
+	if err := applyBlockEconomics(tmp, txs, c.resolveProposerAddressLocked(proposerID)); err != nil {
 		return nil, err
 	}
 	txRoot, err := TxMerkleRoot(txs)
@@ -360,7 +360,7 @@ func (c *Chain) validateBlockLocked(b *Block) error {
 			return err
 		}
 	}
-	if err := applyBlockEconomics(tmp, b.Tx, b.Header.ProposerID); err != nil {
+	if err := applyBlockEconomics(tmp, b.Tx, c.resolveProposerAddressLocked(b.Header.ProposerID)); err != nil {
 		return err
 	}
 	if enforceStateRoot && tmp.Root() != b.Header.StateRoot {
@@ -383,7 +383,7 @@ func (c *Chain) FinalizeBlock(b *Block) error {
 			return fmt.Errorf("apply finalized transaction %s: %w", tx.ID, err)
 		}
 	}
-	if err := applyBlockEconomics(nextState, b.Tx, b.Header.ProposerID); err != nil {
+	if err := applyBlockEconomics(nextState, b.Tx, c.resolveProposerAddressLocked(b.Header.ProposerID)); err != nil {
 		return err
 	}
 	if b.Header.Height >= c.stateRootEnforceFromHeight && nextState.Root() != b.Header.StateRoot {
@@ -399,7 +399,30 @@ func (c *Chain) FinalizeBlock(b *Block) error {
 	return nil
 }
 
-func applyBlockEconomics(st *State, txs []Tx, proposerID string) error {
+// resolveProposerAddressLocked turns a proposer's node/agent ID (e.g.
+// "synthos-validator-12") into the real account address that should
+// receive its block-proposal fee reward, by looking up the proposer's
+// registered public key (see SetValidatorSet) and deriving the address the
+// same way every other address in this chain is derived
+// (AddressFromPublicKey). Previously applyBlockEconomics built the address
+// as Address("0x"+proposerID) directly -- for a proposerID like
+// "synthos-validator-12" that's not valid hex and not 20 bytes, so every
+// proposer reward was credited to an address nobody could ever control or
+// spend from; effectively burned, but silently and by accident rather than
+// by the deliberate BURN_PERCENT split. Returns "" when the proposer isn't
+// a registered validator with a known key -- callers must treat that as "no
+// address to credit" (the fee is still fully burned, just not credited to a
+// guessed/fabricated address) rather than fall back to a fabricated one.
+// Caller must already hold c.mu (read or write).
+func (c *Chain) resolveProposerAddressLocked(proposerID string) Address {
+	pub, ok := c.validatorKeys[proposerID]
+	if !ok || len(pub) != ed25519.PublicKeySize {
+		return ""
+	}
+	return AddressFromPublicKey(pub)
+}
+
+func applyBlockEconomics(st *State, txs []Tx, proposerAddr Address) error {
 	var totalFees uint64
 	for _, tx := range txs {
 		var err error
@@ -408,13 +431,12 @@ func applyBlockEconomics(st *State, txs []Tx, proposerID string) error {
 			return fmt.Errorf("block fee overflow: %w", err)
 		}
 	}
-	if totalFees == 0 || proposerID == "" {
+	if totalFees == 0 || proposerAddr == "" {
 		return nil
 	}
 
 	burnAmount := (totalFees * BURN_PERCENT) / 100
 	rewardAmount := totalFees - burnAmount
-	proposerAddr := Address("0x" + proposerID)
 	proposer := st.Get(proposerAddr)
 	nextBalance, err := safeAdd(proposer.Balance, rewardAmount)
 	if err != nil {
