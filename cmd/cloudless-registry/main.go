@@ -117,6 +117,16 @@ type registryState struct {
 	Mailbox             map[string][]mailboxMessage         `json:"mailbox"`
 	Contacts            []contactMessage                    `json:"contacts,omitempty"`
 	EarlyAccessPayments map[string]earlyAccessPaymentIntent `json:"early_access_payments,omitempty"`
+	// ConsumedPaymentTxHashes records every on-chain payment txHash that has
+	// already been used to successfully verify a payment intent, mapped to
+	// the intent ID that consumed it. See verifyPaymentIntent's audit fix
+	// comment: without this, one real payment could be replayed against any
+	// number of separately-created intents (PaymentAddress is always the
+	// same fixed per-asset treasury address, not attacker-chosen, so
+	// verifyEVMPayment's checks alone don't prevent reuse), each one
+	// independently minting its own SynAmount of SYN off the strength of a
+	// single real payment.
+	ConsumedPaymentTxHashes map[string]string `json:"consumed_payment_tx_hashes,omitempty"`
 }
 
 type server struct {
@@ -290,9 +300,26 @@ func (s *server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleRegister used to have no authentication at all -- unlike
+// handlePeerByName (delete) and the mailbox POST handler, it never called
+// s.authorized, so any caller on the internet could overwrite ANY existing
+// peer entry (by name) with their own url/public_key/capabilities, with no
+// proof they controlled the name's original identity. Even with a registry
+// secret configured, that alone would only gate registry writes as a
+// group -- it wouldn't stop one caller who has the secret from silently
+// hijacking a name someone else (or a different one of this operator's own
+// nodes) already established. Fixed with two layers: the same shared-secret
+// gate every other write endpoint here uses, plus (below) binding a name's
+// identity to the public key it first registered with, so a name can't be
+// silently reassigned to a different key without deleting it first via the
+// already-authorized DELETE /peers/<name>.
 func (s *server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.authorized(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -350,6 +377,21 @@ func (s *server) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.Lock()
 	if existing, ok := s.state.Peers[name]; ok {
+		// Layer 2 of the identity-takeover fix: once a name has registered
+		// with a real public key, every future registration under that same
+		// name must present that exact key. Without this, anyone who knows
+		// (or brute-forced) the shared registry secret -- or, before this
+		// fix, ANYONE at all -- could silently reassign an existing name to
+		// a key they control, and every peer that trusts this registry's
+		// /peers listing (bridge quorum, communicator, node discovery)
+		// would start trusting the impostor's key under the victim's name.
+		// A blank existing.PublicKey (a legacy or never-keyed entry) has no
+		// identity to protect yet, so it's left free to be claimed.
+		if existing.PublicKey != "" && entry.PublicKey != existing.PublicKey {
+			s.mu.Unlock()
+			http.Error(w, fmt.Sprintf("name %q is already registered with a different public key -- delete it first via DELETE /peers/%s if you intend to reassign it", name, name), http.StatusConflict)
+			return
+		}
 		entry.RegisteredAt = existing.RegisteredAt
 	}
 	s.state.Peers[name] = entry
@@ -1521,6 +1563,29 @@ func (s *server) handleAPIEarlyAccessPaymentIntentByID(w http.ResponseWriter, r 
 	http.Error(w, "not found", http.StatusNotFound)
 }
 
+// verifyPaymentIntent used to have two independent ways to over-allocate
+// SYN from a single real payment:
+//
+//  1. No idempotency check: calling this endpoint twice for the same
+//     intent with the same valid txHash ran allocateNativeSYN twice,
+//     minting intent.SynAmount again each time, with no limit.
+//  2. No cross-intent replay protection: PaymentAddress is always the
+//     same fixed per-asset treasury address (see
+//     handleAPIEarlyAccessPaymentIntents), not something the caller
+//     chooses, and this is a public, unauthenticated, self-service
+//     endpoint for creating new intents. So an attacker could create many
+//     low-value intents, make ONE real payment large enough to satisfy
+//     all of them (verifyEVMPayment only checks the paid amount is >= the
+//     intent's own threshold), and verify every intent against that same
+//     txHash -- each one allocating its own SynAmount off the strength of
+//     a single real payment.
+//
+// Both are closed by reservePaymentTxHash below: a given txHash can only
+// ever be reserved for one intent ID, checked and recorded before any
+// verification or allocation happens (not just after a successful one, to
+// avoid a race between two concurrent requests for two different intents
+// racing verifyEVMPayment against the same txHash), and an intent that has
+// already reached syn_allocated is never re-verified at all.
 func (s *server) verifyPaymentIntent(w http.ResponseWriter, r *http.Request, id string) {
 	var body struct {
 		TxHash string `json:"txHash"`
@@ -1529,7 +1594,7 @@ func (s *server) verifyPaymentIntent(w http.ResponseWriter, r *http.Request, id 
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	txHash := strings.TrimSpace(body.TxHash)
+	txHash := strings.ToLower(strings.TrimSpace(body.TxHash))
 	if !isHexHash(txHash) {
 		http.Error(w, "valid txHash is required", http.StatusBadRequest)
 		return
@@ -1539,12 +1604,29 @@ func (s *server) verifyPaymentIntent(w http.ResponseWriter, r *http.Request, id 
 		http.Error(w, "payment intent not found", http.StatusNotFound)
 		return
 	}
+	if intent.Status == "syn_allocated" {
+		// Already fully processed -- return the existing result rather
+		// than re-verifying and re-allocating.
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "intent": intent})
+		return
+	}
+	if err := s.reservePaymentTxHash(txHash, id); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+
 	asset, ok := earlyAccessAssetBySymbol(intent.AssetSymbol)
 	if !ok {
+		s.releasePaymentTxHash(txHash, id)
 		http.Error(w, "payment asset config missing", http.StatusServiceUnavailable)
 		return
 	}
 	if err := verifyEVMPayment(txHash, intent, asset); err != nil {
+		// This txHash didn't actually pay for anything against this
+		// intent -- free it so a genuine retry with the correct txHash
+		// (or a different intent that legitimately owns this payment)
+		// isn't blocked by a failed guess.
+		s.releasePaymentTxHash(txHash, id)
 		intent.Status = "verification_failed"
 		intent.TxHash = txHash
 		intent.VerificationError = err.Error()
@@ -1554,6 +1636,13 @@ func (s *server) verifyPaymentIntent(w http.ResponseWriter, r *http.Request, id 
 		return
 	}
 
+	// From here on the txHash stays reserved to this intent regardless of
+	// outcome: the on-chain payment has now been verified as real, so it
+	// must never become available to a different intent, even if
+	// allocation itself fails or is still pending -- the fix for that case
+	// is retrying allocation for this SAME intent (reservePaymentTxHash
+	// above already allows that), not letting the txHash go to someone
+	// else.
 	intent.Status = "payment_verified"
 	intent.TxHash = txHash
 	intent.VerificationError = ""
@@ -1568,6 +1657,52 @@ func (s *server) verifyPaymentIntent(w http.ResponseWriter, r *http.Request, id 
 	intent.UpdatedAt = time.Now().UnixMilli()
 	s.savePaymentIntent(intent)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "intent": intent})
+}
+
+// reservePaymentTxHash claims txHash for intentID, so it can never be used
+// to verify a different intent at the same time or afterward. Reserving
+// for the same intentID that already holds it succeeds (an intent may
+// legitimately retry verification/allocation against the same txHash, e.g.
+// after allocateNativeSYN failed and left the intent at
+// "allocation_pending").
+func (s *server) reservePaymentTxHash(txHash, intentID string) error {
+	s.mu.Lock()
+	if s.state.ConsumedPaymentTxHashes == nil {
+		s.state.ConsumedPaymentTxHashes = map[string]string{}
+	}
+	if owner, exists := s.state.ConsumedPaymentTxHashes[txHash]; exists && owner != intentID {
+		s.mu.Unlock()
+		return fmt.Errorf("this payment transaction has already been used to verify a different payment intent")
+	}
+	s.state.ConsumedPaymentTxHashes[txHash] = intentID
+	s.mu.Unlock()
+	// Persisted immediately, not just when the intent itself is next
+	// saved, so a crash between reserving and finishing verification can't
+	// silently forget the reservation and let a later retry replay the
+	// same txHash.
+	if err := s.persist(); err != nil {
+		log.Printf("persist warning: %v", err)
+	}
+	return nil
+}
+
+// releasePaymentTxHash frees txHash's reservation, but only if intentID is
+// still the one holding it -- a stale release from a slow, since-superseded
+// request can't accidentally free a hash a different, legitimate intent
+// has since reserved.
+func (s *server) releasePaymentTxHash(txHash, intentID string) {
+	s.mu.Lock()
+	released := false
+	if s.state.ConsumedPaymentTxHashes[txHash] == intentID {
+		delete(s.state.ConsumedPaymentTxHashes, txHash)
+		released = true
+	}
+	s.mu.Unlock()
+	if released {
+		if err := s.persist(); err != nil {
+			log.Printf("persist warning: %v", err)
+		}
+	}
 }
 
 func (s *server) getPaymentIntent(id string) (earlyAccessPaymentIntent, bool) {
