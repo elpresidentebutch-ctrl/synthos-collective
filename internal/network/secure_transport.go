@@ -16,6 +16,32 @@ import (
 	"time"
 )
 
+// secureHandshakeTimeout bounds the initial handshake (already enforced via
+// authenticatePeer's own SetReadDeadline below). secureMsgReadTimeout is
+// the same protection applied to the ongoing per-message read loop in
+// handleConn, which -- like tcp_transport.go's TCPTransport, and for the
+// exact same slow-loris reason documented there -- used to have no
+// deadline at all once past the handshake (authenticatePeer resets the
+// deadline to none via `defer conn.SetReadDeadline(time.Time{})` before
+// handleConn's loop even starts). secureMaxConns mirrors
+// tcp_transport.go's tcpMaxConns, capping concurrent inbound connections
+// so acceptLoop's one-goroutine-per-connection can't grow unbounded.
+// secureRespReadTimeout/secureMaxRespSize close the same gap on the
+// OUTBOUND side: sendWithHandshake reads a length-prefixed auth response
+// from whatever it dialed with no deadline and no upper bound on the
+// claimed length, so a malicious or misbehaving peer address could either
+// hang this node's send indefinitely or make it allocate an unbounded
+// buffer from an attacker-chosen length field.
+const (
+	secureHandshakeTimeout = 15 * time.Second
+	secureMsgReadTimeout   = 30 * time.Second
+	secureWriteTimeout     = 10 * time.Second
+	secureDialTimeout      = 10 * time.Second
+	secureMaxConns         = 256
+	secureRespReadTimeout  = 10 * time.Second
+	secureMaxRespSize      = 4096
+)
+
 // SecureTCPTransport extends TCPTransport with TLS encryption and peer authentication.
 // All node-to-node communication is encrypted and authenticated.
 type SecureTCPTransport struct {
@@ -118,12 +144,23 @@ func (t *SecureTCPTransport) Start() error {
 
 // acceptLoop accepts new connections and spawns handlers.
 func (t *SecureTCPTransport) acceptLoop() {
+	// connSlots bounds the number of concurrently handled inbound
+	// connections (see secureMaxConns's doc comment above).
+	connSlots := make(chan struct{}, secureMaxConns)
 	for {
 		conn, err := t.listener.Accept()
 		if err != nil {
 			return
 		}
-		go t.handleConn(conn)
+		select {
+		case connSlots <- struct{}{}:
+			go func() {
+				defer func() { <-connSlots }()
+				t.handleConn(conn)
+			}()
+		default:
+			conn.Close()
+		}
 	}
 }
 
@@ -141,6 +178,14 @@ func (t *SecureTCPTransport) handleConn(conn net.Conn) {
 	// Read and dispatch messages from authenticated peer.
 	r := bufio.NewReader(conn)
 	for {
+		// See secureMsgReadTimeout's doc comment above: authenticatePeer
+		// clears the handshake deadline before returning, so this is the
+		// only deadline protecting the steady-state message loop. Reset on
+		// every iteration, so an authenticated peer actively exchanging
+		// messages -- even slowly -- is never penalized.
+		if err := conn.SetReadDeadline(time.Now().Add(secureMsgReadTimeout)); err != nil {
+			return
+		}
 		// Read 4-byte big-endian length.
 		lenBuf := make([]byte, 4)
 		if _, err := io.ReadFull(r, lenBuf); err != nil {
@@ -165,7 +210,7 @@ func (t *SecureTCPTransport) handleConn(conn net.Conn) {
 // Returns the authenticated peer ID or an error.
 func (t *SecureTCPTransport) authenticatePeer(conn net.Conn) (string, error) {
 	// Set handshake timeout.
-	conn.SetReadDeadline(time.Now().Add(15 * time.Second))
+	conn.SetReadDeadline(time.Now().Add(secureHandshakeTimeout))
 	defer conn.SetReadDeadline(time.Time{})
 
 	// Receive peer's handshake message.
@@ -276,7 +321,7 @@ func (t *SecureTCPTransport) sendWithHandshake(agentID, addr string, payload []b
 		conn = tlsConn
 	} else {
 		var dialErr error
-		conn, dialErr = net.DialTimeout("tcp", addr, 10*time.Second)
+		conn, dialErr = net.DialTimeout("tcp", addr, secureDialTimeout)
 		if dialErr != nil {
 			t.recordConnectionError(agentID)
 			return fmt.Errorf("failed to dial %s (%s): %w", agentID, addr, dialErr)
@@ -297,6 +342,9 @@ func (t *SecureTCPTransport) sendWithHandshake(agentID, addr string, payload []b
 	lenBuf := make([]byte, 4)
 	binary.BigEndian.PutUint32(lenBuf, uint32(len(hsData)))
 
+	if err := conn.SetWriteDeadline(time.Now().Add(secureWriteTimeout)); err != nil {
+		return fmt.Errorf("failed to set write deadline: %w", err)
+	}
 	if _, err := conn.Write(lenBuf); err != nil {
 		return fmt.Errorf("failed to send handshake: %w", err)
 	}
@@ -304,7 +352,17 @@ func (t *SecureTCPTransport) sendWithHandshake(agentID, addr string, payload []b
 		return fmt.Errorf("failed to send handshake data: %w", err)
 	}
 
-	// Receive handshake response.
+	// Receive handshake response. Both a read deadline and an upper bound
+	// on the claimed response length matter here: addr came from this
+	// node's own peer configuration, but whatever actually answers on that
+	// address is not yet authenticated at this point in the exchange (that
+	// is the whole point of the handshake under way), so a misbehaving or
+	// compromised endpoint could otherwise hang this send indefinitely, or
+	// claim an enormous respLen and make this node allocate an unbounded
+	// buffer for it.
+	if err := conn.SetReadDeadline(time.Now().Add(secureRespReadTimeout)); err != nil {
+		return fmt.Errorf("failed to set read deadline: %w", err)
+	}
 	r := bufio.NewReader(conn)
 	respLenBuf := make([]byte, 4)
 	if _, err := io.ReadFull(r, respLenBuf); err != nil {
@@ -312,6 +370,9 @@ func (t *SecureTCPTransport) sendWithHandshake(agentID, addr string, payload []b
 	}
 
 	respLen := binary.BigEndian.Uint32(respLenBuf)
+	if respLen == 0 || respLen > secureMaxRespSize {
+		return fmt.Errorf("invalid handshake response size %d", respLen)
+	}
 	respBuf := make([]byte, respLen)
 	if _, err := io.ReadFull(r, respBuf); err != nil {
 		return fmt.Errorf("failed to read handshake response data: %w", err)
@@ -332,8 +393,16 @@ func (t *SecureTCPTransport) sendWithHandshake(agentID, addr string, payload []b
 	return t.sendOnConn(conn, payload)
 }
 
-// sendOnConn sends a message on an active connection.
+// sendOnConn sends a message on an active connection -- either the one just
+// established by sendWithHandshake, or a cached persistent connection to an
+// already-authenticated peer. Either way, a deadline is needed: a cached
+// connection in particular can go stale (the peer stopped reading without
+// closing its end) long after the handshake that created it, and without
+// this, a hung peer would block the send indefinitely.
 func (t *SecureTCPTransport) sendOnConn(conn net.Conn, payload []byte) error {
+	if err := conn.SetWriteDeadline(time.Now().Add(secureWriteTimeout)); err != nil {
+		return err
+	}
 	lenBuf := make([]byte, 4)
 	binary.BigEndian.PutUint32(lenBuf, uint32(len(payload)))
 

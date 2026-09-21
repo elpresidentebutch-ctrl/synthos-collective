@@ -10,6 +10,34 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"time"
+)
+
+// This transport is the one actually wired into cmd/synthosd/main.go for
+// every deployed validator/RPC node on this chain -- despite the doc
+// comment above calling it minimal, it is Internet-facing in production
+// (Render exposes each node's listen port publicly), not just a devnet
+// toy. It used to have no read deadline on inbound connections at all: a
+// peer (or anyone who could reach the port) that opened a connection, sent
+// a length prefix, and then simply stopped sending -- deliberately or by
+// accident -- would tie up handleConn's goroutine, its already-allocated
+// buffer, and a file descriptor forever, since io.ReadFull blocks with no
+// timeout. Because acceptLoop spawns one such goroutine per accepted
+// connection with no cap, repeating this from a handful of connections was
+// enough to exhaust goroutines/file descriptors: a classic, cheap
+// slow-loris denial of service. Fixed with a per-message read deadline
+// (tcpReadTimeout, reset before each framed message so a connection
+// sending real traffic, even slowly, is never penalized) and a cap on
+// concurrent inbound connections (tcpMaxConns) so a flood of connections
+// that never send anything useful can't grow this node's goroutine count
+// without bound. Outbound sends (sendToAddr) similarly had no dial or
+// write timeout, so a hung or malicious peer could block this node's own
+// Broadcast calls indefinitely; both now have deadlines too.
+const (
+	tcpReadTimeout  = 30 * time.Second
+	tcpWriteTimeout = 10 * time.Second
+	tcpDialTimeout  = 10 * time.Second
+	tcpMaxConns     = 256
 )
 
 // TCPTransport is a minimal TCP-based Transport implementation.
@@ -19,11 +47,27 @@ type TCPTransport struct {
 	nodeID     string
 	listenAddr string
 
+	// ReadTimeout bounds how long a connection may take to deliver one
+	// complete framed message (see tcpReadTimeout's doc comment above).
+	// NewTCPTransport sets it to tcpReadTimeout; tests may override it to
+	// something short, before calling Start, to exercise the timeout
+	// without waiting the real duration. readTimeout() falls back to
+	// tcpReadTimeout if a TCPTransport is ever constructed without going
+	// through NewTCPTransport and this is left at its zero value.
+	ReadTimeout time.Duration
+
 	mu            sync.RWMutex
 	listener      net.Listener
 	peers         map[string]string // agentID -> "host:port"
 	agentHandler  func(fromAgentID string, payload []byte)
 	topicHandlers map[string]func(fromAgentID string, payload []byte)
+}
+
+func (t *TCPTransport) readTimeout() time.Duration {
+	if t.ReadTimeout > 0 {
+		return t.ReadTimeout
+	}
+	return tcpReadTimeout
 }
 
 // NewTCPTransport creates a new TCP transport for a given node.
@@ -42,6 +86,7 @@ func NewTCPTransport(nodeID, listenAddr string, peerAddrs []string) *TCPTranspor
 		listenAddr:    listenAddr,
 		peers:         peers,
 		topicHandlers: make(map[string]func(string, []byte)),
+		ReadTimeout:   tcpReadTimeout,
 	}
 }
 
@@ -63,12 +108,25 @@ func (t *TCPTransport) Start() error {
 }
 
 func (t *TCPTransport) acceptLoop() {
+	// connSlots bounds the number of concurrently handled inbound
+	// connections (see tcpMaxConns's doc comment above). A connection that
+	// arrives once this many are already active is closed immediately
+	// rather than adding another unbounded goroutine.
+	connSlots := make(chan struct{}, tcpMaxConns)
 	for {
 		conn, err := t.listener.Accept()
 		if err != nil {
 			return
 		}
-		go t.handleConn(conn)
+		select {
+		case connSlots <- struct{}{}:
+			go func() {
+				defer func() { <-connSlots }()
+				t.handleConn(conn)
+			}()
+		default:
+			conn.Close()
+		}
 	}
 }
 
@@ -76,6 +134,13 @@ func (t *TCPTransport) handleConn(conn net.Conn) {
 	defer conn.Close()
 	r := bufio.NewReader(conn)
 	for {
+		// Bound how long this connection may take to deliver one complete
+		// framed message. Reset on every iteration, so a connection
+		// actively exchanging messages -- even slowly -- is never
+		// penalized; only one that goes silent mid-message is dropped.
+		if err := conn.SetReadDeadline(time.Now().Add(t.readTimeout())); err != nil {
+			return
+		}
 		// Read 4-byte big-endian length.
 		lenBuf := make([]byte, 4)
 		if _, err := io.ReadFull(r, lenBuf); err != nil {
@@ -129,11 +194,19 @@ func (t *TCPTransport) Broadcast(topic string, payload []byte) error {
 }
 
 func (t *TCPTransport) sendToAddr(addr string, payload []byte) error {
-	conn, err := net.Dial("tcp", addr)
+	conn, err := net.DialTimeout("tcp", addr, tcpDialTimeout)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
+	// Without a write deadline, a peer that accepts the connection but
+	// never reads from it (hung, overloaded, or malicious) could block
+	// this call indefinitely -- and Broadcast calls sendToAddr for every
+	// peer in sequence, so one stuck peer would stall delivery to every
+	// peer after it.
+	if err := conn.SetWriteDeadline(time.Now().Add(tcpWriteTimeout)); err != nil {
+		return err
+	}
 
 	// Write 4-byte length prefix followed by payload.
 	lenBuf := make([]byte, 4)
