@@ -23,6 +23,13 @@ type Server struct {
 	MaxBodySize int64
 	PeerURLs    []string
 	HTTPClient  *http.Client
+
+	// CommunicatorToken gates /communicator/send (see handleCommunicatorSend's
+	// audit fix comment). Empty (the default) disables the endpoint
+	// entirely -- deliberately not "allow everyone," since that's exactly
+	// the open-relay behavior this field exists to close. Set it via
+	// cmd/synthosd/main.go from SYNTHOS_COMMUNICATOR_TOKEN.
+	CommunicatorToken string
 }
 
 func NewServer(c *chain.Chain, st *storage.Store, n *node.Node) *Server {

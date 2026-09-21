@@ -63,10 +63,12 @@ func newCommunicatorTestServers(t *testing.T) (a *Server, b *Server, bus *networ
 
 func TestCommunicatorSend_DeliversToKnownPeerInbox(t *testing.T) {
 	sa, sb, _ := newCommunicatorTestServers(t)
+	sa.CommunicatorToken = "test-token"
 
 	reqBody, _ := json.Marshal(communicatorSendRequest{ToAgentID: "comm-b", Body: "hi B"})
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("POST", "/communicator/send", bytes.NewReader(reqBody))
+	r.Header.Set("X-Communicator-Token", "test-token")
 	sa.handleCommunicatorSend(w, r)
 
 	if w.Code != 200 {
@@ -102,13 +104,51 @@ func TestCommunicatorSend_DeliversToKnownPeerInbox(t *testing.T) {
 
 func TestCommunicatorSend_RejectsUnknownPeer(t *testing.T) {
 	sa, _, _ := newCommunicatorTestServers(t)
+	sa.CommunicatorToken = "test-token"
 
 	reqBody, _ := json.Marshal(communicatorSendRequest{ToAgentID: "someone-not-a-peer", Body: "hi"})
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("POST", "/communicator/send", bytes.NewReader(reqBody))
+	r.Header.Set("X-Communicator-Token", "test-token")
 	sa.handleCommunicatorSend(w, r)
 
 	if w.Code == 200 {
 		t.Fatalf("expected send to an unregistered peer to be rejected, got 200: %s", w.Body.String())
+	}
+}
+
+// TestCommunicatorSend_RequiresToken guards against the exact bug the audit
+// found: this endpoint used to have no authentication at all, letting any
+// caller make this node send a real, validly-signed message -- under this
+// node's own agent identity -- to any of its peers. Now it's disabled by
+// default (no token configured) and requires an exact, operator-configured
+// token when enabled.
+func TestCommunicatorSend_RequiresToken(t *testing.T) {
+	sa, _, _ := newCommunicatorTestServers(t)
+	reqBody, _ := json.Marshal(communicatorSendRequest{ToAgentID: "comm-b", Body: "hi B"})
+
+	// No token configured at all -- disabled, not open.
+	w := httptest.NewRecorder()
+	sa.handleCommunicatorSend(w, httptest.NewRequest("POST", "/communicator/send", bytes.NewReader(reqBody)))
+	if w.Code != 503 {
+		t.Fatalf("expected 503 with no token configured, got %d: %s", w.Code, w.Body.String())
+	}
+
+	sa.CommunicatorToken = "real-token"
+
+	// Configured, but caller supplies no token.
+	w = httptest.NewRecorder()
+	sa.handleCommunicatorSend(w, httptest.NewRequest("POST", "/communicator/send", bytes.NewReader(reqBody)))
+	if w.Code != 401 {
+		t.Fatalf("expected 401 with a missing token, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Configured, caller supplies the wrong token.
+	w = httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/communicator/send", bytes.NewReader(reqBody))
+	r.Header.Set("X-Communicator-Token", "wrong-token")
+	sa.handleCommunicatorSend(w, r)
+	if w.Code != 401 {
+		t.Fatalf("expected 401 with an incorrect token, got %d: %s", w.Code, w.Body.String())
 	}
 }

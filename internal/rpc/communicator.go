@@ -1,6 +1,7 @@
 package rpc
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"net/http"
 
@@ -20,6 +21,22 @@ import (
 // (Agent.BuildEnvelope + SendEnvelope, the same primitives block
 // proposals/votes use); receiving is recorded by node.go's handleRaw
 // "communicator_message" case into Node.Inbox and read back here.
+//
+// handleCommunicatorSend used to have no authentication at all: any caller
+// on the internet who could reach this node's RPC port could make it build
+// and send a REAL, validly-signed envelope -- under this node's own agent
+// identity -- to any peer in its registry, with any body content the
+// caller chose. That's an open relay: this validator's real signature
+// backing arbitrary third-party content sent to its peers, with no way for
+// a receiving peer to tell that request didn't come from this node's own
+// operator. Since Render exposes this node's RPC publicly, that was live,
+// not theoretical. Fixed by requiring a shared secret the deployment's
+// operator configures out of band (SYNTHOS_COMMUNICATOR_TOKEN, see
+// cmd/synthosd/main.go), checked in constant time -- and, consistent with
+// how every other newly-audited feature in this codebase behaves when its
+// prerequisite isn't configured (Citizen rewards, Governor, bridge
+// validators), an unconfigured token disables the endpoint rather than
+// leaving it open.
 // -----------------------------------------------------------------------
 
 type communicatorSendRequest struct {
@@ -34,6 +51,15 @@ func (s *Server) handleCommunicatorSend(w http.ResponseWriter, r *http.Request) 
 	}
 	if s.Node == nil || s.Node.Agent == nil {
 		http.Error(w, "no agent attached to this node", http.StatusServiceUnavailable)
+		return
+	}
+	if s.CommunicatorToken == "" {
+		http.Error(w, "communicator send is disabled for this deployment (no SYNTHOS_COMMUNICATOR_TOKEN configured)", http.StatusServiceUnavailable)
+		return
+	}
+	given := r.Header.Get("X-Communicator-Token")
+	if given == "" || subtle.ConstantTimeCompare([]byte(given), []byte(s.CommunicatorToken)) != 1 {
+		http.Error(w, "unauthorized: missing or incorrect X-Communicator-Token", http.StatusUnauthorized)
 		return
 	}
 	var req communicatorSendRequest

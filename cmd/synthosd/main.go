@@ -174,6 +174,10 @@ func main() {
 
 	// Expose RPC for status, balances, tx submission, and on-demand block proposals.
 	srv := rpc.NewServer(ch, st, n)
+	srv.CommunicatorToken = strings.TrimSpace(os.Getenv("SYNTHOS_COMMUNICATOR_TOKEN"))
+	if srv.CommunicatorToken == "" {
+		log.Printf("communicator: SYNTHOS_COMMUNICATOR_TOKEN not set -- /communicator/send is disabled for this node")
+	}
 	srv.SetPeerURLs(cfg.HTTPPeers)
 	srv.StartPeerSync(15 * time.Second)
 	startRegistryHeartbeat(cfg.NodeID, ch.ChainID, keys.Public)
