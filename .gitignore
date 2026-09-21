@@ -65,6 +65,7 @@ contracts/.env.mainnet.generated
 # Sovereign identity material (never commit)
 *_KEYS*.txt
 *WALLET*.txt
+.synthos/vault.json
 validator-deployment/validator-keys.json
 validator-deployment/validators.txt
 validator-deployment/test-results.json

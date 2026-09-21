@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -26,13 +27,36 @@ var (
 	mailbox   = make(map[string][][]byte) // AgentID -> List of Envelopes
 )
 
+// hardwareID returns a best-effort, non-secret machine identifier: an
+// explicit override, else the hostname. This is the same placeholder
+// pattern cmd/agent/main.go already uses for the same purpose. It is NOT a
+// real hardware root of trust (TPM, secure enclave) -- it exists so a vault
+// isn't silently portable to a different machine by accident, not as
+// tamper-proof binding. Previously this was a hardcoded literal
+// ("hardware-desktop-v1", identical on every install), which combined with
+// vault.go's old unsalted-SHA256 KDF and a hardcoded default passphrase
+// fallback below made the vault's encryption key a fixed, publicly
+// computable value -- see internal/crypto/vault.go's doc comments.
+func hardwareID() string {
+	if v := os.Getenv("SYNTHOS_HARDWARE_ID"); v != "" {
+		return v
+	}
+	hostname, _ := os.Hostname()
+	return fmt.Sprintf("host-%s", hostname)
+}
+
 func main() {
 	// 1. Initialize Identity & Hardware Binding
-	hwID := "hardware-desktop-v1"
+	hwID := hardwareID()
 	vaultPath := ".synthos/vault.json"
 	passphrase := os.Getenv("SYNTHOS_PASSPHRASE")
 	if passphrase == "" {
-		passphrase = "default_sovereign_secret"
+		// No default fallback: a fixed, hardcoded passphrase here would once
+		// again make the vault's encryption key a fixed, publicly
+		// computable value regardless of how good vault.go's KDF is (this
+		// is exactly how the audit recovered a real key from this repo's
+		// own checked-in .synthos/vault.json). The operator must supply one.
+		log.Fatal("❌ SYNTHOS_PASSPHRASE is required (no default is used) -- set it to a real passphrase and rerun. This encrypts a real private key; losing it after vault creation loses the identity, and using a weak/reused one defeats the point of encrypting it at all.")
 	}
 
 	var pub ed25519.PublicKey
@@ -45,12 +69,24 @@ func main() {
 		if loadErr != nil {
 			log.Fatalf("❌ Vault Decryption Failed: %v", loadErr)
 		}
-		passphrase = "CLEARED"
 		pub = priv.Public().(ed25519.PublicKey)
 	} else {
 		log.Println("✨ No vault found. Generating new hardware-bound identity...")
 		pub, priv, _ = ed25519.GenerateKey(rand.Reader)
+		// Previously this new identity was never persisted at all -- every
+		// restart with no vault present silently generated (and lost) a
+		// brand new identity. Save it now, encrypted with the operator's
+		// own passphrase, so the "no vault found" path actually produces a
+		// durable identity rather than only an ephemeral in-memory one.
+		if err := os.MkdirAll(filepath.Dir(vaultPath), 0o700); err != nil {
+			log.Fatalf("❌ Creating vault directory: %v", err)
+		}
+		if err := crypto.SaveEncryptedKey(vaultPath, priv, passphrase, hwID); err != nil {
+			log.Fatalf("❌ Saving new vault: %v", err)
+		}
+		log.Println("🔐 New identity encrypted and saved to", vaultPath, "-- back up this file and your passphrase together; losing either one loses this identity permanently.")
 	}
+	passphrase = "CLEARED"
 
 	addr := chain.AddressFromPublicKey(pub)
 	agentID := fmt.Sprintf("agent-%s", string(addr)[2:18])
