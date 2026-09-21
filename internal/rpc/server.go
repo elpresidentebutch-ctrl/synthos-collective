@@ -553,17 +553,27 @@ func (s *Server) CatchUpOnce() error {
 	myHeight := s.Chain.Height()
 	for _, peer := range s.PeerURLs {
 		status, err := s.peerStatus(peer)
-		if err != nil || status.Height <= myHeight {
+		if err != nil {
+			continue
+		}
+		if status.Height <= myHeight {
 			continue
 		}
 		blocks, err := s.peerBlocks(peer, int(myHeight+1))
 		if err != nil {
+			log.Printf("http peer catch-up: fetching blocks from %s (from=%d): %v", peer, myHeight+1, err)
 			continue
 		}
+		log.Printf("http peer catch-up: fetched %d block(s) from %s starting at height %d", len(blocks), peer, myHeight+1)
 		applied := 0
 		for _, block := range blocks {
 			ok, err := s.applyPeerBlock(block)
 			if err != nil {
+				h := uint64(0)
+				if block != nil {
+					h = block.Header.Height
+				}
+				log.Printf("http peer catch-up: rejecting block height=%d from %s: %v", h, peer, err)
 				break
 			}
 			if ok {
