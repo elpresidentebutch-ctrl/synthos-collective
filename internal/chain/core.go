@@ -508,7 +508,15 @@ func (s *State) applyBridgeMetadata(tx Tx) error {
 
 func (s *State) verifyBridgeReleaseProofLocked(tx Tx, sourceChainID, sourceEventID, assetID string) error {
 	if len(s.BridgeValidators) == 0 {
-		return nil
+		// Fail closed. This used to `return nil` here -- meaning any
+		// bridge_release_native tx would be accepted with zero signatures
+		// whenever no bridge validators were configured, which is the
+		// actual current production state (no bridge validator config
+		// exists anywhere in the render configs seen this audit). A real
+		// bridge must never authorize a release on an unconfigured/absent
+		// validator set; that's not "open by default," it's "unable to
+		// verify anything, so trust nothing."
+		return errors.New("bridge release rejected: no bridge validators configured")
 	}
 	raw := metadataValue(tx.Metadata, "validator_signatures")
 	if raw == "" {

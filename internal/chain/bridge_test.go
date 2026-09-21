@@ -83,29 +83,48 @@ func TestBridgeNativeLockRecordsReceipt(t *testing.T) {
 	}
 }
 
+// TestBridgeReleaseRejectsSourceReplay covers replay protection on a
+// properly-secured bridge (validators configured, releases require quorum
+// signatures) -- not on an unconfigured one. verifyBridgeReleaseProofLocked
+// now fails closed when no bridge validators are configured (see the audit
+// fix in core.go), so this test configures a real validator set and signs
+// each release, the same way TestBridgeReleaseRequiresValidatorQuorumWhenConfigured
+// does, rather than relying on the old fail-open behavior to let an
+// unsigned release through.
 func TestBridgeReleaseRejectsSourceReplay(t *testing.T) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
+	v1pub, v1priv, _ := ed25519.GenerateKey(rand.Reader)
 	bridgeAuthority := AddressFromPublicKey(pub)
 	recipient := Address("0x2222222222222222222222222222222222222222")
+	sourceChainID := "84532"
+	sourceEventID := "0xsource-lock-1"
+	amount := uint64(10_000)
 	c, err := NewChain(Genesis{
 		ChainID:   "synthos-test",
 		TxChainID: 20260702,
 		Alloc: map[Address]uint64{
 			bridgeAuthority: 1_000_000,
 		},
+		Metadata: map[string]any{
+			"bridge_quorum": float64(1),
+			"bridge_validators": []any{
+				map[string]any{"id": "validator-1", "public_key": "0x" + hex.EncodeToString(v1pub)},
+			},
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	metadata := []KeyValuePair{
-		{Key: "type", Value: "bridge_release_native"},
-		{Key: "source_chain_id", Value: "84532"},
-		{Key: "source_event_id", Value: "0xsource-lock-1"},
+
+	sig := []BridgeValidatorSignature{
+		signBridgeRelease("validator-1", v1priv, sourceChainID, sourceEventID, recipient, "syn", amount),
 	}
-	first := signedBridgeTx(t, c, priv, bridgeAuthority, recipient, 10_000, metadata)
+	metadata := releaseMetadata(sourceChainID, sourceEventID, sig)
+
+	first := signedBridgeTx(t, c, priv, bridgeAuthority, recipient, amount, metadata)
 	if err := c.SubmitTx(first); err != nil {
 		t.Fatalf("submit first release: %v", err)
 	}
@@ -113,14 +132,17 @@ func TestBridgeReleaseRejectsSourceReplay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build first block: %v", err)
 	}
+	if len(block.Tx) != 1 {
+		t.Fatalf("expected first release included, got %d tx", len(block.Tx))
+	}
 	if err := c.FinalizeBlock(block); err != nil {
 		t.Fatalf("finalize first release: %v", err)
 	}
-	if got := c.State.Get(recipient).Balance; got != 10_000 {
-		t.Fatalf("recipient balance=%d want 10000", got)
+	if got := c.State.Get(recipient).Balance; got != amount {
+		t.Fatalf("recipient balance=%d want %d", got, amount)
 	}
 
-	replay := signedBridgeTx(t, c, priv, bridgeAuthority, recipient, 10_000, metadata)
+	replay := signedBridgeTx(t, c, priv, bridgeAuthority, recipient, amount, metadata)
 	if err := c.SubmitTx(replay); err != nil {
 		t.Fatalf("submit replay to mempool: %v", err)
 	}
