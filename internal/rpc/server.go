@@ -321,6 +321,24 @@ func (s *Server) handleBlocks(w http.ResponseWriter, r *http.Request) {
 		from = parsed
 	}
 	blocks := s.Chain.BlocksFrom(from)
+	// Optional cap so a caller (a human debugging via curl, or a peer
+	// catching up over HTTP) can request a bounded page instead of the
+	// entire remaining chain in one response. Unbounded was fine while the
+	// chain was small; at tens of thousands of blocks a single response is
+	// many MB, which risks slow requests and timeouts for no benefit --
+	// catch-up applies blocks one at a time regardless, so it doesn't need
+	// them all in one round trip. Omitting limit keeps the old unbounded
+	// behavior so nothing else relying on this endpoint breaks.
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 0 {
+			http.Error(w, "invalid limit", http.StatusBadRequest)
+			return
+		}
+		if limit < len(blocks) {
+			blocks = blocks[:limit]
+		}
+	}
 	writeJSON(w, map[string]any{
 		"blocks": blocks,
 		"count":  len(blocks),
@@ -549,6 +567,14 @@ func (s *Server) StartPeerSync(interval time.Duration) {
 	}()
 }
 
+// catchUpBatchSize bounds how many blocks CatchUpOnce requests in a single
+// HTTP round trip. The chain only grows, so an unbounded "give me
+// everything from height N" request (the old behavior) gets slower and
+// larger forever; fetching in bounded pages keeps each request's size
+// roughly constant regardless of how far behind a catching-up node is or
+// how long the chain has been running.
+const catchUpBatchSize = 500
+
 func (s *Server) CatchUpOnce() error {
 	myHeight := s.Chain.Height()
 	for _, peer := range s.PeerURLs {
@@ -559,29 +585,41 @@ func (s *Server) CatchUpOnce() error {
 		if status.Height <= myHeight {
 			continue
 		}
-		blocks, err := s.peerBlocks(peer, int(myHeight+1))
-		if err != nil {
-			log.Printf("http peer catch-up: fetching blocks from %s (from=%d): %v", peer, myHeight+1, err)
-			continue
-		}
-		log.Printf("http peer catch-up: fetched %d block(s) from %s starting at height %d", len(blocks), peer, myHeight+1)
-		applied := 0
-		for _, block := range blocks {
-			ok, err := s.applyPeerBlock(block)
+		anyApplied := false
+		for {
+			blocks, err := s.peerBlocks(peer, int(myHeight+1), catchUpBatchSize)
 			if err != nil {
-				h := uint64(0)
-				if block != nil {
-					h = block.Header.Height
-				}
-				log.Printf("http peer catch-up: rejecting block height=%d from %s: %v", h, peer, err)
+				log.Printf("http peer catch-up: fetching blocks from %s (from=%d): %v", peer, myHeight+1, err)
 				break
 			}
-			if ok {
-				applied++
-				myHeight = s.Chain.Height()
+			if len(blocks) == 0 {
+				break
+			}
+			log.Printf("http peer catch-up: fetched %d block(s) from %s starting at height %d", len(blocks), peer, myHeight+1)
+			batchApplied := 0
+			stop := false
+			for _, block := range blocks {
+				ok, err := s.applyPeerBlock(block)
+				if err != nil {
+					h := uint64(0)
+					if block != nil {
+						h = block.Header.Height
+					}
+					log.Printf("http peer catch-up: rejecting block height=%d from %s: %v", h, peer, err)
+					stop = true
+					break
+				}
+				if ok {
+					batchApplied++
+					anyApplied = true
+					myHeight = s.Chain.Height()
+				}
+			}
+			if stop || len(blocks) < catchUpBatchSize {
+				break
 			}
 		}
-		if applied > 0 {
+		if anyApplied {
 			return nil
 		}
 	}
@@ -637,8 +675,12 @@ func (s *Server) probePeerStatus(peer string, timeout time.Duration) (peerStatus
 	return out, err
 }
 
-func (s *Server) peerBlocks(peer string, from int) ([]*chain.Block, error) {
-	resp, err := s.client().Get(strings.TrimRight(peer, "/") + "/blocks?from=" + strconv.Itoa(from))
+func (s *Server) peerBlocks(peer string, from int, limit int) ([]*chain.Block, error) {
+	url := strings.TrimRight(peer, "/") + "/blocks?from=" + strconv.Itoa(from)
+	if limit > 0 {
+		url += "&limit=" + strconv.Itoa(limit)
+	}
+	resp, err := s.client().Get(url)
 	if err != nil {
 		return nil, err
 	}
