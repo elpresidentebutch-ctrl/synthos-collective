@@ -640,7 +640,13 @@ func (n *Node) BuildAndSignProposal() (*chain.Block, error) {
 	if err := n.signProposalBlock(b); err != nil {
 		return nil, err
 	}
-	n.Consensus.OnProposal(b)
+	// RecordOwnProposal, not OnProposal: this is our own producer retrying
+	// an HTTP-consensus round that hasn't reached quorum yet, not an
+	// externally-observed proposal. See RecordOwnProposal's doc comment for
+	// why that distinction matters -- using OnProposal here caused both a
+	// self-vote livelock and repeated false double-sign self-slashing on
+	// every retry.
+	n.Consensus.RecordOwnProposal(b)
 	return b, nil
 }
 

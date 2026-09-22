@@ -140,6 +140,55 @@ func (e *Engine) OnProposal(b *chain.Block) {
 	}
 }
 
+// RecordOwnProposal registers a candidate this node is building as its own
+// proposal for a not-yet-finalized height, unconditionally superseding
+// whatever (if anything) this node previously proposed at that height
+// itself, and clearing any votes collected for the old candidate.
+//
+// This exists specifically for BuildAndSignProposal's HTTP-consensus retry
+// loop (rpc.Server.ProposeBlockWithConsensus, called on a timer by
+// startBlockProducer): if a round doesn't reach quorum in time, the next
+// tick builds a fresh candidate for the SAME still-unfinalized height. Two
+// things go wrong if that fresh candidate is registered via the ordinary
+// OnProposal instead:
+//
+//  1. Livelock: OnProposal's min-hash tie-break exists to arbitrate between
+//     genuinely competing candidates from different validators within one
+//     round. It was never meant to handle the SAME proposer re-registering
+//     a new candidate after abandoning an old, un-finalized one -- if the
+//     new candidate's hash doesn't happen to sort below the stale entry
+//     already sitting in proposalsByHeight, that stale entry is never
+//     replaced, and this node's own SelfVote (cast for the block it just
+//     built and actually wants to finalize) fails with ErrUnknownProposal
+//     forever, since nothing ever again matches the abandoned entry it's
+//     stuck comparing against.
+//  2. False slashing: OnProposal also reports every proposal it sees to the
+//     SlashingTracker as a double-sign candidate, keyed only on (proposer,
+//     height) -- not on whether the block is actually different, and with
+//     no concept of "the previous one at this height was abandoned, never
+//     voted on, and can never finalize." That's correct for a proposal
+//     arriving from the network (HandleProposal): two different blocks
+//     broadcast by the same validator for one height, in parallel, headed
+//     to potentially different peers, is real equivocation. It is NOT
+//     correct for a producer retrying its own round locally -- yet it was
+//     firing on literally every retry, real slashing balance debit
+//     included.
+//
+// A producer retrying an abandoned, zero-vote round is not double-signing
+// in any meaningful sense -- the old candidate never had a chance at
+// quorum and nothing else in the network ever saw or voted on it. So this
+// method deliberately does NOT go through the SlashingTracker at all.
+func (e *Engine) RecordOwnProposal(b *chain.Block) {
+	if b == nil || b.Hash == "" {
+		return
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	h := b.Header.Height
+	e.proposalsByHeight[h] = b
+	e.votes[h] = make(map[string]voteRecord)
+}
+
 func (e *Engine) Proposal(blockHash string) (*chain.Block, bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()

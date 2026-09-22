@@ -60,6 +60,128 @@ func TestEngine_OnVote_Finality(t *testing.T) {
 	}
 }
 
+// TestEngine_RecordOwnProposal_AlwaysSupersedesRegardlessOfHash reproduces
+// the exact livelock found live in production: a producer retries an
+// HTTP-consensus round that didn't reach quorum, building a fresh
+// candidate whose hash does NOT happen to sort below the stale one already
+// registered for that height. With the old OnProposal-based path, the
+// stale entry would never be replaced and a subsequent OnVote for the new
+// candidate would fail with ErrUnknownProposal forever. RecordOwnProposal
+// must unconditionally replace it instead.
+func TestEngine_RecordOwnProposal_AlwaysSupersedesRegardlessOfHash(t *testing.T) {
+	e := NewEngine(1)
+	e.SetValidators([]string{"producer"})
+
+	stale := &chain.Block{Header: chain.BlockHeader{Height: 5, ProposerID: "producer"}, Hash: "0xAAA_this_sorts_first"}
+	e.RecordOwnProposal(stale)
+
+	fresh := &chain.Block{Header: chain.BlockHeader{Height: 5, ProposerID: "producer"}, Hash: "0xZZZ_this_sorts_last"}
+	e.RecordOwnProposal(fresh)
+
+	got, ok := e.Proposal(fresh.Hash)
+	if !ok || got != fresh {
+		t.Fatalf("expected the fresh retry to become canonical even though its hash sorts after the stale one")
+	}
+
+	// The self-vote that would have failed live in production.
+	finalized, votesFor, _, err := e.OnVote(BlockVote{
+		BlockHash: fresh.Hash,
+		Height:    5,
+		VoterID:   "producer",
+		Vote:      1,
+	})
+	if err != nil {
+		t.Fatalf("self-vote for the freshest own proposal must succeed, got: %v", err)
+	}
+	if votesFor != 1 || !finalized {
+		t.Fatalf("expected self-vote to count toward the fresh candidate: votesFor=%d finalized=%v", votesFor, finalized)
+	}
+}
+
+// TestEngine_RecordOwnProposal_ClearsStaleVotes proves a retry doesn't let
+// votes cast for the abandoned candidate silently carry over and count
+// toward the new one.
+func TestEngine_RecordOwnProposal_ClearsStaleVotes(t *testing.T) {
+	e := NewEngine(3)
+	e.SetValidators([]string{"producer", "v2", "v3"})
+
+	stale := &chain.Block{Header: chain.BlockHeader{Height: 9, ProposerID: "producer"}, Hash: "0xstale"}
+	e.RecordOwnProposal(stale)
+	if _, _, _, err := e.OnVote(BlockVote{BlockHash: stale.Hash, Height: 9, VoterID: "v2", Vote: 1}); err != nil {
+		t.Fatalf("vote on stale candidate: %v", err)
+	}
+
+	fresh := &chain.Block{Header: chain.BlockHeader{Height: 9, ProposerID: "producer"}, Hash: "0xfresh"}
+	e.RecordOwnProposal(fresh)
+
+	finalized, votesFor, required, ok := e.FinalityStatus(fresh.Hash)
+	if !ok {
+		t.Fatal("expected the fresh candidate to be known")
+	}
+	if votesFor != 0 || finalized {
+		t.Fatalf("v2's vote for the abandoned stale candidate must not carry over: votesFor=%d finalized=%v required=%d", votesFor, finalized, required)
+	}
+}
+
+// TestEngine_RecordOwnProposal_NeverFalselySlashesOnRetry reproduces the
+// second half of the live production bug: OnProposal reported every
+// re-registration to the SlashingTracker as a double-sign candidate, so a
+// producer retrying its own unfinalized round was slashing its own real
+// balance on every single retry. RecordOwnProposal must never do that.
+func TestEngine_RecordOwnProposal_NeverFalselySlashesOnRetry(t *testing.T) {
+	e := NewEngine(1)
+	e.SetValidators([]string{"producer"})
+	tracker := NewSlashingTracker(SlashingParams{DoubleSignPenalty: 1000})
+	slashed := false
+	tracker.SetExecuteSlash(func(validatorID string, penalty uint64) { slashed = true })
+	e.SetSlashingTracker(tracker)
+
+	for i := 0; i < 5; i++ {
+		b := &chain.Block{
+			Header: chain.BlockHeader{Height: 12, ProposerID: "producer"},
+			Hash:   fmt.Sprintf("0xretry%d", i),
+		}
+		e.RecordOwnProposal(b)
+	}
+
+	if slashed {
+		t.Fatal("a producer retrying its own unfinalized round must never be slashed for double-signing")
+	}
+	if n := tracker.TotalSlashEvents(); n != 0 {
+		t.Fatalf("expected zero slashing events from own-proposal retries, got %d", n)
+	}
+}
+
+// TestEngine_OnProposal_StillDetectsRealDoubleSigning is a guard rail: the
+// fix above must not weaken OnProposal itself. A validator whose proposals
+// arrive via the network path (HandleProposal, observing what OTHER nodes
+// broadcast) genuinely proposing two different blocks at one height is
+// still real equivocation and must still be reported.
+func TestEngine_OnProposal_StillDetectsRealDoubleSigning(t *testing.T) {
+	e := NewEngine(1)
+	e.SetValidators([]string{"attacker"})
+	tracker := NewSlashingTracker(SlashingParams{DoubleSignPenalty: 1000})
+	var slashedValidator string
+	var slashedPenalty uint64
+	tracker.SetExecuteSlash(func(validatorID string, penalty uint64) {
+		slashedValidator = validatorID
+		slashedPenalty = penalty
+	})
+	e.SetSlashingTracker(tracker)
+
+	e.OnProposal(&chain.Block{Header: chain.BlockHeader{Height: 7, ProposerID: "attacker"}, Hash: "0xone"})
+	e.OnProposal(&chain.Block{Header: chain.BlockHeader{Height: 7, ProposerID: "attacker"}, Hash: "0xtwo"})
+
+	// executeSlash is now called synchronously (see slashing.go), so this
+	// is safe to check immediately with no synchronization needed.
+	if slashedValidator != "attacker" || slashedPenalty != 1000 {
+		t.Fatalf("a validator proposing two different blocks at the same height via the network path must still be detected as double-signing: got validator=%q penalty=%d", slashedValidator, slashedPenalty)
+	}
+	if n := tracker.TotalSlashEvents(); n != 1 {
+		t.Fatalf("expected exactly 1 slashing event, got %d", n)
+	}
+}
+
 func TestEngine_OnVote_RejectsUnknownValidator(t *testing.T) {
 	e := NewEngine(2)
 	e.SetValidators([]string{"v1", "v2"})

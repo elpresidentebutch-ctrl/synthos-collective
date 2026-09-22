@@ -204,11 +204,21 @@ func (st *SlashingTracker) recordSlashingLocked(validatorID string, eventType Sl
 
 	// Make the penalty real: hand it to whoever wired a real executor
 	// (normally something that debits the validator's actual balance in
-	// chain state). Called synchronously but outside any lock the caller
-	// might reasonably want to take -- callers should keep this fast and
-	// non-reentrant into the tracker.
+	// chain state). Called synchronously, while st.mu is held (this method
+	// only ever runs from inside a *Locked function). This used to be
+	// dispatched via "go st.executeSlash(...)" -- an unsynchronized
+	// goroutine racing with every other reader/writer of chain.State
+	// (block building, State.Root() at finalization, etc.), confirmed by
+	// go test -race. Real, in-production chain state does not tolerate
+	// being mutated from a fire-and-forget goroutine with no ordering
+	// guarantee relative to the block currently being built. The wired
+	// callback (internal/node.NewNode) only ever touches chain.State
+	// through its own independently-locked Get/Set, which does not touch
+	// this tracker back, so calling it synchronously here cannot deadlock.
+	// Callers should still keep executeSlash fast and non-reentrant into
+	// the tracker.
 	if st.executeSlash != nil && penalty > 0 {
-		go st.executeSlash(validatorID, penalty)
+		st.executeSlash(validatorID, penalty)
 	}
 
 	return fmt.Errorf("validator %s slashed for %s: penalty=%d stake_remaining=%d",
