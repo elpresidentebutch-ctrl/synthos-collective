@@ -5,6 +5,17 @@
   "rpc_listen": ":8080",
   "genesis_path": "/config/genesis.json",
   "peers": [],
+  "http_peers": [
+    "https://synthos-validator-11.onrender.com",
+    "https://synthos-validator-12.onrender.com",
+    "https://synthos-validator-13.onrender.com",
+    "https://synthos-validator-14.onrender.com",
+    "https://synthos-validator-15.onrender.com"
+  ],
   "listen_addr": ":0",
+  "trusted_validators": ["synthos-render-validator-1", "synthos-validator-12"],
+  "peer_keys": {
+    "synthos-validator-12": "0x5528a57c397d8539d88b3ef5dbecdec3ec8ca261afd2eb44e9992098c652c355"
+  },
   "state_root_enforce_from_height": 30000
 }
