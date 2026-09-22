@@ -94,6 +94,17 @@ func NewChain(genesis Genesis) (*Chain, error) {
 		Mempool:   make(map[string]Tx),
 	}
 
+	// stateRoot/hash normally come from a fresh computation, but a genesis
+	// that's already live can pin them instead -- see
+	// Genesis.PinnedGenesisStateRoot/PinnedGenesisHash for why that matters
+	// (the hashing formula those functions would otherwise be recomputed
+	// with has changed over time, and a long-running node never recomputes
+	// its own genesis).
+	stateRoot := st.Root()
+	if pinned, ok := genesis.PinnedGenesisStateRoot(); ok {
+		stateRoot = pinned
+	}
+
 	gb := &Block{
 		Header: BlockHeader{
 			Height:       0,
@@ -101,12 +112,14 @@ func NewChain(genesis Genesis) (*Chain, error) {
 			Timestamp:    time.Unix(0, 0).UTC(),
 			ProposerID:   "genesis",
 			TxMerkleRoot: EmptyTxMerkleRoot,
-			StateRoot:    st.Root(),
+			StateRoot:    stateRoot,
 		},
 		Tx:        nil,
 		Finalized: true,
 	}
-	if _, err := gb.ComputeHash(); err != nil {
+	if pinnedHash, ok := genesis.PinnedGenesisHash(); ok {
+		gb.Hash = pinnedHash
+	} else if _, err := gb.ComputeHash(); err != nil {
 		return nil, err
 	}
 	c.Blocks = append(c.Blocks, gb)

@@ -118,6 +118,45 @@ func (g Genesis) Bytes() ([]byte, error) {
 	return json.MarshalIndent(g, "", "  ")
 }
 
+// PinnedGenesisStateRoot and PinnedGenesisHash let a genesis.json declare the
+// exact state_root/hash its genesis block must carry, instead of NewChain
+// recomputing them fresh from ToState()+State.Root()+Block.ComputeHash().
+//
+// This matters because that computation depends on the exact hashing formula
+// in State.Root()/buildMerkleRoot (core.go), and that formula has changed
+// over time as real bugs were fixed (e.g. the commit that stopped folding
+// self-attested ImmuneNodes/SovereignProofs into Root(), and the Merkle
+// odd-leaf fix -- both correct, and both silently change what any *fresh*
+// computation of Root() returns for the same account data). A node that has
+// been running continuously since before one of those fixes never
+// recomputes its own genesis block -- on every restart it just reloads
+// whatever it already persisted to disk -- so its real, live genesis stays
+// pinned to whichever formula was in effect the very first time it ever
+// booted, permanently, regardless of later code changes. A brand-new or
+// freshly-resynced node building NewChain(genesis) from that exact same
+// genesis.json would otherwise compute a *different* genesis block under
+// today's corrected formula, and so could never agree with the long-running
+// node on block 0 -- the one block every other block's hash chain is
+// ultimately anchored to via ParentHash -- no matter what trust, auth, or
+// state-root-enforcement config is layered on top.
+//
+// Declaring the known-correct, already-live values here makes every node --
+// new, resynced, or long-running -- agree on the exact same genesis block by
+// construction, permanently, regardless of any future change to how
+// State.Root() or block hashing work. Omit both (as
+// config/genesis.example.json and every test fixture do) to keep computing
+// them fresh, which is the only sane default for a genesis that has never
+// actually been deployed anywhere yet.
+func (g Genesis) PinnedGenesisStateRoot() (string, bool) {
+	v, ok := g.Metadata["pinned_genesis_state_root"].(string)
+	return v, ok && v != ""
+}
+
+func (g Genesis) PinnedGenesisHash() (string, bool) {
+	v, ok := g.Metadata["pinned_genesis_hash"].(string)
+	return v, ok && v != ""
+}
+
 func parseBridgeValidators(raw any) (map[string]string, error) {
 	out := map[string]string{}
 	items, ok := raw.([]any)

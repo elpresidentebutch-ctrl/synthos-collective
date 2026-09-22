@@ -18,6 +18,8 @@
               "0x66a0c64a9ff8d5187715b1fefed6b0ccc883b702": 2000
       },
       "metadata": {
+              "pinned_genesis_state_root": "0x19d2ad03ed52a28e5cd2302b898e6e950069a54da8b782c6a4ea3782cb447f49",
+              "pinned_genesis_hash": "0x0173b6a906e328e7ee4ef3efde46f7ceefa13fafbb22f3abd75607d9d22d927e",
               "symbol": "SYN",
               "decimals": 0,
               "network": "SYNTHOS Collective",
