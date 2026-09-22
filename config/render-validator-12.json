@@ -12,5 +12,6 @@
     "https://synthos-validator-15.onrender.com"
   ],
   "listen_addr": ":0",
+  "auth_enforce_from_height": 15265,
   "state_root_enforce_from_height": 30000
 }

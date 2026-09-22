@@ -380,3 +380,120 @@ func TestChain_FinalizeBlock_FollowerMustTrustProducersKeyToCatchUp(t *testing.T
 		t.Fatalf("expected fixed follower chain height 1, got %d", fixedFollower.Height())
 	}
 }
+
+// TestChain_FinalizeBlock_FreshNodeNeedsAuthEnforceFromHeightToReplayPreSigningHistory
+// reproduces a second, independent production incident found while
+// investigating the validator-13/rpc freeze above: synthos-validator-14, a
+// long-suspended node with no local chain data, was resumed and immediately
+// froze at height 11 trying to catch up from genesis -- even after it was
+// correctly configured to trust synthos-validator-12's key. Live chain data
+// confirmed this chain has real, permanently unsigned production history:
+// every block from height 1 through 15264 has no ProposerSignature/
+// QuorumSignatures at all (block-signing was only turned on starting at
+// height 15265 -- the first signed block, confirmed live). A node that
+// already has that old history loaded from its own persisted snapshot never
+// re-validates it (see chain.go's snapshot-load path), so this never
+// affected validator-13/rpc's boot. But a node replaying the ENTIRE chain
+// from genesis via HTTP catch-up (a brand new node, or one recovering from
+// lost data) re-validates every single block through FinalizeBlock, and
+// once a validator set is configured (as it must be, to authenticate the
+// signed blocks from height 15265 on), validateBlockLocked has no way to
+// know those early unsigned blocks are legitimate pre-signing history
+// rather than a forgery -- it rejects them exactly like the unsigned-block
+// attack in TestChain_FinalizeBlock_RejectsUnsignedBlockOnceValidatorSetConfigured
+// above, permanently blocking replay past height 1. AuthEnforceFromHeight
+// exists for exactly this: grandfather in real pre-signing history below the
+// height signing actually started at (must match production: 15265), while
+// still requiring valid signatures on and after it.
+func TestChain_FinalizeBlock_FreshNodeNeedsAuthEnforceFromHeightToReplayPreSigningHistory(t *testing.T) {
+	producerPub, producerPriv := mustGenerateKey(t)
+	const signingStartHeight = 3 // stands in for production's real height 15265
+
+	buildUnsignedHistoryBlock := func(c *Chain, height uint64) *Block {
+		tip := c.Tip()
+		b := &Block{
+			Header: BlockHeader{
+				Height:       height,
+				ParentHash:   tip.Hash,
+				ProposerID:   "synthos-validator-11", // the old, pre-signing-era proposer, exactly as seen live
+				TxMerkleRoot: EmptyTxMerkleRoot,
+				StateRoot:    tip.Header.StateRoot,
+			},
+			Tx: []Tx{},
+		}
+		if _, err := b.ComputeHash(); err != nil {
+			t.Fatal(err)
+		}
+		return b // deliberately no ProposerSignature/QuorumSignatures: matches real pre-signing blocks
+	}
+
+	newChainWithValidatorSet := func() *Chain {
+		g := Genesis{ChainID: "test-chain", Alloc: map[Address]uint64{"0xgenesis": 1}}
+		c, err := NewChain(g)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c.SetValidatorSet(map[string]ed25519.PublicKey{"synthos-validator-12": producerPub}, 1)
+		return c
+	}
+
+	// Without AuthEnforceFromHeight (the state every config shipped in before
+	// this fix): a fresh node can't even replay block 1 of real history.
+	t.Run("fails without grandfathering", func(t *testing.T) {
+		c := newChainWithValidatorSet()
+		unsigned1 := buildUnsignedHistoryBlock(c, 1)
+		if err := c.FinalizeBlock(unsigned1); err == nil {
+			t.Fatal("expected a fresh node with no AuthEnforceFromHeight set to reject real, unsigned pre-signing history, reproducing the validator-14 freeze")
+		}
+	})
+
+	// With AuthEnforceFromHeight set to the real signing-start height: the
+	// same unsigned history replays cleanly, and enforcement still kicks in
+	// exactly at that height, rejecting an unsigned block there.
+	t.Run("succeeds with grandfathering, still enforces from the configured height", func(t *testing.T) {
+		c := newChainWithValidatorSet()
+		c.SetAuthEnforceFromHeight(signingStartHeight)
+
+		for h := uint64(1); h < signingStartHeight; h++ {
+			unsigned := buildUnsignedHistoryBlock(c, h)
+			if err := c.FinalizeBlock(unsigned); err != nil {
+				t.Fatalf("expected grandfathered unsigned block at height %d to finalize, got: %v", h, err)
+			}
+		}
+		if c.Height() != signingStartHeight-1 {
+			t.Fatalf("expected height %d after replaying grandfathered history, got %d", signingStartHeight-1, c.Height())
+		}
+
+		// An unsigned block AT the enforcement height must now be rejected...
+		stillUnsigned := buildUnsignedHistoryBlock(c, signingStartHeight)
+		if err := c.FinalizeBlock(stillUnsigned); err == nil {
+			t.Fatal("expected an unsigned block at/after AuthEnforceFromHeight to be rejected -- grandfathering must not extend past the configured height")
+		}
+
+		// ...but a properly signed one at that same height finalizes normally.
+		tip := c.Tip()
+		signed := &Block{
+			Header: BlockHeader{
+				Height:       signingStartHeight,
+				ParentHash:   tip.Hash,
+				ProposerID:   "synthos-validator-12",
+				TxMerkleRoot: EmptyTxMerkleRoot,
+				StateRoot:    tip.Header.StateRoot,
+			},
+			Tx: []Tx{},
+		}
+		if _, err := signed.ComputeHash(); err != nil {
+			t.Fatal(err)
+		}
+		signed.ProposerSignature = signHex(producerPriv, []byte(signed.Hash))
+		signed.QuorumSignatures = map[string]string{
+			"synthos-validator-12": signHex(producerPriv, signed.QuorumApprovalMessage()),
+		}
+		if err := c.FinalizeBlock(signed); err != nil {
+			t.Fatalf("expected a properly signed block at the enforcement height to finalize, got: %v", err)
+		}
+		if c.Height() != signingStartHeight {
+			t.Fatalf("expected height %d, got %d", signingStartHeight, c.Height())
+		}
+	})
+}
