@@ -95,8 +95,32 @@ func main() {
 	a := agent.NewAgent(cfg.NodeID, "", "", "synthos-hw-"+cfg.NodeID, 0)
 	a.AttachKeys(keys)
 
-	// Use TCP transport so multiple synthosd instances can talk across processes.
-	t := network.NewTCPTransport(a.Identity.AgentID, cfg.ListenAddr, cfg.Peers)
+	// Use a TLS-encrypted, peer-authenticated TCP transport so multiple
+	// synthosd instances can talk across processes -- this replaces the
+	// old TCPTransport, which sent every message in plaintext and had no
+	// notion of peer identity at the connection level at all: anyone who
+	// could reach the listen port could read every message and open a
+	// connection claiming to be any agent ID. See
+	// internal/network/secure_transport.go and peer_auth.go for how this
+	// one authenticates peers (a signed handshake, cryptographically bound
+	// to the specific TLS session it arrived on) without needing any new
+	// secrets: it reuses this node's existing ed25519 identity key and the
+	// same cfg.PeerKeys roster already configured for consensus.
+	//
+	// requirePeerAuth is on automatically whenever this node has any peer
+	// keys configured at all; a bare devnet/local config with no
+	// cfg.PeerKeys set (nothing to check signatures against) falls back to
+	// accepting any handshake, same as this transport's previous
+	// zero-configuration behavior.
+	t, err := network.NewSecureTCPTransport(a.Identity.AgentID, cfg.ListenAddr, cfg.Peers, keys.Private, true, len(cfg.PeerKeys) > 0)
+	if err != nil {
+		panic(fmt.Errorf("creating secure transport: %w", err))
+	}
+	for agentID, pubKeyHex := range cfg.PeerKeys {
+		if err := t.RegisterTrustedPeer(agentID, pubKeyHex); err != nil {
+			panic(fmt.Errorf("registering trusted peer %q for secure transport: %w", agentID, err))
+		}
+	}
 	a.AttachTransport(t)
 
 	validators := cfg.Validators

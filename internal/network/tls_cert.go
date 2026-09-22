@@ -130,14 +130,32 @@ func (cm *CertificateManager) createTLSCertificate() (*tls.Certificate, error) {
 	return &tlsCert, nil
 }
 
-// GetTLSConfig returns a TLS configuration for the server.
+// GetServerTLSConfig returns a TLS configuration for the server.
+//
+// This used to set ClientAuth: RequireAndVerifyClientCert with ClientCAs:
+// cm.rootCAs -- but cm.rootCAs contains only THIS node's own self-signed
+// certificate (see NewCertificateManager above), and every node generates
+// its own independent self-signed cert. That combination would never
+// actually let two different nodes complete a TLS handshake at all: a
+// real peer's client certificate is signed by ITS OWN key, which is never
+// in this node's rootCAs, so RequireAndVerifyClientCert would reject every
+// real peer unconditionally. This was already broken as written, before
+// anything used it.
+//
+// Real peer identity for this transport doesn't come from TLS certificates
+// at all -- there's no CA infrastructure here, just per-node self-signed
+// certs regenerated on every process start. It comes from the ed25519
+// handshake layered on top (see peer_auth.go), cryptographically bound to
+// this specific TLS session via channel binding (see secure_transport.go's
+// channelBinding helper and CreateHandshake/VerifyHandshake's doc
+// comments) so that binding can't be satisfied by relaying a handshake
+// from a different TLS session. TLS's job here is solely to encrypt the
+// wire; ClientAuth is left at its default (no client certificate
+// requested at all) rather than asking for one we have no way to check.
 func (cm *CertificateManager) GetServerTLSConfig() *tls.Config {
 	return &tls.Config{
 		Certificates: []tls.Certificate{*cm.cachedTLS},
 		MinVersion:   tls.VersionTLS13,
-		// Require client certificates for mutual TLS.
-		ClientAuth: tls.RequireAndVerifyClientCert,
-		ClientCAs:  cm.rootCAs,
 		CipherSuites: []uint16{
 			tls.TLS_AES_256_GCM_SHA384,
 			tls.TLS_CHACHA20_POLY1305_SHA256,
@@ -147,23 +165,30 @@ func (cm *CertificateManager) GetServerTLSConfig() *tls.Config {
 }
 
 // GetClientTLSConfig returns a TLS configuration for the client.
-func (cm *CertificateManager) GetClientTLSConfig(peerCertPEM []byte) *tls.Config {
-	rootCAs := x509.NewCertPool()
-	if len(peerCertPEM) > 0 {
-		rootCAs.AppendCertsFromPEM(peerCertPEM)
-	}
-
+//
+// InsecureSkipVerify is deliberate, not an oversight: there is no real CA
+// here (see GetServerTLSConfig's doc comment above for why the old
+// RequireAndVerifyClientCert/ClientCAs approach could never have worked),
+// so Go's default certificate-chain verification has nothing valid to
+// check a self-signed peer certificate against -- it would reject every
+// real peer's cert unconditionally, the same way the old server config
+// did. Skipping it does not skip peer authentication: TLS here provides
+// encryption only, and the channel-bound ed25519 handshake immediately
+// following the TLS handshake (see peer_auth.go and secure_transport.go)
+// provides authentication, cryptographically tied to this exact TLS
+// session so it can't be satisfied by an attacker relaying a handshake
+// captured on a different one.
+func (cm *CertificateManager) GetClientTLSConfig() *tls.Config {
 	return &tls.Config{
-		Certificates: []tls.Certificate{*cm.cachedTLS},
-		RootCAs:      rootCAs,
-		MinVersion:   tls.VersionTLS13,
-		ServerName:   "synthos-peer", // Generic name for self-signed certs
+		Certificates:       []tls.Certificate{*cm.cachedTLS},
+		MinVersion:         tls.VersionTLS13,
+		ServerName:         "synthos-peer", // Generic name for self-signed certs
+		InsecureSkipVerify: true,
 		CipherSuites: []uint16{
 			tls.TLS_AES_256_GCM_SHA384,
 			tls.TLS_CHACHA20_POLY1305_SHA256,
 			tls.TLS_AES_128_GCM_SHA256,
 		},
-		// InsecureSkipVerify: false, // Always verify certificates
 	}
 }
 
@@ -186,6 +211,15 @@ func (cm *CertificateManager) GetPublicKey() crypto.PublicKey {
 func (cm *CertificateManager) GetCertificate() *x509.Certificate {
 	return cm.certificate
 }
+
+// IssuePeerCertificate, VerifyCertificateChain, and AddTrustedCertificate
+// below are not called anywhere in this codebase today -- this transport's
+// actual trust model doesn't use a certificate chain at all (see
+// GetServerTLSConfig/GetClientTLSConfig's doc comments above). They're
+// left in place as building blocks for a real CA-based PKI, should this
+// project ever want node certificates issued/verified through an actual
+// chain of trust instead of the current TLS-for-encryption +
+// channel-bound-ed25519-handshake-for-authentication design.
 
 // IssuePeerCertificate creates a signed certificate for a trusted peer.
 // This is used for dynamic peer integration without manual certificate distribution.

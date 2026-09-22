@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -60,10 +61,17 @@ func NewPeerAuth(nodeID string, privateKey ed25519.PrivateKey, requireSignature 
 }
 
 // RegisterTrustedPeer adds a peer's public key to the trusted list.
+// publicKeyHex may have an optional "0x" prefix, matching every other
+// hex-encoded public key convention in this codebase (e.g.
+// synthoscrypto.PublicKeyBytes, cfg.PeerKeys) -- this used to reject a
+// "0x"-prefixed key with "invalid public key hex" outright, which is
+// exactly the format cfg.PeerKeys stores its values in, and the format
+// buildValidatorKeySet/Node.AddPeer already expect and strip elsewhere.
 func (pa *PeerAuth) RegisterTrustedPeer(agentID string, publicKeyHex string) error {
 	pa.mu.Lock()
 	defer pa.mu.Unlock()
 
+	publicKeyHex = strings.TrimPrefix(publicKeyHex, "0x")
 	pubKeyBytes, err := hex.DecodeString(publicKeyHex)
 	if err != nil {
 		return fmt.Errorf("invalid public key hex: %w", err)
@@ -79,9 +87,33 @@ func (pa *PeerAuth) RegisterTrustedPeer(agentID string, publicKeyHex string) err
 }
 
 // CreateHandshake creates a signed handshake message from this node.
-func (pa *PeerAuth) CreateHandshake(nonce string) *HandshakeMessage {
+//
+// channelBinding, when non-nil, is folded into the signed bytes. It should
+// be the TLS connection's own exported keying material (see
+// secure_transport.go's channelBinding helper) -- a value both ends of a
+// given TLS session derive identically from that session's own secrets,
+// and which differs for every distinct TLS session, including two separate
+// sessions an active man-in-the-middle sets up while transparently
+// relaying traffic between them.
+//
+// Without this, TLS-with-self-signed-certs-and-no-real-CA (which is what
+// this transport uses -- see tls_cert.go) only stops a passive eavesdropper
+// from reading traffic; it does nothing against an active attacker who
+// terminates TLS separately with each side and relays the plaintext
+// between the two legs, since neither leg's certificate is checked against
+// a known identity. That attacker can still faithfully relay this
+// signature (it's valid, just signed by the real peer, for the real
+// peer's session with the attacker) without being able to forge one of
+// their own -- but binding the signed bytes to the specific TLS session
+// they arrived on means the signature the server actually receives was
+// computed over a DIFFERENT channel-binding value (the client's session
+// with the attacker) than the one the server computes for its own session
+// (with the attacker), so verification fails. A relayed handshake stops
+// verifying the moment there are two different TLS sessions involved
+// instead of one continuous one, which is exactly the MITM case.
+func (pa *PeerAuth) CreateHandshake(nonce string, channelBinding []byte) *HandshakeMessage {
 	timestamp := time.Now().Unix()
-	messageBytes := []byte(fmt.Sprintf("%s|%d", pa.nodeID, timestamp))
+	messageBytes := handshakeSignedBytes(pa.nodeID, timestamp, channelBinding)
 	signature := ed25519.Sign(pa.privateKey, messageBytes)
 
 	return &HandshakeMessage{
@@ -93,9 +125,27 @@ func (pa *PeerAuth) CreateHandshake(nonce string) *HandshakeMessage {
 	}
 }
 
+// handshakeSignedBytes builds the exact byte sequence CreateHandshake signs
+// and VerifyHandshake checks against. channelBinding is appended only when
+// non-empty, so a caller that never uses TLS (channelBinding always nil,
+// e.g. enableTLS=false, or in unit tests exercising PeerAuth in isolation)
+// gets byte-for-byte the same message this function has always signed.
+func handshakeSignedBytes(agentID string, timestamp int64, channelBinding []byte) []byte {
+	msg := fmt.Sprintf("%s|%d", agentID, timestamp)
+	if len(channelBinding) > 0 {
+		msg += "|" + hex.EncodeToString(channelBinding)
+	}
+	return []byte(msg)
+}
+
 // VerifyHandshake authenticates an incoming handshake message.
 // Returns the authenticated agent ID and nil if successful.
-func (pa *PeerAuth) VerifyHandshake(msg *HandshakeMessage) (string, error) {
+//
+// channelBinding must be this verifier's own exported keying material for
+// the TLS session the handshake was just read from (nil if TLS is
+// disabled), matching what the sender folded into its signature in
+// CreateHandshake -- see that function's doc comment for why this matters.
+func (pa *PeerAuth) VerifyHandshake(msg *HandshakeMessage, channelBinding []byte) (string, error) {
 	pa.mu.Lock()
 	defer pa.mu.Unlock()
 
@@ -131,7 +181,7 @@ func (pa *PeerAuth) VerifyHandshake(msg *HandshakeMessage) (string, error) {
 			return "", fmt.Errorf("invalid signature encoding: %w", err)
 		}
 
-		messageBytes := []byte(fmt.Sprintf("%s|%d", agentID, msg.Timestamp))
+		messageBytes := handshakeSignedBytes(agentID, msg.Timestamp, channelBinding)
 		if !ed25519.Verify(pubKey, messageBytes, sigBytes) {
 			pa.recordFailedAttempt(agentID)
 			return "", fmt.Errorf("peer %s signature verification failed", agentID)

@@ -142,6 +142,20 @@ func (t *SecureTCPTransport) Start() error {
 	return nil
 }
 
+// Addr returns the address this transport is actually listening on, or ""
+// if Start hasn't been called yet. Useful when listenAddr was ":0" (bind
+// to an OS-assigned ephemeral port) and the caller needs to know which
+// port that turned out to be -- e.g. to tell it to other peers, or in
+// tests.
+func (t *SecureTCPTransport) Addr() string {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	if t.listener == nil {
+		return ""
+	}
+	return t.listener.Addr().String()
+}
+
 // acceptLoop accepts new connections and spawns handlers.
 func (t *SecureTCPTransport) acceptLoop() {
 	// connSlots bounds the number of concurrently handled inbound
@@ -213,6 +227,14 @@ func (t *SecureTCPTransport) authenticatePeer(conn net.Conn) (string, error) {
 	conn.SetReadDeadline(time.Now().Add(secureHandshakeTimeout))
 	defer conn.SetReadDeadline(time.Time{})
 
+	// This node's view of the TLS channel binding for THIS connection (nil
+	// if TLS is disabled). See VerifyHandshake's doc comment for why this
+	// has to be checked against what the peer signed.
+	binding, err := channelBinding(conn)
+	if err != nil {
+		return "", fmt.Errorf("channel binding: %w", err)
+	}
+
 	// Receive peer's handshake message.
 	r := bufio.NewReader(conn)
 	lenBuf := make([]byte, 4)
@@ -237,7 +259,7 @@ func (t *SecureTCPTransport) authenticatePeer(conn net.Conn) (string, error) {
 	}
 
 	// Verify handshake.
-	peerID, err := t.peerAuth.VerifyHandshake(&hsMsg)
+	peerID, err := t.peerAuth.VerifyHandshake(&hsMsg, binding)
 	if err != nil {
 		// Send rejection response.
 		t.sendAuthResponse(conn, false, err.Error())
@@ -309,11 +331,11 @@ func (t *SecureTCPTransport) sendWithHandshake(agentID, addr string, payload []b
 
 	// Establish new connection.
 	var conn net.Conn
-	var err error
 
 	if t.enableTLS {
-		tlsConfig := t.certManager.GetClientTLSConfig(nil)
-		tlsConn, err := tls.Dial("tcp", addr, tlsConfig)
+		tlsConfig := t.certManager.GetClientTLSConfig()
+		dialer := &net.Dialer{Timeout: secureDialTimeout}
+		tlsConn, err := tls.DialWithDialer(dialer, "tcp", addr, tlsConfig)
 		if err != nil {
 			t.recordConnectionError(agentID)
 			return fmt.Errorf("failed to dial %s (%s): %w", agentID, addr, err)
@@ -329,9 +351,18 @@ func (t *SecureTCPTransport) sendWithHandshake(agentID, addr string, payload []b
 	}
 	defer conn.Close()
 
+	// Our own view of the TLS channel binding for this connection (nil if
+	// TLS is disabled) -- see VerifyHandshake's doc comment for why this
+	// has to be folded into what we sign below.
+	binding, err := channelBinding(conn)
+	if err != nil {
+		t.recordConnectionError(agentID)
+		return fmt.Errorf("channel binding: %w", err)
+	}
+
 	// Perform handshake.
 	nonce := randomNonce()
-	hsMsg := t.peerAuth.CreateHandshake(nonce)
+	hsMsg := t.peerAuth.CreateHandshake(nonce, binding)
 
 	hsData, err := json.Marshal(hsMsg)
 	if err != nil {
@@ -518,4 +549,39 @@ func randomNonce() string {
 	b := make([]byte, 16)
 	rand.Read(b)
 	return fmt.Sprintf("%x", b)
+}
+
+// channelBindingLabel is the TLS exporter label used to derive the
+// per-session value CreateHandshake/VerifyHandshake fold into their
+// signed bytes (see peer_auth.go's doc comments for why). It only needs to
+// be a fixed, unique-to-this-protocol string -- RFC 8446's exporter
+// construction already guarantees the derived value is unique per TLS
+// session for a fixed label.
+const channelBindingLabel = "synthos-secure-transport-peer-auth"
+
+// channelBinding returns this TLS connection's exported keying material,
+// or nil if conn isn't a *tls.Conn (enableTLS=false: this transport falls
+// back to no channel binding, matching the pre-TLS handshake format, since
+// a plain TCP connection has no session secret to derive one from -- see
+// handshakeSignedBytes in peer_auth.go).
+func channelBinding(conn net.Conn) ([]byte, error) {
+	tlsConn, ok := conn.(*tls.Conn)
+	if !ok {
+		return nil, nil
+	}
+	// ExportKeyingMaterial requires the handshake to be complete; callers
+	// of this helper only invoke it after Dial/Accept has returned (client
+	// side) or after explicitly completing the handshake (server side, via
+	// Handshake() below), so this should never actually block here, but
+	// HandshakeContext-less Handshake() is idempotent/cheap to call again
+	// if it already completed.
+	if err := tlsConn.Handshake(); err != nil {
+		return nil, fmt.Errorf("completing TLS handshake for channel binding: %w", err)
+	}
+	state := tlsConn.ConnectionState()
+	binding, err := state.ExportKeyingMaterial(channelBindingLabel, nil, 32)
+	if err != nil {
+		return nil, fmt.Errorf("exporting TLS channel binding: %w", err)
+	}
+	return binding, nil
 }
