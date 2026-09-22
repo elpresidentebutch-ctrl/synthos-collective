@@ -950,6 +950,19 @@ func (s *State) Root() string {
 	return "0x" + hex.EncodeToString(buildMerkleRoot(leaves))
 }
 
+// buildMerkleRoot computes a Merkle root over leaves using the same
+// duplicate-and-hash rule as TxMerkleRoot (merkle.go): a trailing odd leaf
+// at any level is paired with ITSELF and hashed, not passed through
+// unhashed to the next level. This used to append the lone odd leaf
+// directly into `next` unhashed, which both (a) let a single leaf "skip" a
+// full hashing round relative to its siblings, changing what the root
+// actually commits to compared to the standard/expected algorithm, and (b)
+// disagreed with TxMerkleRoot's algorithm for the same odd-leaf case,
+// meaning this codebase computed two different Merkle constructions under
+// one name. See internal/config's StateRootEnforceFromHeight for how this
+// fix is rolled out on a live chain without a hard fork: blocks below the
+// configured height keep validating under the OLD (buggy) computation,
+// blocks at/above it are validated under this corrected one.
 func buildMerkleRoot(leaves [][]byte) []byte {
 	if len(leaves) == 0 {
 		empty := sha256.Sum256([]byte{})
@@ -958,13 +971,16 @@ func buildMerkleRoot(leaves [][]byte) []byte {
 	for len(leaves) > 1 {
 		var next [][]byte
 		for i := 0; i < len(leaves); i += 2 {
-			if i+1 == len(leaves) {
-				next = append(next, leaves[i])
-			} else {
-				concat := append(leaves[i], leaves[i+1]...)
-				h := sha256.Sum256(concat)
-				next = append(next, h[:])
+			left := leaves[i]
+			right := left
+			if i+1 < len(leaves) {
+				right = leaves[i+1]
 			}
+			concat := make([]byte, 0, len(left)+len(right))
+			concat = append(concat, left...)
+			concat = append(concat, right...)
+			h := sha256.Sum256(concat)
+			next = append(next, h[:])
 		}
 		leaves = next
 	}

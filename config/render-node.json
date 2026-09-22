@@ -6,15 +6,5 @@
   "genesis_path": "/config/genesis.json",
   "peers": [],
   "listen_addr": ":0",
-  "trusted_validators": [
-    "synthos-validator-12",
-    "synthos-validator-13",
-    "synthos-render-validator-1"
-  ],
-  "peer_keys": {
-    "synthos-validator-12": "0x5528a57c397d8539d88b3ef5dbecdec3ec8ca261afd2eb44e9992098c652c355",
-    "synthos-validator-13": "0xc0985da91bf00d997d6f9731e681af62bfa1ae13b10ea67e0e7d901b45ae38f1"
-  },
-  "auth_enforce_from_height": 15300,
-  "state_root_enforce_from_height": 19500
+  "state_root_enforce_from_height": 30000
 }
