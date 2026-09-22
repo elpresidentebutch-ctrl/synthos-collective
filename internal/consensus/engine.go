@@ -189,6 +189,29 @@ func (e *Engine) RecordOwnProposal(b *chain.Block) {
 	e.votes[h] = make(map[string]voteRecord)
 }
 
+// RecordReceivedProposal registers a proposal received from the network
+// (node.Node.HandleProposal, reached via the HTTP consensus endpoint or
+// the raw gossip path) as this node's candidate for a not-yet-finalized
+// height. It has identical behavior to RecordOwnProposal, and for the same
+// reason: HandleProposal only ever calls this after confirming
+// b.Header.Height == Chain.Height()+1, i.e. nothing has finalized at this
+// height yet on this node. In this network's single-producer-per-round
+// design, that guarantee means any second proposal seen here for the same
+// height is the same producer retrying its own round -- the network
+// equivalent of the producer's own local retry loop, not a second producer
+// racing to fork an already-decided height. Using OnProposal here instead
+// (as this used to) silently corrupted a follower's own local balance
+// view of the producer on every ordinary retry: OnProposal reports every
+// registration to the SlashingTracker as a double-sign candidate keyed
+// only on (proposer, height), with no way to tell "the producer's own
+// retry of an open round" apart from real equivocation. That in turn
+// permanently broke this follower's own independently-recomputed state
+// root for every block from that point on, since nothing ever
+// un-corrupts in-memory state on its own -- confirmed live in production.
+func (e *Engine) RecordReceivedProposal(b *chain.Block) {
+	e.RecordOwnProposal(b)
+}
+
 func (e *Engine) Proposal(blockHash string) (*chain.Block, bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()

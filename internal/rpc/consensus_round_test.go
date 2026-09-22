@@ -327,6 +327,102 @@ func TestHandleConsensusPropose_RejectsInvalidProposerSignature(t *testing.T) {
 	}
 }
 
+// TestFollowerRetry_DoesNotCorruptLocalStateOrSlashProducer reproduces a
+// real production incident: the block producer routinely needs more than
+// one attempt to reach quorum (a follower is briefly slow, a request
+// times out, etc.), which means a follower can receive TWO proposal
+// submissions for the very same still-open height -- an entirely ordinary
+// retry, not a second producer trying to fork an already-decided height.
+//
+// Before the fix, node.Node.HandleProposal registered every incoming
+// proposal via Engine.OnProposal, which reports every registration to the
+// SlashingTracker as a double-sign candidate keyed only on (proposer,
+// height) -- with no way to tell a producer's own retry apart from real
+// equivocation. That silently executed a real balance-debit penalty
+// against the producer in THIS follower's own local chain state on the
+// second submission, which in turn permanently broke this follower's own
+// independently-recomputed state root for every block from that point on
+// (confirmed live: validator-13 and synthos-rpc each correctly voted on
+// and helped finalize a real block, then rejected it -- and every block
+// after it -- as "bad block" the moment they tried to independently
+// replay it, because their own local state no longer matched what a
+// clean node would compute).
+func TestFollowerRetry_DoesNotCorruptLocalStateOrSlashProducer(t *testing.T) {
+	p, f1, _ := wireThreeValidators(t)
+
+	proposal, err := p.node.BuildAndSignProposal()
+	if err != nil {
+		t.Fatalf("building proposal: %v", err)
+	}
+	body, _ := json.Marshal(map[string]any{
+		"proposal": consensus.BlockProposal{Block: *proposal, Height: proposal.Header.Height},
+	})
+
+	postProposal := func() *http.Response {
+		req, err := http.NewRequest(http.MethodPost, f1.http.URL+"/consensus/propose", bytes.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Consensus-Token", "test-shared-secret")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp
+	}
+
+	stateRootBefore := f1.chain.State.Root()
+
+	// First submission: the producer's original attempt this round.
+	resp1 := postProposal()
+	resp1.Body.Close()
+	if resp1.StatusCode != http.StatusOK {
+		t.Fatalf("first proposal submission: status = %d, want 200", resp1.StatusCode)
+	}
+
+	// Second submission of the SAME proposal: exactly what happens live
+	// when ProposeBlockWithConsensus retries a round that didn't reach
+	// quorum in time. f1 has not finalized anything yet (this is still a
+	// bare candidate), so this must be accepted as an ordinary re-vote,
+	// not flagged as the producer double-signing.
+	resp2 := postProposal()
+	resp2.Body.Close()
+	if resp2.StatusCode != http.StatusOK {
+		t.Fatalf("second (retry) proposal submission: status = %d, want 200 -- a producer retrying its own open round must not be rejected", resp2.StatusCode)
+	}
+
+	if f1.node.Slashing != nil {
+		if n := f1.node.Slashing.TotalSlashEvents(); n != 0 {
+			t.Fatalf("follower recorded %d slashing event(s) against the producer for an ordinary retry of its own open round -- want 0", n)
+		}
+	}
+
+	stateRootAfter := f1.chain.State.Root()
+	if stateRootAfter != stateRootBefore {
+		t.Fatalf("follower's local chain state changed just from voting on retried proposals (root %s -> %s) -- nothing should mutate state before a block is actually finalized", stateRootBefore, stateRootAfter)
+	}
+
+	// Now prove the practical consequence end-to-end: the round must still
+	// go on to finalize normally afterward, and f1 must be able to
+	// independently accept it (own's state root must still agree with
+	// what the producer declares) -- the exact thing that broke live.
+	hash, finalized, err := p.server.ProposeBlockWithConsensus(3 * time.Second)
+	if err != nil {
+		t.Fatalf("ProposeBlockWithConsensus: %v", err)
+	}
+	if !finalized {
+		t.Fatalf("expected the round to finalize normally after the retry, hash=%s", hash)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && f1.chain.Height() != 1 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if f1.chain.Height() != 1 {
+		t.Fatalf("follower height = %d, want 1 -- must still independently accept the block that followed the retry (this is exactly the live 'bad block' failure mode)", f1.chain.Height())
+	}
+}
+
 func decodeTestHexSig(s string) ([]byte, error) {
 	if len(s) >= 2 && s[:2] == "0x" {
 		s = s[2:]

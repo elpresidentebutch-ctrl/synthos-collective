@@ -578,7 +578,27 @@ func (n *Node) HandleProposal(b *chain.Block) (consensus.BlockVote, error) {
 		}
 		return consensus.BlockVote{}, fmt.Errorf("invalid proposal: %w", err)
 	}
-	n.Consensus.OnProposal(b)
+	// RecordReceivedProposal, not OnProposal: the height check above
+	// (b.Header.Height == n.Chain.Height()+1) already guarantees this
+	// proposal is about a height nothing has finalized yet on this node.
+	// In this network's single-producer-per-round design, that means any
+	// second proposal we see here for the same height is necessarily the
+	// SAME producer retrying its own round (exactly the scenario
+	// BuildAndSignProposal/RecordOwnProposal already had to handle on the
+	// producer's own side) -- not a second producer racing to fork an
+	// already-decided height. OnProposal's double-sign detection doesn't
+	// know that distinction: it flags any second (proposer, height)
+	// sighting regardless of whether the block content even differs,
+	// which silently slashed the producer's balance in THIS node's own
+	// local state on every ordinary retry -- confirmed live: validator-13
+	// and synthos-rpc each independently voted correctly on block 34160
+	// (their real quorum signatures are on it), but one of the retries
+	// that led up to it also corrupted their own local view of
+	// validator-12's balance, which permanently broke their own
+	// independently-recomputed state root for every block from 34160
+	// onward ("bad block" on every catch-up attempt, forever, since nothing
+	// ever un-corrupts that in-memory state on its own).
+	n.Consensus.RecordReceivedProposal(b)
 
 	// Vote independently (validators only) -- ValidateBlock already
 	// succeeded above, so this is always an approval; a node that
@@ -686,7 +706,11 @@ func (n *Node) ProposeBlock() error {
 	if err := n.signProposalBlock(b); err != nil {
 		return err
 	}
-	n.Consensus.OnProposal(b)
+	// RecordOwnProposal, not RecordReceivedProposal/OnProposal: this is our
+	// own freshly-built block, not one observed from the network. Same
+	// reasoning as BuildAndSignProposal -- see RecordOwnProposal's doc
+	// comment.
+	n.Consensus.RecordOwnProposal(b)
 
 	env, err := n.Agent.BuildEnvelope("block_proposal", "", consensus.TopicProposals, consensus.BlockProposal{Block: *b, Height: height})
 	if err != nil {
@@ -710,7 +734,11 @@ func (n *Node) ProposeBlockHash() (string, error) {
 	if err := n.signProposalBlock(b); err != nil {
 		return "", err
 	}
-	n.Consensus.OnProposal(b)
+	// RecordOwnProposal, not RecordReceivedProposal/OnProposal: this is our
+	// own freshly-built block, not one observed from the network. Same
+	// reasoning as BuildAndSignProposal -- see RecordOwnProposal's doc
+	// comment.
+	n.Consensus.RecordOwnProposal(b)
 	env, err := n.Agent.BuildEnvelope("block_proposal", "", consensus.TopicProposals, consensus.BlockProposal{Block: *b, Height: height})
 	if err != nil {
 		return "", err
