@@ -38,12 +38,20 @@ jobs:
           go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
       
       # Enforce minimum coverage
-      - name: Check Coverage Threshold (5%)
+      #
+      # Raised from 5% to 15%: actual coverage measured on main (via this
+      # exact `go test -coverprofile` + `go tool cover -func` pipeline) is
+      # ~26.1%, so 5% was never actually gating anything -- any real
+      # regression would have to delete the bulk of the test suite before
+      # this step ever failed. 15% leaves real headroom above the current
+      # figure (so this doesn't start failing CI today) while being an
+      # actual gate against a large coverage drop, not a rubber stamp.
+      - name: Check Coverage Threshold (15%)
         run: |
           coverage=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
           echo "Test Coverage: ${coverage}%"
-          awk "BEGIN { exit !(${coverage} >= 5) }" || {
-            echo "ERROR: Coverage ${coverage}% below threshold 5%"
+          awk "BEGIN { exit !(${coverage} >= 15) }" || {
+            echo "ERROR: Coverage ${coverage}% below threshold 15%"
             exit 1
           }
       

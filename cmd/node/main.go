@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -119,10 +120,19 @@ func main() {
 	a := agent.NewAgent(agentID, "0x"+fmt.Sprintf("%x", pub), string(addr), hwID, 1000000)
 
 	// 4. Setup Outbound 'Sign Language' Transport (NO LISTENERS)
-	BOOTSTRAP_ANCHORS := []string{"http://synthos-anchor-1.world:8080"}
+	//
+	// The old fallback here was "http://synthos-anchor-1.world:8080" -- a
+	// placeholder domain that was never registered and has never resolved,
+	// so any operator who ran this binary without setting SYNTHOS_RELAY
+	// silently talked to nothing. The real default now matches the same
+	// production backend every other entrypoint (cmd/silentnode, the
+	// installer scripts) falls back to: SYNTHOS_REGISTRY_URL/synthos-www's
+	// public host, https://synthos-www.onrender.com. SYNTHOS_RELAY still
+	// overrides it for local/dev use against a different backend.
+	const defaultRelayURL = "https://synthos-www.onrender.com"
 	registryURL := os.Getenv("SYNTHOS_RELAY")
 	if registryURL == "" {
-		registryURL = BOOTSTRAP_ANCHORS[0]
+		registryURL = defaultRelayURL
 	}
 
 	t := network.NewRelayTransport([]string{registryURL})
@@ -157,10 +167,14 @@ func main() {
 	ctx := context.Background()
 	mp, err := initMetrics(ctx, agentID)
 	if err != nil {
-		log.Printf("⚠️  Observability error: %v", err)
+		if errors.Is(err, errMetricsNotConfigured) {
+			log.Printf("📊 OpenTelemetry disabled: %v", err)
+		} else {
+			log.Printf("⚠️  Observability error: %v", err)
+		}
 	} else {
 		defer mp.Shutdown(ctx)
-		log.Printf("📊 OpenTelemetry Enabled: Pushing to monitoring.synthos-mesh.net")
+		log.Printf("📊 OpenTelemetry Enabled: pushing to %s", os.Getenv("SYNTHOS_OTEL_ENDPOINT"))
 	}
 
 	if err := t.Start(); err != nil {

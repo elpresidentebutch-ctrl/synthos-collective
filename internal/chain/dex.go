@@ -75,6 +75,15 @@ func (d *DEX) AddLiquidity(assetID string, synAmount uint64, assetAmount uint64,
 	if pool.TotalShares == 0 {
 		shares = synAmount
 	} else {
+		// Defensive guard: TotalShares != 0 should always imply both reserves
+		// are non-zero too (a pool is seeded with both sides positive, and
+		// GetAmountOut's own denominator/overflow checks keep a swap from
+		// draining a reserve to exactly 0). Guarding here anyway rather than
+		// relying on that invariant holding everywhere it's touched -- a
+		// division by either reserve otherwise panics the node process.
+		if pool.SynReserve == 0 || pool.AssetReserve == 0 {
+			return 0, errors.New("pool has shares but a zero reserve")
+		}
 		shareSyn := (synAmount * pool.TotalShares) / pool.SynReserve
 		shareAsset := (assetAmount * pool.TotalShares) / pool.AssetReserve
 		if shareSyn < shareAsset {

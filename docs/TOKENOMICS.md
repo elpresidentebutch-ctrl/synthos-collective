@@ -318,7 +318,7 @@ Before launch, the liquidity plan should clearly state:
 
 ## 12. Governance and Treasury
 
-SYNTHOS allocates **10,000,000,000 SYN** to the ecosystem treasury.
+SYNTHOS allocates **13,000,000,000 SYN** to the ecosystem treasury (see the Ecosystem Treasury row in the allocation table in section 2, which this figure was previously out of sync with).
 
 The SYNTHOS treasury and governance system should control long-term ecosystem resources through a transparent process.
 

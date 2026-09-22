@@ -2169,7 +2169,19 @@ func limitRequest(rl *registryRateLimiter, next http.Handler) http.Handler {
 
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", allowedOrigin(r.Header.Get("Origin")))
+		// Only set the allow-origin header when the request's origin is
+		// actually permitted. allowedOrigin used to fall back to
+		// origins[0] (the first configured origin) for a disallowed
+		// origin, which set Access-Control-Allow-Origin to some other
+		// site's own origin on every rejected cross-origin request --
+		// harmless to a browser (which still enforces same-origin unless
+		// the value matches its own Origin), but decorative and
+		// misleading: the header looked like it was granting access it
+		// wasn't. An empty return now means "not allowed," and the header
+		// is omitted entirely, matching the browser's own default-deny.
+		if allowed := allowedOrigin(r.Header.Get("Origin")); allowed != "" {
+			w.Header().Set("Access-Control-Allow-Origin", allowed)
+		}
 		w.Header().Set("Vary", "Origin")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Registry-Secret, Authorization")
@@ -2181,17 +2193,31 @@ func cors(next http.Handler) http.Handler {
 	})
 }
 
+// allowedOrigin returns the Access-Control-Allow-Origin value for the given
+// request Origin header, or "" if that origin is not allowed (the caller
+// then omits the header entirely -- see cors above). With
+// SYNTHOS_CORS_ORIGINS unset, every origin is allowed ("*", the previous
+// and still-default behavior). With it set, only an exact (scheme+host,
+// trailing-slash-insensitive, case-insensitive) match or a literal "*"
+// entry is allowed; anything else, including no Origin header at all
+// (origin == ""), is rejected.
 func allowedOrigin(origin string) string {
 	origins := splitCSV(os.Getenv("SYNTHOS_CORS_ORIGINS"))
 	if len(origins) == 0 {
 		return "*"
 	}
+	if origin == "" {
+		return ""
+	}
 	for _, allowed := range origins {
-		if allowed == "*" || strings.EqualFold(strings.TrimRight(allowed, "/"), strings.TrimRight(origin, "/")) {
+		if allowed == "*" {
+			return "*"
+		}
+		if strings.EqualFold(strings.TrimRight(allowed, "/"), strings.TrimRight(origin, "/")) {
 			return origin
 		}
 	}
-	return origins[0]
+	return ""
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

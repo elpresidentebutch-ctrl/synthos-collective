@@ -14,6 +14,16 @@ type PriceData struct {
 }
 
 // Oracle is a sovereign module that pulls external data into the L1.
+//
+// NOTE: this is unused, mock scaffolding, not live functionality. NewOracle
+// is constructed in a few entrypoints (cmd/synthosd, cmd/rpcnode,
+// cmd/desktopagent, internal/chain/chain.go), but FetchPrice/GetPrice/
+// PushToState below are never called anywhere in the codebase -- nothing
+// feeds real or even mock prices into consensus state today. FetchPrice
+// itself only ever returns three hardcoded prices (see its body) rather
+// than calling a real price API. Treat this as a stub for a future oracle
+// integration, not as something currently reporting real-world prices to
+// the chain.
 type Oracle struct {
 	mu     sync.RWMutex
 	Prices map[string]PriceData

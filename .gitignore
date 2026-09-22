@@ -18,6 +18,31 @@ SYNTHOS_AUDIT_PACKET/
 *.test
 .gocache/
 
+# Compiled binaries from `go build ./cmd/<name>` run at repo root (Linux/Mac
+# builds have no extension, so *.exe above doesn't catch them -- this repo
+# already had a 10MB stray "cloudless-registry" binary sitting at root,
+# untracked here but with nothing stopping a future `git add -A` from
+# committing it). Listed explicitly, one per cmd/ subpackage, rather than a
+# broad extensionless glob that could also match real no-extension files
+# like LICENSE, Dockerfile, or NOTICE.
+/agent
+/bridgerelayer
+/cloudless-registry
+/desktopagent
+/devnet
+/diagreward
+/fundvalidators
+/l1check
+/l1netcheck
+/node
+/opennet
+/rpcnode
+/silentnode
+/synthosd
+/txgen
+/txsend
+/wallet
+
 # Node / Hardhat (contracts/)
 contracts/node_modules/
 contracts/.appdata/

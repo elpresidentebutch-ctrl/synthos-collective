@@ -19,7 +19,7 @@
       },
       "metadata": {
               "symbol": "SYN",
-              "decimals": 8,
+              "decimals": 0,
               "network": "SYNTHOS Collective",
               "public_rpc_url": "https://rpc.ishamwilliamsblockchains.com",
               "founder_allocation": 499978940,
@@ -30,8 +30,8 @@
               "display_name": "syn coins",
               "named_wallet_allocation": 2106000000000,
               "named_wallets_file": ".synthos/syn-coins-wallets/public-wallets.json",
-              "smallest_unit_name": "syncent",
-              "smallest_unit_note": "1 SYN = 100000000 syncents (8 decimals). All alloc/tx amounts are in syncents, not whole SYN.",
+              "smallest_unit_name": "SYN",
+              "smallest_unit_note": "decimals is 0: there is no fractional sub-unit. Every alloc/tx amount below and throughout the ledger is a whole-SYN integer -- this used to claim an 8-decimal \"syncent\" smallest unit here, which matched none of the actual numbers in this file (founder_allocation and every tokenomics_buckets alloc are the same whole-SYN figures docs/TOKENOMICS.md documents, e.g. 13000000000 for ecosystem_treasury, not that number scaled by 10^8) and matched no other genesis config in the codebase (every other one -- cmd/rpcnode, cmd/desktopagent, cmd/opennet, cmd/devnet, cmd/l1check, cmd/l1netcheck -- sets decimals: 0). Nothing in internal/chain reads this decimals field for arithmetic; it's informational only, read by external tooling (wallets, explorers) that would otherwise display every balance 100,000,000x too small.",
               "tokenomics_buckets": {
                         "founder_vesting": "0x564f8814cc40f7c287ccdff66a4324217859cc8f",
                         "immune_node_rewards": "0x4119efcd17aafd0f785f06d8df7cd4e88f85b5b2",

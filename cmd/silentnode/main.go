@@ -123,6 +123,21 @@ func main() {
 	}
 }
 
+// loadOrCreateNodeKey loads this node's persistent Ed25519 identity from
+// disk, generating and saving a new one on first run.
+//
+// The key file (json, mode 0o600, owner-read-only) stores the private key
+// as plain hex, not encrypted at rest. That's an intentional tradeoff for
+// this binary, not an oversight: silentnode is a lightweight background
+// heartbeat validator meant to run unattended with no operator-supplied
+// passphrase available at startup (contrast cmd/node/main.go, which *does*
+// encrypt its identity because it prompts for SYNTHOS_PASSPHRASE). The
+// file's confidentiality relies entirely on OS filesystem permissions
+// protecting the account it runs under -- anyone who can read this file
+// (root, the same user account, or a backup/snapshot of the disk) can
+// extract the private key. Operators who need encryption-at-rest for this
+// binary's key should encrypt the volume/disk it lives on rather than
+// relying on this file alone.
 func loadOrCreateNodeKey() (nodeKey, ed25519.PrivateKey, bool, error) {
 	path := keyPath()
 	if body, err := os.ReadFile(path); err == nil {

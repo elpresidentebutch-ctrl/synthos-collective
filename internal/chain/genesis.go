@@ -21,6 +21,18 @@ func (g Genesis) Validate() error {
 	if g.ChainID == "" || len(g.Alloc) == 0 {
 		return ErrBadGenesis
 	}
+	// Deliberately not validating address *format* here (e.g. requiring
+	// "0x" + 40 hex chars, matching AddressFromPublicKey's output): both the
+	// example genesis config and this package's own test suite use
+	// non-hex placeholder addresses (config/genesis.example.json's
+	// "agent-0", "0xgenesis" throughout the _test.go files), and Address is
+	// treated as an opaque string key everywhere else in this package. An
+	// empty address is never valid anywhere, though.
+	for addr := range g.Alloc {
+		if addr == "" {
+			return fmt.Errorf("%w: alloc has an empty address", ErrBadGenesis)
+		}
+	}
 	if g.TxChainID == 0 {
 		// Legacy configurations use transaction chain ID 1.
 		return nil
