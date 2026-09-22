@@ -2907,7 +2907,21 @@ func allocateNativeSYN(intent earlyAccessPaymentIntent) (string, error) {
 	if !result.OK {
 		return "", fmt.Errorf("SYN allocation was not accepted")
 	}
-	_, _ = http.Post(rpcURL+"/proposeBlock", "application/json", bytes.NewReader([]byte("{}")))
+	// Best-effort nudge for immediate block production so the buyer isn't
+	// left waiting for the block producer's own interval; its result was
+	// always discarded even before /proposeBlock required a token (see
+	// internal/rpc/server.go's handleProposeBlock audit fix), so a missing
+	// or wrong SYNTHOS_PROPOSE_BLOCK_TOKEN here just falls back to the
+	// automatic block-producer loop picking the tx up on schedule instead.
+	if req, err := http.NewRequest(http.MethodPost, rpcURL+"/proposeBlock", bytes.NewReader([]byte("{}"))); err == nil {
+		req.Header.Set("Content-Type", "application/json")
+		if token := strings.TrimSpace(os.Getenv("SYNTHOS_PROPOSE_BLOCK_TOKEN")); token != "" {
+			req.Header.Set("X-Propose-Block-Token", token)
+		}
+		if resp, err := http.DefaultClient.Do(req); err == nil {
+			_ = resp.Body.Close()
+		}
+	}
 	return result.TxID, nil
 }
 

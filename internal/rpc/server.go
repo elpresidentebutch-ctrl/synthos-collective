@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"bytes"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"log"
@@ -30,6 +31,12 @@ type Server struct {
 	// the open-relay behavior this field exists to close. Set it via
 	// cmd/synthosd/main.go from SYNTHOS_COMMUNICATOR_TOKEN.
 	CommunicatorToken string
+
+	// ProposeBlockToken gates /proposeBlock (see handleProposeBlock's audit
+	// fix comment). Same disabled-unless-configured default as
+	// CommunicatorToken, set via cmd/synthosd/main.go from
+	// SYNTHOS_PROPOSE_BLOCK_TOKEN.
+	ProposeBlockToken string
 }
 
 func NewServer(c *chain.Chain, st *storage.Store, n *node.Node) *Server {
@@ -477,9 +484,38 @@ func (s *Server) handleSubmitTx(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true, "tx_id": tx.ID})
 }
 
+// handleProposeBlock used to have no authentication at all: any caller on
+// the internet who could reach this node's RPC port could make it build,
+// sign, finalize, persist, and broadcast a brand-new block on demand --
+// with no rate limit beyond the server-wide one shared with every other
+// endpoint. In normal production operation this is never needed:
+// startBlockProducer (cmd/synthosd/main.go) already runs an automatic
+// proposal loop on the one designated block-producer node, so "the chain
+// advances on its own -- no manual /proposeBlock call needed" (see that
+// function's own doc comment). Left open, this endpoint was both a cheap,
+// unbounded-amplification DoS lever (one small HTTP POST triggers a full
+// block build+sign+finalize+persist+broadcast cycle) and, more seriously,
+// a consensus-forking one: Node.ProposeBlockHash only requires the calling
+// node to be *a* validator, not *the* block producer, so hitting this on a
+// follower validator (rather than the one running the automatic loop)
+// could make it independently propose and finalize its own competing
+// block at the same height -- exactly the two-producers-at-once scenario
+// that same doc comment warns "would fork the chain." Fixed the same way
+// /communicator/send was: a shared operator token, checked in constant
+// time, with the endpoint disabled by default (no token configured) rather
+// than open.
 func (s *Server) handleProposeBlock(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.ProposeBlockToken == "" {
+		http.Error(w, "propose-block is disabled for this deployment (no SYNTHOS_PROPOSE_BLOCK_TOKEN configured)", http.StatusServiceUnavailable)
+		return
+	}
+	given := r.Header.Get("X-Propose-Block-Token")
+	if given == "" || subtle.ConstantTimeCompare([]byte(given), []byte(s.ProposeBlockToken)) != 1 {
+		http.Error(w, "unauthorized: missing or incorrect X-Propose-Block-Token", http.StatusUnauthorized)
 		return
 	}
 	if s.Node == nil {

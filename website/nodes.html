@@ -258,7 +258,18 @@
           publicId: session.node_id,
           public_key: session.public_key,
           mode: "public-validator",
-          endpoint: "https://synthos-collective.onrender.com/nodes",
+          // No `endpoint` here: this used to hardcode
+          // "https://synthos-collective.onrender.com/nodes" -- a dead URL
+          // (this repo's name, not any real deployed hostname; the actual
+          // backend is https://synthos-www.onrender.com), and even a live
+          // URL would have been wrong data, since a browser-run
+          // SynthosNode candidate has no publicly reachable endpoint at
+          // all. Sending it made the registry mark every node that
+          // registered through this page as mode "public_endpoint" with
+          // inbound_ports 1 (see handleAPINodeRegister's
+          // endpoint != "" branch), which none of them actually are.
+          // Omitting it lets the registry correctly record these as
+          // outbound-only candidates.
           chain: "SYNTHOS Collective",
           capabilities: CAPS.map(([id]) => id),
         }),
@@ -340,7 +351,11 @@
             nonce,
             signature: hex(new Uint8Array(signature)),
             capabilities: CAPS.map(([id]) => id),
-            endpoint: "https://synthos-collective.onrender.com/nodes",
+            // See registerCandidate's comment above: no `endpoint` here
+            // either, for the same reason -- it was a dead URL and wrong
+            // data (handleAPINodeHeartbeat's endpoint != "" branch would
+            // re-mark this node "public_endpoint" on every single
+            // heartbeat, same as registration did).
           }),
         });
         if (!res.ok) throw new Error(await res.text());

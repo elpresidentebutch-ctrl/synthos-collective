@@ -27,6 +27,17 @@ const (
 	genesisBalance = 1_000_000
 	transferAmount = 25_000
 	transferFee    = 10
+
+	// proposeBlockToken is a fixed, local-only credential for the
+	// SYNTHOS_PROPOSE_BLOCK_TOKEN each node this harness launches is given
+	// (see startNode), matched against the X-Propose-Block-Token header
+	// sent to /proposeBlock (see the postJSON call in checkTransferAndPropose
+	// / wherever /proposeBlock is called). /proposeBlock now requires this
+	// token (internal/rpc/server.go's handleProposeBlock audit fix); every
+	// node here runs on 127.0.0.1 for the lifetime of a single test run and
+	// is torn down afterward, so a fixed string is fine -- it never leaves
+	// this process's own child processes.
+	proposeBlockToken = "l1netcheck-local-only-token"
 )
 
 type statusResponse struct {
@@ -194,7 +205,7 @@ func run(started time.Time) error {
 	if err := postJSON(nodes[0].RPCURL+"/submitTx", tx, nil); err != nil {
 		return err
 	}
-	if err := postJSON(nodes[0].RPCURL+"/proposeBlock", map[string]any{}, nil); err != nil {
+	if err := postJSONWithToken(nodes[0].RPCURL+"/proposeBlock", map[string]any{}, nil, proposeBlockToken); err != nil {
 		return err
 	}
 
@@ -300,7 +311,7 @@ func startNode(root string, synthosdPath string, node *nodeSpec) error {
 	}
 	cmd := exec.Command(synthosdPath)
 	cmd.Dir = root
-	cmd.Env = append(goEnv(root), "SYNTHOS_CONFIG="+node.Config)
+	cmd.Env = append(goEnv(root), "SYNTHOS_CONFIG="+node.Config, "SYNTHOS_PROPOSE_BLOCK_TOKEN="+proposeBlockToken)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	if err := cmd.Start(); err != nil {
@@ -422,12 +433,28 @@ func getJSON(url string, out any) error {
 }
 
 func postJSON(url string, value any, out any) error {
+	return postJSONWithToken(url, value, out, "")
+}
+
+// postJSONWithToken is postJSON plus an optional X-Propose-Block-Token
+// header, for endpoints like /proposeBlock that now require an operator
+// token (see internal/rpc/server.go's handleProposeBlock audit fix). token
+// == "" sends no header, same as postJSON.
+func postJSONWithToken(url string, value any, out any, token string) error {
 	body, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("X-Propose-Block-Token", token)
+	}
 	client := http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Post(url, "application/json", bytes.NewReader(body))
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}

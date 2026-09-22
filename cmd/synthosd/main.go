@@ -178,6 +178,10 @@ func main() {
 	if srv.CommunicatorToken == "" {
 		log.Printf("communicator: SYNTHOS_COMMUNICATOR_TOKEN not set -- /communicator/send is disabled for this node")
 	}
+	srv.ProposeBlockToken = strings.TrimSpace(os.Getenv("SYNTHOS_PROPOSE_BLOCK_TOKEN"))
+	if srv.ProposeBlockToken == "" {
+		log.Printf("propose-block: SYNTHOS_PROPOSE_BLOCK_TOKEN not set -- /proposeBlock is disabled for this node (the automatic block-producer loop, if enabled, is unaffected)")
+	}
 	srv.SetPeerURLs(cfg.HTTPPeers)
 	srv.StartPeerSync(15 * time.Second)
 	startRegistryHeartbeat(cfg.NodeID, ch.ChainID, keys.Public)

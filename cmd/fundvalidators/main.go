@@ -39,6 +39,7 @@ func main() {
 	useStartNonce := flag.Bool("use-start-nonce", false, "force use of --start-nonce instead of querying /account")
 	dryRun := flag.Bool("dry-run", false, "build transactions without submitting them")
 	proposeBlock := flag.Bool("propose-block", false, "call /proposeBlock after submitting transactions")
+	proposeBlockToken := flag.String("propose-block-token", os.Getenv("SYNTHOS_PROPOSE_BLOCK_TOKEN"), "X-Propose-Block-Token value for --propose-block; required if the target node has SYNTHOS_PROPOSE_BLOCK_TOKEN configured (see internal/rpc/server.go's handleProposeBlock)")
 	timeout := flag.Duration("timeout", 10*time.Second, "HTTP timeout")
 	flag.Parse()
 
@@ -134,7 +135,7 @@ func main() {
 	}
 
 	if *proposeBlock && !*dryRun {
-		if err := postNoBody(client, baseURL+"/proposeBlock"); err != nil {
+		if err := postNoBody(client, baseURL+"/proposeBlock", *proposeBlockToken); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: proposeBlock failed: %v\n", err)
 			os.Exit(1)
 		}
@@ -228,10 +229,17 @@ func submitTx(client *http.Client, baseURL string, tx chain.Tx) (submitResponse,
 	return result, nil
 }
 
-func postNoBody(client *http.Client, url string) error {
+// postNoBody sends token (if non-empty) as X-Propose-Block-Token, the
+// header /proposeBlock now requires (see internal/rpc/server.go's
+// handleProposeBlock audit fix) -- this helper is currently only used to
+// call that endpoint.
+func postNoBody(client *http.Client, url string, token string) error {
 	req, err := http.NewRequest(http.MethodPost, url, nil)
 	if err != nil {
 		return err
+	}
+	if token != "" {
+		req.Header.Set("X-Propose-Block-Token", token)
 	}
 	resp, err := client.Do(req)
 	if err != nil {

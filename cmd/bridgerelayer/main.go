@@ -92,6 +92,7 @@ func main() {
 	proofFile := flag.String("proof", os.Getenv("SYNTHOS_BRIDGE_PROOF_FILE"), "external lock proof JSON for submit-native-release")
 	privateKey := flag.String("priv", os.Getenv("SYNTHOS_BRIDGE_AUTHORITY_PRIVATE_KEY"), "Ed25519 bridge authority private key for native release tx")
 	fee := flag.Uint64("fee", chain.MIN_FEE, "native SYN fee")
+	proposeBlockToken := flag.String("propose-block-token", os.Getenv("SYNTHOS_PROPOSE_BLOCK_TOKEN"), "X-Propose-Block-Token value used to nudge immediate block production after a release tx; optional (best-effort), required only if the target node has SYNTHOS_PROPOSE_BLOCK_TOKEN configured (see internal/rpc/server.go's handleProposeBlock)")
 	flag.Parse()
 
 	switch *mode {
@@ -100,12 +101,12 @@ func main() {
 			fatal(err)
 		}
 	case "watch-evm":
-		err := watchEVM(*evmRPCURL, *evmVault, *evmSynMinter, *rpcURL, *proofOutbox, *privateKey, *fee, *startBlock, *synMinterStartBlock, *minConfirmations, *poll, *once, *autoSubmitNative)
+		err := watchEVM(*evmRPCURL, *evmVault, *evmSynMinter, *rpcURL, *proofOutbox, *privateKey, *fee, *startBlock, *synMinterStartBlock, *minConfirmations, *poll, *once, *autoSubmitNative, *proposeBlockToken)
 		if err != nil {
 			fatal(err)
 		}
 	case "submit-native-release":
-		if err := submitNativeRelease(*rpcURL, *proofFile, *privateKey, *fee); err != nil {
+		if err := submitNativeRelease(*rpcURL, *proofFile, *privateKey, *fee, *proposeBlockToken); err != nil {
 			fatal(err)
 		}
 	default:
@@ -151,7 +152,7 @@ type evmLogSource struct {
 	decode    func(log evmLog, currentHead, minConfirmations uint64) (externalLockProof, error)
 }
 
-func watchEVM(evmRPCURL, vault, synMinter, nativeRPCURL, proofOutbox, privHex string, fee uint64, startBlock, synMinterStartBlock, minConfirmations uint64, poll time.Duration, once bool, autoSubmitNative bool) error {
+func watchEVM(evmRPCURL, vault, synMinter, nativeRPCURL, proofOutbox, privHex string, fee uint64, startBlock, synMinterStartBlock, minConfirmations uint64, poll time.Duration, once bool, autoSubmitNative bool, proposeBlockToken string) error {
 	if evmRPCURL == "" {
 		return fmt.Errorf("evm-rpc required")
 	}
@@ -228,7 +229,7 @@ func watchEVM(evmRPCURL, vault, synMinter, nativeRPCURL, proofOutbox, privHex st
 					source.seen[proof.SourceEventID] = true
 					fmt.Printf("observed confirmed %s: source_event=%s amount=%d recipient=%s confirmations=%d\n", source.label, proof.SourceEventID, proof.Amount, proof.Recipient, proof.Confirmations)
 					if autoSubmitNative {
-						if err := submitNativeReleaseProof(nativeRPCURL, proof, privHex, fee); err != nil {
+						if err := submitNativeReleaseProof(nativeRPCURL, proof, privHex, fee, proposeBlockToken); err != nil {
 							return err
 						}
 					}
@@ -243,7 +244,7 @@ func watchEVM(evmRPCURL, vault, synMinter, nativeRPCURL, proofOutbox, privHex st
 	}
 }
 
-func submitNativeRelease(rpcURL, proofPath, privHex string, fee uint64) error {
+func submitNativeRelease(rpcURL, proofPath, privHex string, fee uint64, proposeBlockToken string) error {
 	if proofPath == "" {
 		return fmt.Errorf("proof file required")
 	}
@@ -264,10 +265,10 @@ func submitNativeRelease(rpcURL, proofPath, privHex string, fee uint64) error {
 	if proof.MinConfirmations > 0 && proof.Confirmations < proof.MinConfirmations {
 		return fmt.Errorf("proof has %d confirmations, needs %d", proof.Confirmations, proof.MinConfirmations)
 	}
-	return submitNativeReleaseProof(rpcURL, proof, privHex, fee)
+	return submitNativeReleaseProof(rpcURL, proof, privHex, fee, proposeBlockToken)
 }
 
-func submitNativeReleaseProof(rpcURL string, proof externalLockProof, privHex string, fee uint64) error {
+func submitNativeReleaseProof(rpcURL string, proof externalLockProof, privHex string, fee uint64, proposeBlockToken string) error {
 	if privHex == "" {
 		return fmt.Errorf("bridge authority private key required")
 	}
@@ -317,7 +318,7 @@ func submitNativeReleaseProof(rpcURL string, proof externalLockProof, privHex st
 	if err := postNativeTx(rpcURL, tx); err != nil {
 		return err
 	}
-	_ = postProposeBlock(rpcURL)
+	_ = postProposeBlock(rpcURL, proposeBlockToken)
 	fmt.Printf("submitted native bridge release: tx_id=%s source_event=%s amount=%d recipient=%s\n", tx.ID, proof.SourceEventID, proof.Amount, proof.Recipient)
 	return nil
 }
@@ -643,8 +644,23 @@ func postNativeTx(rpcURL string, tx chain.Tx) error {
 	return nil
 }
 
-func postProposeBlock(rpcURL string) error {
-	resp, err := http.Post(strings.TrimRight(rpcURL, "/")+"/proposeBlock", "application/json", bytes.NewReader([]byte("{}")))
+// postProposeBlock is a best-effort nudge for immediate block production
+// after a release tx (its own error is always discarded by callers) --
+// token is the X-Propose-Block-Token /proposeBlock now requires (see
+// internal/rpc/server.go's handleProposeBlock audit fix); an empty token
+// simply won't be accepted if the target node has one configured, in which
+// case this falls back to the automatic block-producer loop picking the tx
+// up on its own schedule.
+func postProposeBlock(rpcURL, token string) error {
+	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(rpcURL, "/")+"/proposeBlock", bytes.NewReader([]byte("{}")))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("X-Propose-Block-Token", token)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}
