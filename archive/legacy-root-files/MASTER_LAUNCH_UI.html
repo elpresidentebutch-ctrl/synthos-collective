@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>SYNTHOS Collective Command</title>
+    <style>
+        :root { --bg: #020203; --accent: #22c55e; --text: #f8fafc; --muted: #64748b; --border: rgba(255,255,255,0.06); --card: rgba(10,10,12,0.8); }
+        body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; height: 900px; display: flex; flex-direction: column; overflow: hidden; border-radius: 20px; }
+        
+        /* Master Layout */
+        .dashboard { flex: 1; display: grid; grid-template-columns: 1fr 380px; gap: 2px; background: var(--border); overflow: hidden; }
+        .main-stage { background: var(--bg); position: relative; display: flex; flex-direction: column; }
+        .side-intel { background: #050505; display: flex; flex-direction: column; }
+
+        /* Top Navigation / Stats Bar */
+        .top-bar { height: 70px; background: rgba(0,0,0,0.8); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 30px; justify-content: space-between; }
+        .launch-status { font-size: 10px; font-weight: 900; color: var(--accent); letter-spacing: 0.2em; display: flex; align-items: center; gap: 10px; }
+        .pulse { width: 8px; height: 8px; background: var(--accent); border-radius: 50%; box-shadow: 0 0 10px var(--accent); animation: blink 1.5s infinite; }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+        /* Component Containers */
+        .mesh-viz { flex: 1; position: relative; background: radial-gradient(circle at center, #0a0a0f 0%, #020203 100%); }
+        .intent-feed { height: 280px; border-top: 1px solid var(--border); padding: 20px; background: rgba(0,0,0,0.4); }
+        
+        .onboard-footer { height: 180px; background: linear-gradient(to top, rgba(34,197,94,0.05), transparent); border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: center; gap: 40px; padding: 0 40px; }
+
+        /* UI Elements */
+        .card-sm { background: var(--card); border: 1px solid var(--border); padding: 15px; border-radius: 12px; }
+        .btn-lrg { background: var(--accent); color: #000; border: none; padding: 18px 40px; border-radius: 14px; font-weight: 900; font-size: 14px; cursor: pointer; transition: 0.3s; }
+        .btn-lrg:hover { transform: translateY(-3px); box-shadow: 0 10px 30px rgba(34,197,94,0.3); }
+
+        .metric-v { font-size: 24px; font-weight: 900; color: var(--text); }
+        .metric-l { font-size: 9px; font-weight: 800; color: var(--muted); text-transform: uppercase; }
+    </style>
+</head>
+<body>
+    <div class="top-bar">
+        <div style="font-size: 18px; font-weight: 900;">SYNTHOS <span style="color:var(--accent)">COLLECTIVE</span></div>
+        <div class="launch-status"><div class="pulse"></div> COMMAND CENTER LIVE</div>
+        <div style="display: flex; gap: 30px;">
+            <div><div class="metric-l">Mesh Size</div><div class="metric-v" id="mesh-size">142</div></div>
+            <div><div class="metric-l">Momentum Revenue</div><div class="metric-v" style="color: #3b82f6;" id="momentum-rev">0.0 SYN</div></div>
+            <div><div class="metric-l">NGOT Trust Status</div><div class="metric-v" style="color: #10b981;">VERIFIED IP</div></div>
+            <div><div class="metric-l">Inner Circle</div><div class="metric-v" style="color: #f59e0b;">$10M USD POTENTIAL</div></div>
+        </div>
+    </div>
+
+    <div class="dashboard">
+        <div class="main-stage">
+            <!-- Live Mesh Component -->
+            <div class="mesh-viz">
+                <div style="position:absolute; top:20px; left:20px; font-size:11px; font-weight:800; color:var(--muted); z-index: 10;">⬡ LIVE MESH TOPOLOGY</div>
+                <iframe src="ATLAS_EXPLORER.html" style="width:100%; height:100%; border:none;"></iframe>
+            </div>
+
+            <!-- Onboarding Section -->
+            <div class="onboard-footer">
+                <div style="max-width: 300px;">
+                    <h3 style="margin:0; font-size:16px;">Sovereign Growth</h3>
+                    <p style="margin:5px 0 0 0; font-size:11px; color:var(--muted);">Productivity (Momentum) & Sustainability (NGOT) are now online.</p>
+                </div>
+                <button class="btn-lrg" style="background: #3b82f6; color: white;" onclick="window.location.href='MOMENTUM_ASSET.html'">VIEW MOMENTUM</button>
+                <button class="btn-lrg" style="background: #10b981; color: black;" onclick="window.location.href='NGOT_ASSET.html'">VIEW NGOT TRUST</button>
+                <div style="text-align: center;">
+                    <div class="metric-l">Network Value</div>
+                    <div class="metric-v" style="font-size: 18px;">1.4B SYN</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="side-intel">
+            <!-- Intent Marketplace Stream -->
+            <div style="padding: 24px; flex: 1; overflow: hidden; display: flex; flex-direction: column;">
+                <div class="metric-l" style="margin-bottom: 20px;">Live Economy Feed</div>
+                <iframe src="ESCROW_UI.html" style="flex:1; width:100%; border:none;"></iframe>
+            </div>
+
+            <!-- Sovereign Asset Hub -->
+            <div style="padding: 24px; height: 300px; border-top: 1px solid var(--border); background: rgba(59, 130, 246, 0.05);">
+                <div class="metric-l" style="margin-bottom: 15px; color: #3b82f6;">Sovereign Asset Management</div>
+                <div style="font-size: 11px; opacity: 0.8; line-height: 1.5;">
+                    <div style="margin-bottom: 10px;"><strong>Momentum:</strong> Productivity scaling active. Monitoring Pro/Elite upgrade requests.</div>
+                    <div style="margin-bottom: 10px;"><strong>NGOT:</strong> Trust record confirmed. Intellectual Property shield engaged for Sarah Eggleston.</div>
+                    <div style="color: var(--accent); font-weight: 800;">MESH REVENUE: SYN +1% TAX APPLIED TO ALL P2P TRANSFERS</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let mesh = 142;
+        let rev = 0;
+        setInterval(() => {
+            mesh += Math.random() > 0.8 ? 1 : 0;
+            rev += Math.random() > 0.6 ? 500000 : 0; // Simulated Momentum Pro Upgrades
+            document.getElementById('mesh-size').textContent = mesh;
+            document.getElementById('momentum-rev').textContent = (rev/1000).toFixed(1) + "K SYN";
+        }, 3000);
+    </script>
+</body>
+</html>

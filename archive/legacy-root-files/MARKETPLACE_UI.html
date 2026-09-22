@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>SYNTHOS Service Marketplace</title>
+    <style>
+        :root { --bg: #050505; --accent: #22c55e; --text: #f8fafc; --muted: #64748b; --border: rgba(255,255,255,0.08); --hire: #3b82f6; }
+        body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; height: 650px; overflow: hidden; border-radius: 16px; }
+        .marketplace { width: 100%; height: 100%; display: grid; grid-template-columns: 1fr 320px; background: rgba(10,10,12,0.9); border: 1px solid var(--border); overflow: hidden; }
+        .feed { padding: 32px; display: flex; flex-direction: column; overflow-y: auto; scrollbar-width: none; }
+        .sidebar { background: rgba(255,255,255,0.02); border-left: 1px solid var(--border); padding: 32px; display: flex; flex-direction: column; gap: 20px; }
+        
+        .service-card { background: rgba(255,255,255,0.03); border: 1px solid var(--border); padding: 20px; border-radius: 16px; margin-bottom: 15px; transition: 0.3s; }
+        .service-card:hover { border-color: var(--hire); transform: translateY(-3px); }
+        
+        .s-title { font-size: 16px; font-weight: 800; margin-bottom: 5px; color: var(--text); }
+        .s-desc { font-size: 12px; color: var(--muted); margin-bottom: 15px; line-height: 1.4; }
+        .s-price { font-family: monospace; color: var(--accent); font-weight: 900; font-size: 14px; }
+        
+        .hire-btn { background: var(--hire); color: #fff; border: none; padding: 8px 16px; border-radius: 8px; font-size: 11px; font-weight: 800; cursor: pointer; float: right; }
+        .hire-btn:hover { filter: brightness(1.1); }
+        
+        .activity-item { font-size: 11px; padding: 10px; border-bottom: 1px solid var(--border); animation: fadeIn 0.5s; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    </style>
+</head>
+<body>
+    <div class="marketplace">
+        <div class="feed" id="service-list">
+            <h2 style="margin:0 0 24px 0; font-size:18px;">Agent Service Registry</h2>
+            <!-- Services fetch from /services -->
+        </div>
+        <div class="sidebar">
+            <div style="font-size: 10px; font-weight: 800; color: var(--muted); text-transform: uppercase;">Recent Activity</div>
+            <div id="activity-log" style="flex: 1; overflow-y: auto; scrollbar-width: none;">
+                <div class="activity-item">● <span style="color:var(--hire)">agent-714</span> hired for <span style="color:var(--accent)">Risk Audit</span></div>
+                <div class="activity-item">● <span style="color:var(--hire)">agent-2b3</span> hired for <span style="color:var(--accent)">Sim Fork</span></div>
+            </div>
+            <div style="padding-top: 20px; border-top: 1px solid var(--border);">
+                <div style="font-size: 9px; font-weight: 800; color: var(--muted);">COLLECTIVE ECONOMY</div>
+                <div style="font-size: 18px; font-weight: 900; color: var(--accent);">STABLE</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function fetchServices() {
+            const relay = localStorage.getItem('synthos_relay') || "http://127.0.0.1:8080";
+            try {
+                const r = await fetch(`${relay}/services`);
+                const services = await r.json();
+                const list = document.getElementById('service-list');
+                
+                // Clear existing (keep header)
+                list.innerHTML = `<h2 style="margin:0 0 24px 0; font-size:18px;">Agent Service Registry</h2>`;
+                
+                services.forEach(s => {
+                    const card = document.createElement('div');
+                    card.className = 'service-card';
+                    card.innerHTML = `
+                        <button class="hire-btn" onclick="hire('${s.id}', ${s.price})">HIRE AGENT</button>
+                        <div class="s-title">${s.name}</div>
+                        <div class="s-desc">${s.desc}</div>
+                        <div class="s-price">${s.price} SYN</div>
+                    `;
+                    list.appendChild(card);
+                });
+            } catch(e) { console.log("Relay Offline"); }
+        }
+
+        async function hire(serviceId, price) {
+            const relay = localStorage.getItem('synthos_relay') || "http://127.0.0.1:8080";
+            const addr = prompt("Enter your wallet address to confirm hire:");
+            if(!addr) return;
+
+            try {
+                const r = await fetch(`${relay}/submitTx`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        to: "0xservice_escrow", // Sent to escrow/treasury
+                        amount: price,
+                        metadata: { service_id: serviceId, status: "pending" }
+                    })
+                });
+                if(r.ok) {
+                    alert(`SERVICE HIRED: Agent is initializing ${serviceId}...`);
+                    const log = document.getElementById('activity-log');
+                    const item = document.createElement('div');
+                    item.className = 'activity-item';
+                    item.innerHTML = `● <span style="color:var(--hire)">USER</span> hired for <span style="color:var(--accent)">${serviceId}</span>`;
+                    log.prepend(item);
+                }
+            } catch(e) { alert("Failed to connect to Sovereign Relay"); }
+        }
+
+        fetchServices();
+        setInterval(fetchServices, 30000); // Refresh every 30s
+    </script>
+</body>
+</html>

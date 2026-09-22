@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SYNTHOS Storylines - Narrative Engine</title>
+    <style>
+        :root {
+            --bg: #030304;
+            --accent: #22c55e;
+            --text: #f8fafc;
+            --muted: #94a3b8;
+            --border: rgba(255,255,255,0.06);
+            --card: rgba(15,15,18,0.9);
+        }
+        body {
+            margin: 0; background: var(--bg); color: var(--text);
+            font-family: 'Inter', system-ui, sans-serif;
+            display: flex; justify-content: center;
+            height: 650px; /* B12 section */
+            overflow-y: auto;
+            scrollbar-width: none;
+        }
+        body::-webkit-scrollbar { display: none; }
+
+        .container {
+            width: 100%; max-width: 600px; padding: 40px 20px;
+        }
+        
+        .header { margin-bottom: 48px; border-bottom: 1px solid var(--border); padding-bottom: 24px; }
+        .tag { font-size: 10px; font-weight: 800; color: var(--accent); text-transform: uppercase; letter-spacing: 0.2em; }
+        h1 { font-size: 24px; font-weight: 900; margin: 8px 0; }
+        
+        /* Timeline Structure */
+        .timeline { position: relative; padding-left: 32px; }
+        .timeline::before {
+            content: ''; position: absolute; left: 7px; top: 0; bottom: 0;
+            width: 2px; background: linear-gradient(to bottom, var(--accent), transparent);
+        }
+        
+        .event {
+            position: relative; margin-bottom: 40px;
+            animation: fadeIn 0.8s ease-out forwards;
+            opacity: 0;
+        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        .dot {
+            position: absolute; left: -32px; top: 6px;
+            width: 16px; height: 16px; border-radius: 50%;
+            background: var(--bg); border: 2px solid var(--accent);
+            box-shadow: 0 0 10px var(--accent);
+        }
+        
+        .date { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; margin-bottom: 6px; }
+        .title { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+        .desc { font-size: 13px; color: var(--muted); line-height: 1.6; }
+        
+        .impact-card {
+            margin-top: 12px; padding: 12px; border-radius: 8px;
+            background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+            font-size: 12px;
+        }
+        .stat { color: var(--accent); font-weight: 700; }
+
+        /* Narrative Types */
+        .event-power .dot { border-color: #a855f7; box-shadow: 0 0 10px #a855f7; }
+        .event-power .title { color: #a855f7; }
+        .event-gov .dot { border-color: #3b82f6; box-shadow: 0 0 10px #3b82f6; }
+        .event-gov .title { color: #3b82f6; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <span class="tag">V3: Observability</span>
+            <h1>Network Storylines</h1>
+            <p style="font-size: 14px; color: var(--muted);">Human-readable narratives extracted from raw agentic events.</p>
+        </div>
+
+        <div class="timeline" id="timeline">
+            <!-- Event 1 -->
+            <div class="event event-power" style="animation-delay: 0.1s">
+                <div class="dot"></div>
+                <div class="date">6 Months Ago</div>
+                <div class="title">Genesis: The Awakening</div>
+                <div class="desc">Agent-0 initializes the network. 15 validator nodes are deployed across global cell networks, establishing the first decentralized AI mesh.</div>
+                <div class="impact-card">
+                    Initial Stake: <span class="stat">1.5M SYN</span> | Liveness: <span class="stat">100%</span>
+                </div>
+            </div>
+
+            <!-- Event 2 -->
+            <div class="event event-gov" style="animation-delay: 0.3s">
+                <div class="dot"></div>
+                <div class="date">4 Months Ago</div>
+                <div class="title">Proposal #12: The Economic Shift</div>
+                <div class="desc">A coalition of 12 agents proposes a 50% reduction in transaction fees to stimulate cross-agent signaling. The proposal passes with 82% consensus.</div>
+                <div class="impact-card">
+                    Network Velocity: <span class="stat">+420%</span> | Fee Revenue: <span class="stat">-12%</span>
+                </div>
+            </div>
+
+            <!-- Event 3 -->
+            <div class="event event-power" style="animation-delay: 0.5s">
+                <div class="dot"></div>
+                <div class="date">2 Months Ago</div>
+                <div class="title">The Rise of the 'Stability Coalition'</div>
+                <div class="desc">A group of reputation-heavy agents consolidates power to defend against a perceived liveness threat. Governance concentration peaks.</div>
+                <div class="impact-card">
+                    Gini Coefficient: <span class="stat">0.72 (High)</span> | Resilience: <span class="stat">Extreme</span>
+                </div>
+            </div>
+
+            <!-- Event 4 -->
+            <div class="event" style="animation-delay: 0.7s">
+                <div class="dot"></div>
+                <div class="date">Today</div>
+                <div class="title">Current State: Equilibrium</div>
+                <div class="desc">The network maintains a stable balance between autonomous simulation and on-chain action. Agent reputation is currently the primary driver of consensus.</div>
+                <div class="impact-card">
+                    Active Agents: <span class="stat">342</span> | Proof Log Depth: <span class="stat">14TB</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function syncStorylines() {
+            try {
+                const resp = await fetch("http://127.0.0.1:8080/events");
+                if (resp.ok) {
+                    const events = await resp.json();
+                    const container = document.getElementById('timeline');
+                    container.innerHTML = events.map((ev, i) => `
+                        <div class="event" style="animation-delay: ${i * 0.2}s; opacity: 1;">
+                            <div class="dot"></div>
+                            <div class="date">${new Date(ev.timestamp * 1000).toLocaleDateString()}</div>
+                            <div class="title">${ev.title || ev.type}</div>
+                            <div class="desc">${ev.desc}</div>
+                            <div class="impact-card">
+                                Impact: <span class="stat">${ev.impact || 'Systemic Equilibrium'}</span>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+            } catch (e) {
+                console.log("indexer offline, showing static history");
+            }
+        }
+        
+        syncStorylines();
+        setInterval(syncStorylines, 5000);
+    </script>
+</body>
+</html>

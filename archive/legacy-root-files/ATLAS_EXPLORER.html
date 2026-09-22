@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SYNTHOS Atlas - Agent-Native Explorer</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        :root {
+            --bg: #020203;
+            --accent: #22c55e;
+            --text: #f8fafc;
+            --muted: #64748b;
+            --border: rgba(255,255,255,0.06);
+            --card: rgba(13,13,15,0.8);
+            --risk: #ef4444;
+        }
+        body {
+            margin: 0; background: var(--bg); color: var(--text);
+            font-family: 'Inter', system-ui, sans-serif;
+            display: grid;
+            grid-template-columns: 1fr 380px;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .main { position: relative; overflow: hidden; background: radial-gradient(circle at 30% 30%, #0a0a0c, #020203); }
+        .inspector {
+            background: var(--card);
+            backdrop-filter: blur(30px);
+            border-left: 1px solid var(--border);
+            padding: 32px;
+            overflow-y: auto;
+            z-index: 100;
+        }
+        
+        /* Header */
+        .header {
+            position: absolute; top: 32px; left: 32px;
+            display: flex; gap: 24px; align-items: center;
+        }
+        .logo { font-size: 24px; font-weight: 900; letter-spacing: -1px; }
+        .mode-toggle {
+            display: flex; gap: 4px; background: rgba(255,255,255,0.05);
+            padding: 4px; border-radius: 8px; border: 1px solid var(--border);
+        }
+        .mode-btn {
+            padding: 6px 16px; border-radius: 6px; font-size: 11px; font-weight: 700;
+            cursor: pointer; border: none; background: transparent; color: var(--muted);
+        }
+        .mode-btn.active { background: var(--accent); color: var(--bg); }
+
+        /* Node Styling */
+        .link { stroke: rgba(255,255,255,0.04); stroke-width: 1px; fill: none; }
+        .node { stroke: var(--bg); stroke-width: 2px; cursor: pointer; transition: 0.3s; }
+        .node.risk-high { fill: var(--risk) !important; stroke: rgba(239,68,68,0.4); stroke-width: 8px; }
+        
+        /* Inspector Details */
+        .agent-header { margin-bottom: 32px; }
+        .agent-id { font-family: monospace; font-size: 14px; color: var(--accent); margin-bottom: 8px; display: block; }
+        .tag { font-size: 10px; font-weight: 800; text-transform: uppercase; padding: 4px 10px; border-radius: 4px; background: rgba(255,255,255,0.05); margin-right: 4px; }
+        
+        .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 24px; }
+        .stat { background: rgba(0,0,0,0.2); padding: 16px; border-radius: 12px; border: 1px solid var(--border); }
+        .stat-val { font-size: 20px; font-weight: 800; font-family: monospace; color: var(--text); }
+        .stat-lbl { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+        .dependency-list { margin-top: 32px; }
+        .dep-item { display: flex; justify-content: space-between; font-size: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+        
+        .risk-alert {
+            background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.2);
+            padding: 16px; border-radius: 12px; color: var(--risk); font-size: 13px; margin-top: 32px;
+        }
+    </style>
+</head>
+<body>
+    <div class="main">
+        <div class="header">
+            <div class="logo">⬡ SYNTHOS <span style="font-weight:300; color:var(--muted)">ATLAS</span></div>
+            <div class="mode-toggle">
+                <button class="mode-btn active" onclick="setMode('topology')">Topology</button>
+                <button class="mode-btn" onclick="setMode('risk')">Risk Heatmap</button>
+                <button class="mode-btn" onclick="setMode('flows')">State Flows</button>
+            </div>
+        </div>
+        <svg id="viz"></svg>
+    </div>
+
+    <div class="inspector" id="inspector">
+        <div style="text-align: center; color: var(--muted); padding-top: 100px;">
+            <div style="font-size: 48px; margin-bottom: 24px;">🔍</div>
+            <p>Select an Agent in the mesh to inspect its dependencies, rights, and risk profile.</p>
+        </div>
+    </div>
+
+    <script>
+        // --- Mock Agent Data ---
+        const AGENTS = Array.from({length: 40}, (_, i) => ({
+            id: `agent-${Math.random().toString(36).substr(2, 6)}`,
+            roles: ["Validator", "Governor"].slice(0, Math.random() > 0.5 ? 2 : 1),
+            stake: Math.floor(Math.random() * 1000000),
+            reputation: 0.7 + Math.random() * 0.3,
+            risk: Math.random() > 0.9 ? "HIGH" : "LOW",
+            dependencies: Math.floor(Math.random() * 5)
+        }));
+
+        const nodes = AGENTS;
+        const links = [];
+        for(let i=0; i<nodes.length; i++) {
+            const count = 1 + Math.floor(Math.random() * 2);
+            for(let j=0; j<count; j++) {
+                links.push({ source: i, target: Math.floor(Math.random() * nodes.length) });
+            }
+        }
+
+        const svg = d3.select("#viz");
+        const width = window.innerWidth - 380;
+        const height = window.innerHeight;
+
+        const sim = d3.forceSimulation(nodes)
+            .force("link", d3.forceLink(links).distance(80))
+            .force("charge", d3.forceManyBody().strength(-200))
+            .force("center", d3.forceCenter(width / 2, height / 2))
+            .force("collision", d3.forceCollide().radius(20));
+
+        const link = svg.append("g").selectAll("line").data(links).join("line").attr("class", "link");
+        
+        const node = svg.append("g").selectAll("circle").data(nodes).join("circle")
+            .attr("class", d => "node " + (d.risk === 'HIGH' ? 'risk-high' : ''))
+            .attr("r", d => 4 + (d.stake / 200000))
+            .attr("fill", d => d.risk === 'HIGH' ? "#ef4444" : "#22c55e")
+            .on("click", (e, d) => inspectAgent(d))
+            .call(d3.drag().on("start", dragstarted).on("drag", dragged).on("end", dragended));
+
+        sim.on("tick", () => {
+            link.attr("x1", d => d.source.x).attr("y1", d => d.source.y).attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+            node.attr("cx", d => d.x).attr("cy", d => d.y);
+        });
+
+        function inspectAgent(agent) {
+            const ins = document.getElementById('inspector');
+            ins.innerHTML = `
+                <div class="agent-header">
+                    <span class="tag">Agent Identity</span>
+                    <h2 class="agent-id">${agent.id}</h2>
+                    <div>${agent.roles.map(r => `<span class="tag" style="background:var(--accent); color:var(--bg)">${r}</span>`).join('')}</div>
+                </div>
+
+                <div class="stat-grid">
+                    <div class="stat">
+                        <div class="stat-val">${(agent.stake/1000).toFixed(1)}k</div>
+                        <div class="stat-lbl">Voting Stake (SYN)</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-val">${(agent.reputation * 100).toFixed(1)}%</div>
+                        <div class="stat-lbl">Trust Rep</div>
+                    </div>
+                </div>
+
+                <div class="dependency-list">
+                    <h3 style="font-size:12px; color:var(--muted); text-transform:uppercase;">Network Dependencies</h3>
+                    <div class="dep-item"><span>Upstream Peers</span> <span>${agent.dependencies} Nodes</span></div>
+                    <div class="dep-item"><span>Relay Latency</span> <span>${(20 + Math.random()*50).toFixed(0)}ms</span></div>
+                    <div class="dep-item"><span>Liveness Contribution</span> <span>High</span></div>
+                </div>
+
+                ${agent.risk === 'HIGH' ? `
+                    <div class="risk-alert">
+                        <strong>⚠️ Centralization Chokepoint</strong><br/>
+                        This agent controls >5% of voting stake. Failure would impact consensus finality.
+                    </div>
+                ` : ''}
+
+                <div style="margin-top:40px;">
+                    <button class="mode-btn active" style="width:100%; padding:14px; border-radius:12px;">Trace Agent Narrative</button>
+                </div>
+            `;
+        }
+
+        function setMode(mode) {
+            document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            if(mode === 'risk') {
+                node.transition().duration(500).attr("r", d => d.risk === 'HIGH' ? 15 : 4);
+            } else {
+                node.transition().duration(500).attr("r", d => 4 + (d.stake / 200000));
+            }
+        }
+
+        function dragstarted(event) { if (!event.active) sim.alphaTarget(0.3).restart(); event.subject.fx = event.subject.x; event.subject.fy = event.subject.y; }
+        function dragged(event) { event.subject.fx = event.x; event.subject.fy = event.y; }
+        function dragended(event) { if (!event.active) sim.alphaTarget(0); event.subject.fx = null; event.subject.fy = null; }
+    </script>
+</body>
+</html>

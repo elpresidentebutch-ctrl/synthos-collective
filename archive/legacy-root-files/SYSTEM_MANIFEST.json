@@ -1,0 +1,68 @@
+{
+  "project": "SYNTHOS Collective",
+  "version": "1.0.0-Agentic",
+  "mapping": {
+    "protocols": [
+      { "id": "p2p-gossip", "name": "WebRTC P2P Gossip", "description": "Decentralized mesh for block/TX propagation." },
+      { "id": "http-sync", "name": "HTTP Anchor Sync", "description": "Bootstrap protocol for fast state recovery." },
+      { "id": "relay-transport", "name": "Agent Relay Transport", "description": "Outbound-only NAT traversal for agents." }
+    ],
+    "contracts": [
+      { "id": "chain-genesis", "name": "Genesis Allocation", "description": "Initial state and supply distribution logic." },
+      { "id": "tx-validation", "name": "State-Transition Contract", "description": "Ensures double-spend protection and signature validity." },
+      { "id": "block-finality", "name": "Consensus Finalizer", "description": "Binds block hashes to the immutable ledger." }
+    ],
+    "agents": [
+      { "id": "sovereign-agent", "name": "Autonomous Validator Agent", "description": "The self-governing entity running the Go core." },
+      { "id": "light-agent", "name": "Cellular PWA Agent", "description": "Browser-based validator node for mobile participation." }
+    ],
+    "roles": [
+      { "id": "validator", "name": "Validator", "description": "Proposes and validates blocks." },
+      { "id": "governor", "name": "Governor", "description": "Votes on protocol parameters and proposals." },
+      { "id": "economist", "name": "Economist", "description": "Manages fee structures and reward distribution." },
+      { "id": "communicator", "name": "Communicator", "description": "Coordinates P2P messaging and handshakes." },
+      { "id": "simulator", "name": "Simulator", "description": "Models potential network states and attacks." },
+      { "id": "enforcer", "name": "Enforcer", "description": "Monitors and penalizes malicious behavior." },
+      { "id": "citizen", "name": "Citizen", "description": "General user participating in the network ecosystem." }
+    ],
+    "states": [
+      { "id": "ledger", "name": "State Tree", "description": "The current balance and nonce of every account." },
+      { "id": "reputation", "name": "Peer Reputation Table", "description": "Real-time trust scores for all network participants." },
+      { "id": "mempool", "name": "Transaction Mempool", "description": "Staging area for pending state changes." }
+    ],
+    "flows": [
+      { "id": "tx-flow", "name": "Transaction Lifecycle", "path": ["citizen", "communicator", "validator", "ledger"] },
+      { "id": "gov-flow", "name": "Governance Cycle", "path": ["governor", "citizen", "validator", "block-finality"] },
+      { "id": "econ-flow", "name": "Economic Adjustment", "path": ["economist", "validator", "ledger", "citizen"] },
+      { "id": "enforce-flow", "name": "Security Enforcement", "path": ["enforcer", "reputation", "sovereign-agent"] },
+      { "id": "sim-flow", "name": "Predictive Simulation", "path": ["simulator", "governor", "economist"] }
+    ],
+    "assets": [
+      { "id": "syn", "name": "Synthos Native", "ticker": "SYN", "description": "The primary utility and governance token." },
+      { 
+        "id": "momentum", 
+        "name": "Momentum App", 
+        "ticker": "MOM", 
+        "description": "B12-native application asset integrated via Sovereign Bridge.",
+        "tiers": [
+          { "level": 0, "name": "Standard", "cost": 0, "features": ["Task Lists", "Daily Goals", "Progress Charts", "Streak Tracking"] },
+          { "level": 1, "name": "Pro", "cost": 500000, "features": ["Priority Management", "Recurring Tasks", "Custom Tags", "Advanced Analytics"] },
+          { "level": 2, "name": "Elite", "cost": 2500000, "features": ["Team Collaboration", "Time Tracking", "Calendar Integration", "Sovereign Priority"] }
+        ],
+        "genesis_cohort": [
+          "James G Isham Williams", "Sarah Jean Eggleston", "Michael Chen", "Emma Rodriguez", "David Thompson",
+          "Sophia Martinez", "James Wilson", "Olivia Taylor", "Robert Anderson", "Ava Jackson"
+        ]
+      },
+      {
+        "id": "ngot",
+        "name": "New Green Oil Trust",
+        "ticker": "NGOT",
+        "type": "Sovereign Trust IP (STIP)",
+        "creator_and_trustee": "Sarah Eggleston",
+        "holder": "NGOT Sovereign Entity",
+        "ownership_declaration": "Legal and cryptographic proof of concept for Tire Turbine and Rig-to-Desalination infrastructure transformation, held in trust."
+      }
+    ]
+  }
+}

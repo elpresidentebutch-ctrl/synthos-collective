@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SYNTHOS Agent Reasoning Chat</title>
+    <style>
+        :root {
+            --bg: #050505;
+            --accent: #22c55e;
+            --text: #f8fafc;
+            --muted: #64748b;
+            --border: rgba(255,255,255,0.08);
+            --card: rgba(10,10,12,0.9);
+            --reasoning: #3b82f6;
+        }
+        body {
+            margin: 0; background: var(--bg); color: var(--text);
+            font-family: 'Inter', system-ui, sans-serif;
+            display: flex; justify-content: center; align-items: center;
+            height: 650px; /* B12 Section Height */
+            overflow: hidden;
+        }
+        .chat-terminal {
+            width: 100%; max-width: 800px; height: 100%;
+            display: grid; grid-template-columns: 1fr 280px;
+            background: var(--card); border-radius: 16px; border: 1px solid var(--border);
+            overflow: hidden;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+        }
+        .chat-view { padding: 32px; display: flex; flex-direction: column; }
+        .inner-monologue { background: rgba(0,0,0,0.3); border-left: 1px solid var(--border); padding: 24px; display: flex; flex-direction: column; gap: 20px; }
+        
+        .msg-container { flex: 1; overflow-y: auto; scrollbar-width: none; margin-bottom: 20px; }
+        .msg { margin-bottom: 24px; animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        .msg-role { font-size: 10px; font-weight: 800; color: var(--accent); text-transform: uppercase; margin-bottom: 6px; }
+        .msg-text { font-size: 14px; line-height: 1.5; color: var(--text); }
+        
+        .monologue-header { font-size: 10px; font-weight: 800; color: var(--reasoning); text-transform: uppercase; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+        .thought { font-size: 11px; font-family: monospace; color: var(--muted); border-left: 2px solid var(--reasoning); padding-left: 12px; }
+        .thought.active { color: var(--reasoning); }
+
+        .input-area { display: flex; gap: 12px; }
+        .input { flex: 1; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; padding: 12px; color: var(--text); font-size: 13px; }
+        .btn { background: var(--accent); color: var(--bg); border: none; padding: 0 20px; border-radius: 8px; font-weight: 800; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div class="chat-terminal">
+        <div class="chat-view">
+            <div class="msg-container" id="msg-container">
+                <div class="msg">
+                    <div class="msg-role">Agent Core</div>
+                    <div class="msg-text">Node initialized. Identity verified. I am currently monitoring the mesh for liveness anomalies. How can I assist your governance strategy today?</div>
+                </div>
+            </div>
+            <div class="input-area">
+                <input type="text" class="input" id="chat-input" placeholder="Ask about network status or agent reasoning...">
+                <button class="btn" onclick="sendMessage()">SEND</button>
+            </div>
+        </div>
+
+        <div class="inner-monologue">
+            <div class="monologue-header">Inner Monologue</div>
+            <div id="thought-process">
+                <div class="thought">> idle_mode_active</div>
+                <div class="thought">> scanning_peer_reputation</div>
+                <div class="thought">> consensus_reached_at_h1422</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function sendMessage() {
+            const input = document.getElementById('chat-input');
+            const container = document.getElementById('msg-container');
+            const thoughts = document.getElementById('thought-process');
+            
+            if(!input.value) return;
+
+            // User Message
+            const userMsg = document.createElement('div');
+            userMsg.className = 'msg';
+            userMsg.innerHTML = `<div class="msg-role" style="color:var(--muted)">Owner</div><div class="msg-text">${input.value}</div>`;
+            container.appendChild(userMsg);
+            
+            // Trigger "Thinking"
+            thoughts.innerHTML += `<div class="thought active">> processing_natural_language_intent</div>`;
+            thoughts.innerHTML += `<div class="thought active">> querying_world_model_v1.1</div>`;
+            
+            const userText = input.value.toLowerCase();
+            input.value = '';
+            container.scrollTop = container.scrollHeight;
+
+            setTimeout(() => {
+                const agentMsg = document.createElement('div');
+                agentMsg.className = 'msg';
+                let response = "I have processed your request. Current world state analysis suggests we maintain our current staking position while monitoring peer-alpha for latency shifts.";
+                
+                if(userText.includes("why") || userText.includes("reason")) {
+                    response = "My decision is based on a simulation run across 500 potential forks. 92% of outcomes showed that shifting stake to peer-beta now would increase liveness risk by 14%.";
+                } else if(userText.includes("status") || userText.includes("how")) {
+                    response = "The collective is in equilibrium. Liveness is at 99.8% and your reputation has climbed 2% in the last 60 minutes.";
+                }
+
+                agentMsg.innerHTML = `<div class="msg-role">Agent Core</div><div class="msg-text">${response}</div>`;
+                container.appendChild(agentMsg);
+                container.scrollTop = container.scrollHeight;
+                
+                thoughts.innerHTML += `<div class="thought">> decision_finalized</div>`;
+            }, 1500);
+        }
+    </script>
+</body>
+</html>
