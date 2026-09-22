@@ -559,30 +559,48 @@ func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
+	// highestHeight above is derived purely from self-reported peer
+	// heartbeats (P-O-U-T candidates and downloaded node binaries POSTing
+	// their own Height). Most candidates prove uptime from a browser tab
+	// that never runs a real chain, so that max is frequently 0 or stale --
+	// it has nothing to do with where the actual SYNTHOS chain is. Fetch the
+	// real height directly from the public RPC/validator endpoint and prefer
+	// it whenever it's reachable, falling back to the self-reported max only
+	// if the RPC call fails, so this field never gets worse than before.
+	chainHeight := highestHeight
+	tip := ""
+	stateRoot := ""
+	if realHeight, realTip, realStateRoot, ok := fetchRealChainStatus(); ok {
+		chainHeight = realHeight
+		tip = realTip
+		stateRoot = realStateRoot
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":                   len(peers) == 0 || reachable > 0,
-		"service":              "synthos-website-backend",
-		"network":              "synthos",
-		"chain":                "SYNTHOS Collective",
-		"mode":                 "Proof-of-Operation onboarding",
-		"heartbeat_target_s":   15,
-		"total":                activeTotal,
-		"registered_total":     len(peers),
-		"reachable":            reachable,
-		"fresh_heartbeats":     fresh,
-		"validators_running":   validators,
-		"immune_nodes_running": immune,
-		"agents_running":       agents,
-		"highest_height":       highestHeight,
-		"tip":                  "",
-		"state_root":           "",
-		"next_proposer":        nextProposer(peers),
-		"majority_reachable":   len(peers) == 0 || reachable*3 >= len(peers)*2,
-		"converged_tip":        true,
-		"converged_state_root": true,
-		"validators":           peers,
-		"reward_policy":        validatorRewardPolicy(),
-		"updated_at":           time.Now().UTC().Format(time.RFC3339),
+		"ok":                        len(peers) == 0 || reachable > 0,
+		"service":                   "synthos-website-backend",
+		"network":                   "synthos",
+		"chain":                     "SYNTHOS Collective",
+		"mode":                      "Proof-of-Operation onboarding",
+		"heartbeat_target_s":        15,
+		"total":                     activeTotal,
+		"registered_total":          len(peers),
+		"reachable":                 reachable,
+		"fresh_heartbeats":          fresh,
+		"validators_running":        validators,
+		"immune_nodes_running":      immune,
+		"agents_running":            agents,
+		"highest_height":            chainHeight,
+		"self_reported_peer_height": highestHeight,
+		"tip":                       tip,
+		"state_root":                stateRoot,
+		"next_proposer":             nextProposer(peers),
+		"majority_reachable":        len(peers) == 0 || reachable*3 >= len(peers)*2,
+		"converged_tip":             true,
+		"converged_state_root":      true,
+		"validators":                peers,
+		"reward_policy":             validatorRewardPolicy(),
+		"updated_at":                time.Now().UTC().Format(time.RFC3339),
 	})
 }
 
@@ -1933,6 +1951,39 @@ func (s *server) networkSnapshot(now time.Time) networkSnapshot {
 	}
 	sort.Slice(out.Peers, func(i, j int) bool { return out.Peers[i].Name < out.Peers[j].Name })
 	return out
+}
+
+// fetchRealChainStatus asks the public SYNTHOS RPC/validator endpoint for
+// its actual /status directly, the same live source the site's own header
+// counter and explorer page use, instead of trusting self-reported peer
+// heartbeats. It defaults to the public RPC URL genesis.json advertises
+// (SYNTHOS_NATIVE_RPC_URL overrides it, matching the env var this file
+// already uses for account lookups) and fails soft: any error just means
+// "not available right now", so callers can fall back to their previous
+// behavior rather than erroring the whole request.
+func fetchRealChainStatus() (height int64, tip string, stateRoot string, ok bool) {
+	rpcURL := strings.TrimRight(env("SYNTHOS_NATIVE_RPC_URL", "https://rpc.ishamwilliamsblockchains.com"), "/")
+	if rpcURL == "" {
+		return 0, "", "", false
+	}
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get(rpcURL + "/status")
+	if err != nil {
+		return 0, "", "", false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0, "", "", false
+	}
+	var parsed struct {
+		Height    int64  `json:"height"`
+		Tip       string `json:"tip"`
+		StateRoot string `json:"state_root"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&parsed); err != nil {
+		return 0, "", "", false
+	}
+	return parsed.Height, parsed.Tip, parsed.StateRoot, true
 }
 
 func (s *server) proxyRPCJSON(w http.ResponseWriter, r *http.Request, rpcPath string) bool {
