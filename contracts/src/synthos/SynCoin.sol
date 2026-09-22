@@ -51,6 +51,14 @@ contract SynCoin is ERC20, ERC20Pausable, ERC20Snapshot, Ownable {
 
     address public treasury;
 
+    /// @dev SYNTHOSGovernance, when set, may also call createSnapshot (see
+    /// below) -- it needs to snapshot balances at proposal-creation time so
+    /// castVote can use a fixed, pre-proposal balance instead of a live one
+    /// that a voter could inflate mid-vote by shuffling tokens between
+    /// their own addresses. Ownable-only owner-or-governance, not a
+    /// replacement for owner: governance cannot call anything else here.
+    address public governance;
+
     uint256 public totalTreasuryRecyclingBurned;
     uint256 public totalTreasuryRecycled;
 
@@ -63,6 +71,7 @@ contract SynCoin is ERC20, ERC20Pausable, ERC20Snapshot, Ownable {
     event BridgeBurned(address indexed holder, uint256 amount);
 
     event TreasuryUpdated(address indexed previousTreasury, address indexed newTreasury);
+    event GovernanceUpdated(address indexed previousGovernance, address indexed newGovernance);
     event TreasuryRecyclingSpendTypeUpdated(bytes32 indexed spendType, bool approved);
 
     event TreasuryRecyclingBurn(
@@ -123,6 +132,18 @@ contract SynCoin is ERC20, ERC20Pausable, ERC20Snapshot, Ownable {
         require(amount > 0, "amount must be positive");
         _burn(holder, amount);
         emit BridgeBurned(holder, amount);
+    }
+
+    /// @dev Wires up the SYNTHOSGovernance contract that's allowed to call
+    /// createSnapshot alongside the owner. Owner-gated and freely
+    /// updatable (unlike bridgeMinter's one-time wiring): governance
+    /// contracts can be upgraded/redeployed over a project's life, and this
+    /// only ever grants the narrow, non-custodial ability to snapshot
+    /// balances -- never mint, burn, or move funds.
+    function setGovernance(address newGovernance) external onlyOwner {
+        address previousGovernance = governance;
+        governance = newGovernance;
+        emit GovernanceUpdated(previousGovernance, newGovernance);
     }
 
     function setTreasury(address newTreasury) external onlyOwner {
@@ -193,7 +214,17 @@ contract SynCoin is ERC20, ERC20Pausable, ERC20Snapshot, Ownable {
         _unpause();
     }
 
-    function createSnapshot() external onlyOwner returns (uint256) {
+    /// @dev Callable by the owner (e.g. a timelock/multisig, for
+    /// operational snapshots) or by the wired-up governance contract, which
+    /// calls this once per proposal so castVote can weight votes by a
+    /// balance fixed at proposal-creation time -- see SYNTHOSGovernance's
+    /// castVote doc comment for the double-voting-via-transfer issue this
+    /// closes.
+    function createSnapshot() external returns (uint256) {
+        require(
+            msg.sender == owner() || (governance != address(0) && msg.sender == governance),
+            "not authorized to snapshot"
+        );
         return _snapshot();
     }
 

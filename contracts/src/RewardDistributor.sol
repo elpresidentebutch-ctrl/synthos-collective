@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.20;
 
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+
 /**
  * @title RewardDistributor
  * @dev Unified reward distribution for SYNTHOS and Gemini ecosystems
- * 
+ *
  * Features:
  * - Multi-token reward distribution
  * - Vesting schedules for locked rewards
@@ -12,7 +16,8 @@ pragma solidity ^0.8.20;
  * - Batch distribution support
  * - Governance control
  */
-contract RewardDistributor {
+contract RewardDistributor is ReentrancyGuard {
+    using SafeERC20 for IERC20;
     // Vesting structure
     struct Vesting {
         address token;
@@ -42,6 +47,8 @@ contract RewardDistributor {
     
     address public governance;
     mapping(address => bool) public approved_tokens;
+    // Sticky, never unset by revokeToken -- see sweepUnapprovedToken.
+    mapping(address => bool) public ever_approved_tokens;
 
     uint256 public vesting_count = 0;
 
@@ -82,8 +89,9 @@ contract RewardDistributor {
     function approveToken(address token) public {
         require(msg.sender == governance, "Only governance");
         require(token != address(0), "Invalid token");
-        
+
         approved_tokens[token] = true;
+        ever_approved_tokens[token] = true;
         emit TokenApproved(token);
     }
 
@@ -192,18 +200,26 @@ contract RewardDistributor {
      * @param vesting_id Vesting ID to claim
      * @return Amount claimed
      */
-    function claimVesting(bytes32 vesting_id) public returns (uint256) {
+    function claimVesting(bytes32 vesting_id) public nonReentrant returns (uint256) {
         Vesting storage vesting = vestings[vesting_id];
-        
+
         require(vesting.beneficiary != address(0), "Invalid vesting");
         require(msg.sender == vesting.beneficiary, "Not beneficiary");
 
         uint256 claimable = calculateVestedAmount(vesting_id);
         require(claimable > 0, "Nothing to claim");
 
+        // Effects before interaction: accounting is updated first so a
+        // reentrant call into claimVesting (or anything else) sees this
+        // vesting's claimed_amount already reflecting this claim.
         vesting.claimed_amount += claimable;
 
-        // Transfer tokens (note: actual implementation would use ERC20 transfer)
+        // This used to only emit VestingClaimed without ever moving tokens
+        // -- claimVesting updated claimed_amount and looked, from the
+        // event log, exactly like a real payout, but the beneficiary
+        // received nothing. Fixed to actually pay out.
+        IERC20(vesting.token).safeTransfer(msg.sender, claimable);
+
         emit VestingClaimed(vesting_id, msg.sender, claimable);
 
         return claimable;
@@ -250,17 +266,24 @@ contract RewardDistributor {
      * @dev Claim immediate rewards (non-vested)
      * @param reward_index Index in reward history
      */
-    function claimReward(uint256 reward_index) public {
+    function claimReward(uint256 reward_index) public nonReentrant {
         require(reward_index < reward_history.length, "Invalid reward");
-        
+
         Reward storage reward = reward_history[reward_index];
         require(reward.recipient == msg.sender, "Not recipient");
         require(reward.amount > 0, "Already claimed");
 
         uint256 amount = reward.amount;
-        reward.amount = 0; // Mark as claimed
+        address token = reward.token;
+        reward.amount = 0; // Mark as claimed, before the external call below
 
-        emit RewardDistributed(reward.recipient, reward.token, amount, reward.reward_type);
+        // Same bug as claimVesting: batchDistributeRewards recorded a
+        // Reward entry and claimReward "marked" it claimed, but no tokens
+        // ever moved -- a recipient calling this got an event and nothing
+        // else. Fixed to actually pay out.
+        IERC20(token).safeTransfer(msg.sender, amount);
+
+        emit RewardDistributed(reward.recipient, token, amount, reward.reward_type);
     }
 
     /**
@@ -359,5 +382,28 @@ contract RewardDistributor {
     function setGovernance(address new_governance) public {
         require(msg.sender == governance, "Only governance");
         governance = new_governance;
+    }
+
+    /**
+     * @dev Recovers tokens that have NEVER been an approved reward/vesting
+     * token -- e.g. an unrelated ERC-20 sent to this contract by mistake.
+     * Checked against ever_approved_tokens, not the live approved_tokens
+     * toggle: approved_tokens flips back to false on revokeToken, but a
+     * revoked token can still have real, unclaimed vestings/rewards
+     * outstanding against it. Gating on the sticky ever_approved_tokens
+     * flag instead means a token that was ever approved -- and so could
+     * ever have backed a real claim -- can never be swept here, revoked or
+     * not. Only a token that was never approved, and therefore could never
+     * have backed any vesting or reward in the first place, is eligible.
+     * @param token Token to recover
+     * @param to Recipient of the recovered tokens
+     * @param amount Amount to recover
+     */
+    function sweepUnapprovedToken(address token, address to, uint256 amount) public nonReentrant {
+        require(msg.sender == governance, "Only governance");
+        require(!ever_approved_tokens[token], "Token was or is an approved reward token");
+        require(to != address(0), "Invalid recipient");
+
+        IERC20(token).safeTransfer(to, amount);
     }
 }

@@ -2,6 +2,7 @@
   "network": "hardhat",
   "deployedAt": "2026-07-02T21:40:27.627Z",
   "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  "_stale_record_note": "This file is a byproduct of a local hardhat test run (deployedAt below, network=hardhat, deployer/wallet addresses are hardhat's well-known default test accounts) -- it is NOT a record of any real deployment. The tokenomics figures below were also out of sync with the current contracts/tokenomics.js (ecosystemTreasury/cmoLaunchGrant had drifted since this snapshot was taken) and have been corrected here to match tokenomics.js as of this fix. Re-running scripts/deploy-synthos.js on a local network regenerates this file fresh from tokenomics.js automatically; on a real network it writes to a separate deployments/<network>-<timestamp>.json record instead, and this file should be replaced with that real record's data, not hand-edited again.",
   "tokenomics": {
     "totalSupply": "100000000000",
     "immuneNodeRewards": "22000000000",
@@ -9,10 +10,11 @@
     "founderVesting": "17000000000",
     "validatorRewards": "12000000000",
     "communityAdopterRewards": "12500000000",
-    "ecosystemTreasury": "10000000000",
-    "cmoLaunchGrant": "3000000000",
+    "ecosystemTreasury": "13000000000",
+    "cmoLaunchGrant": "0",
     "strategicReserve": "3000000000",
     "founderLaunchAllocation": "500000000",
+    "note": "These figures describe the native chain's genesis allocation, which is the only place SYN is ever created. SynCoin on this network is a bridge-pegged wrapper with zero independent supply -- see contracts.synBridgeMinter.",
     "treasuryRecyclingBurn": {
       "protocolSpendBurnShare": "50%",
       "protocolSpendTreasuryShare": "50%",

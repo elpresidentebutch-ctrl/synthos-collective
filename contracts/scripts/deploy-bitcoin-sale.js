@@ -38,6 +38,22 @@ async function main() {
     throw new Error("Deployment file is missing contracts.synCoin or contracts.complianceRegistry");
   }
   const isLocalNetwork = network.name === "hardhat" || network.name === "localhost";
+  // deploy-synthos.js transfers ownership of every other launch Ownable
+  // (SynCoin, the bridge minter, the DEX, the early adopter sale, etc.) to
+  // its timelock before finishing -- this contract's owner controls
+  // setConfirmer, setBtcUsdPrice, pause/unpause, and critically
+  // withdrawUnsoldSyn (can move the entire unsold allocation to any
+  // address), so leaving it on the deploy key instead of the same timelock
+  // would be a real gap, not just an inconsistency. Required on a real
+  // network; on hardhat/localhost dev deploys with no MULTISIG_OWNERS/
+  // timelock ceremony run yet, contracts.timelock may legitimately be
+  // absent, so that case is allowed to fall back to the deployer.
+  if (!contracts.timelock && !isLocalNetwork) {
+    throw new Error(
+      "Deployment file is missing contracts.timelock -- run deploy-synthos.js's full timelock/governance " +
+      "setup first so this sale's ownership has a real custody target to transfer to"
+    );
+  }
   if (isLocalNetwork && !contracts.synBridgeMinter) {
     throw new Error("Deployment file is missing contracts.synBridgeMinter (needed to bridge-mint on a local network)");
   }
@@ -102,6 +118,25 @@ async function main() {
     console.log(`Funded sale contract with ${ethers.formatUnits(allocation, 18)} SYN (transferred from deployer's bridge-minted balance)`);
   }
 
+  // Ownable defaults the deployer as owner. Left as-is, the deploy key --
+  // not a multisig-guarded timelock -- would permanently control
+  // setConfirmer, setBtcUsdPrice, pause/unpause, and withdrawUnsoldSyn (able
+  // to move the entire unsold allocation anywhere). Match every other
+  // launch Ownable in deploy-synthos.js and hand ownership to the timelock.
+  let saleOwner = deployer.address;
+  if (contracts.timelock) {
+    const transferOwnershipTx = await sale.transferOwnership(contracts.timelock);
+    await transferOwnershipTx.wait();
+    saleOwner = contracts.timelock;
+    console.log(`SYNTHOSBitcoinAdopterSale ownership transferred to timelock: ${contracts.timelock}`);
+  } else {
+    console.log(
+      "WARNING: no contracts.timelock in the deployment file -- SYNTHOSBitcoinAdopterSale ownership " +
+      `left on the deployer (${deployer.address}). This is only acceptable on a local/dev deploy; ` +
+      "transfer it to real custody before this sale ever touches a real network."
+    );
+  }
+
   const output = {
     network: network.name,
     deployedAt: new Date().toISOString(),
@@ -114,6 +149,7 @@ async function main() {
     bitcoinAdopterSale: {
       tokenPriceUsd: "0.10",
       confirmer: confirmerAddress,
+      owner: saleOwner,
       allocation: ethers.formatUnits(allocation, 18),
       minSynPurchase: ethers.formatUnits(minSynPurchase, 18),
       maxSynPerWallet: ethers.formatUnits(maxSynPerWallet, 18),

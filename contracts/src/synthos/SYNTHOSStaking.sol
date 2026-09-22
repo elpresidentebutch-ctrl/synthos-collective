@@ -156,15 +156,36 @@ contract SYNTHOSStaking {
     function requestUnstake(address validator, uint256 amount) public {
         require(amount > 0, "Amount must be positive");
 
-        // Find and reduce delegation
-        uint256 delegated = 0;
-        for (uint256 i = 0; i < delegations[msg.sender].length; i++) {
-            if (delegations[msg.sender][i].validator == validator) {
-                delegated += delegations[msg.sender][i].amount;
+        // Debit `amount` directly out of this delegator's own Delegation
+        // records for `validator` (oldest first), actually reducing each
+        // record's stored amount as it's consumed.
+        //
+        // The old code only SUMMED delegations[msg.sender] to check
+        // `amount` was covered -- it never reduced any delegation record.
+        // That meant a single real delegation could back an unlimited
+        // number of requestUnstake calls (the sum check kept passing every
+        // time, since nothing was ever subtracted from it), each one
+        // pushing its own independent UnstakeRequest that becomes claimable
+        // via claimUnstake once its cooldown passes. A delegator could
+        // request-unstake the same underlying stake as many times as they
+        // wanted and claim every one of them, draining far more from this
+        // contract's token balance than they, or anyone, ever actually
+        // delegated. Actually consuming the delegation records here closes
+        // that: a second request against already-claimed delegation now
+        // correctly fails with "Insufficient delegation".
+        uint256 remaining = amount;
+        Delegation[] storage delegatorDelegations = delegations[msg.sender];
+        for (uint256 i = 0; i < delegatorDelegations.length && remaining > 0; i++) {
+            if (delegatorDelegations[i].validator == validator && delegatorDelegations[i].amount > 0) {
+                uint256 take = delegatorDelegations[i].amount < remaining
+                    ? delegatorDelegations[i].amount
+                    : remaining;
+                delegatorDelegations[i].amount -= take;
+                remaining -= take;
             }
         }
 
-        require(delegated >= amount, "Insufficient delegation");
+        require(remaining == 0, "Insufficient delegation");
 
         uint256 unlock_time = block.timestamp + UNSTAKE_COOLDOWN;
 

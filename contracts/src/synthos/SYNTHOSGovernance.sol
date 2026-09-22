@@ -5,6 +5,19 @@ import "./SYNToken.sol";
 import "./SYNTHOSTimelock.sol";
 
 /**
+ * @dev Snapshot-balance surface a governance token must expose so castVote
+ * can weight votes by a balance fixed at proposal-creation time instead of
+ * a live one. SynCoin implements this via OpenZeppelin's ERC20Snapshot
+ * (createSnapshot/balanceOfAt), gating createSnapshot to its owner or a
+ * wired-up governance contract -- see SynCoin.sol's createSnapshot and
+ * setGovernance.
+ */
+interface ISnapshotToken {
+    function createSnapshot() external returns (uint256);
+    function balanceOfAt(address account, uint256 snapshotId) external view returns (uint256);
+}
+
+/**
  * @title SYNTHOSGovernance
  * @dev On-chain governance contract for SYNTHOS DAO
  * 
@@ -60,6 +73,7 @@ contract SYNTHOSGovernance {
         uint256 votes_for;
         uint256 votes_against;
         uint256 votes_abstain;
+        uint256 snapshot_id;
         bool cancelled;
         bool executed;
         bool exists;
@@ -173,6 +187,9 @@ contract SYNTHOSGovernance {
         p.votes_for = 0;
         p.votes_against = 0;
         p.votes_abstain = 0;
+        // Fix a balance snapshot at proposal-creation time -- see castVote's
+        // doc comment for the double-voting-via-transfer bug this closes.
+        p.snapshot_id = ISnapshotToken(address(synToken)).createSnapshot();
         p.cancelled = false;
         p.executed = false;
         p.exists = true;
@@ -209,6 +226,20 @@ contract SYNTHOSGovernance {
      * @dev Cast a vote on a proposal
      * @param proposal_id ID of proposal
      * @param vote Vote value (1 = for, 2 = against, 3 = abstain)
+     *
+     * Voting weight is read from the token balance snapshotted at
+     * PROPOSAL-CREATION time (p.snapshot_id, set in createProposal), not
+     * the caller's live balance. The old code used
+     * synToken.balanceOf(msg.sender) directly: since a plain ERC-20
+     * transfer doesn't know or care about this contract, a holder could
+     * vote with address A, transfer their balance to address B (a second
+     * wallet they also control, or a willing accomplice), vote again with
+     * B, transfer onward to C, and so on -- has_voted only ever blocked
+     * the SAME address from voting twice, not the same underlying tokens
+     * voting through a chain of addresses in the same voting window. A
+     * fixed pre-proposal snapshot removes the incentive entirely: balances
+     * moved after the proposal was created don't change what any address
+     * can vote with.
      */
     function castVote(uint256 proposal_id, uint8 vote) public {
         Proposal storage p = proposals[proposal_id];
@@ -218,7 +249,7 @@ contract SYNTHOSGovernance {
         require(!p.has_voted[msg.sender], "Already voted");
         require(vote >= 1 && vote <= 3, "Invalid vote");
 
-        uint256 voting_weight = synToken.balanceOf(msg.sender);
+        uint256 voting_weight = ISnapshotToken(address(synToken)).balanceOfAt(msg.sender, p.snapshot_id);
 
         require(voting_weight > 0, "No voting power");
 

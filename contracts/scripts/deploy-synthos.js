@@ -189,11 +189,36 @@ async function main() {
   const syn = await deployContract("SynCoin", [treasuryWallet]);
   const token = syn.contract;
 
+  const isLocalBridgeNetwork = network.name === "hardhat" || network.name === "localhost";
   const synBridgeRelayers = parseAddressList(process.env.SYN_BRIDGE_RELAYERS);
+  // This used to silently fall back to [deployer.address] -- a single
+  // relayer, which is also the deploy key -- with a matching threshold of
+  // 1, on ANY network, real or local, whenever SYN_BRIDGE_RELAYERS wasn't
+  // set. That's a single point of failure on the contract that mints every
+  // wrapped SYN on this chain: whoever holds that one key (or whoever ran
+  // this script) could mint an unlimited amount on their own, no quorum
+  // involved, and an operator could ship that configuration to a real
+  // network just by forgetting to set an env var. The local/dev fallback
+  // stays -- tests and local rehearsals need a deterministic single-signer
+  // setup they can drive with one hardhat account -- but a real network
+  // deploy now refuses to proceed without an explicit, real relayer set.
+  if (!isLocalBridgeNetwork && synBridgeRelayers.length < 2) {
+    throw new Error(
+      "SYN_BRIDGE_RELAYERS must be set to a real, comma-separated list of at least 2 independent " +
+      "relayer addresses on a real network -- refusing to default to a single deploy-key relayer " +
+      "for the contract that mints every wrapped SYN on this chain"
+    );
+  }
   const bridgeRelayers = synBridgeRelayers.length > 0 ? synBridgeRelayers : [deployer.address];
   const synBridgeThreshold = BigInt(
     process.env.SYN_BRIDGE_THRESHOLD || (bridgeRelayers.length >= 2 ? "2" : "1")
   );
+  if (!isLocalBridgeNetwork && synBridgeThreshold < 2n) {
+    throw new Error(
+      "SYN_BRIDGE_THRESHOLD must be at least 2 on a real network -- a threshold of 1 means any single " +
+      "relayer can mint unilaterally, defeating the point of having more than one"
+    );
+  }
   const synBridgeMinter = await deployContract("SYNTHOSSynBridgeMinter", [
     syn.address,
     bridgeRelayers,
@@ -203,6 +228,48 @@ async function main() {
   await tx.wait();
   console.log(`SYN_BRIDGE_MINTER: ${synBridgeMinter.address} (relayers=${bridgeRelayers.join(",")} threshold=${synBridgeThreshold})`);
   console.log("SYN_BRIDGE_MINTER is paused by default -- unpause it once relayers are confirmed live.");
+
+  // The contract already supports a per-mint cap and a rolling epoch cap
+  // (setMintLimits) -- this script just never called it, so both stayed at
+  // their default of 0, which SYNTHOSSynBridgeMinter treats as
+  // "unlimited". Even with a real relayer quorum in place, an unlimited
+  // per-mint/per-epoch cap means a quorum of compromised or colluding
+  // relayers (or a bug in the off-chain relayer software agreeing with
+  // itself) can mint any amount in one shot with no circuit breaker.
+  // Setting real caps here bounds the blast radius of that scenario to
+  // something an operator can notice and pause before it's catastrophic.
+  // All three are still operator-tunable after deploy via setMintLimits.
+  //
+  // Local/hardhat deploys skip this: this same script bridge-mints large
+  // lump-sum allocation buckets directly (the early adopter sale alone
+  // defaults to 250M SYN in one approveMint call, and deploy-bitcoin-sale.js
+  // mints another 50M), well above any real-network operational cap, so
+  // applying it locally would break the dev/test flow this script is also
+  // used for rather than protect anything -- there's no real relayer
+  // quorum to bound on a local network anyway.
+  if (!isLocalBridgeNetwork) {
+    const synBridgeMaxMintAmount = ethers.parseUnits(
+      process.env.SYN_BRIDGE_MAX_MINT_AMOUNT || "10000000", // 10M SYN per single mint (0.01% of 100B supply)
+      18
+    );
+    const synBridgeEpochMintLimit = ethers.parseUnits(
+      process.env.SYN_BRIDGE_EPOCH_MINT_LIMIT || "50000000", // 50M SYN per epoch
+      18
+    );
+    const synBridgeEpochDuration = BigInt(process.env.SYN_BRIDGE_EPOCH_MINT_DURATION_SECONDS || "86400"); // 1 day
+    tx = await synBridgeMinter.contract.setMintLimits(
+      synBridgeMaxMintAmount,
+      synBridgeEpochMintLimit,
+      synBridgeEpochDuration
+    );
+    await tx.wait();
+    console.log(
+      `SYN_BRIDGE_MINT_LIMITS: max ${ethers.formatUnits(synBridgeMaxMintAmount, 18)} SYN per mint, ` +
+      `${ethers.formatUnits(synBridgeEpochMintLimit, 18)} SYN per ${synBridgeEpochDuration}s epoch`
+    );
+  } else {
+    console.log("SYN_BRIDGE_MINT_LIMITS: left unlimited on a local/dev network (see comment above)");
+  }
 
   const timelockMinDelay = BigInt(
     process.env.TIMELOCK_MIN_DELAY || (network.name === "hardhat" ? "60" : "172800")
@@ -218,6 +285,15 @@ async function main() {
     syn.address,
     timelock.address,
   ]);
+
+  // Governance needs to call SynCoin.createSnapshot() once per proposal
+  // (see SYNTHOSGovernance.createProposal / castVote's doc comments for
+  // why) -- this has to happen while `deployer` still owns SynCoin, since
+  // setGovernance is onlyOwner and ownership moves to the timelock further
+  // below.
+  tx = await token.setGovernance(governance.address);
+  await tx.wait();
+  console.log(`SYN_GOVERNANCE (snapshot authority): ${governance.address}`);
 
   console.log("Configuring timelock custody");
   const proposerRole = await timelock.contract.PROPOSER_ROLE();
