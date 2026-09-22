@@ -25,6 +25,15 @@ type NodeConfig struct {
 	Validators  []string          `json:"validators"`  // validator agent IDs used for finality threshold
 	PeerKeys    map[string]string `json:"peer_keys"`   // agentID -> hex encoded ed25519 public key
 
+	// ConsensusPeers, when non-empty, is the roster of OTHER validators this
+	// node runs a REAL multi-party consensus round with over HTTPS (see
+	// rpc.Server.ProposeBlockWithConsensus and cmd/synthosd/main.go's
+	// startBlockProducer): every entry is asked to independently validate
+	// and vote on each proposal before it's finalized. Leaving this unset
+	// preserves today's behavior exactly -- self-only finalization, same as
+	// a deployment with no consensus peers configured at all.
+	ConsensusPeers []string `json:"consensus_peers"`
+
 	// TrustedValidators, when set, is the roster of validator IDs this node's
 	// Chain should accept finalized-block signatures from (resolved to keys via
 	// PeerKeys, same as Validators/AddPeer), independently of Validators above.
@@ -139,6 +148,10 @@ func (cfg *NodeConfig) LoadRuntimeConfig() {
 	}
 	if v := os.Getenv("SYNTHOS_HTTP_PEERS"); v != "" {
 		cfg.HTTPPeers = splitCSV(v)
+	}
+
+	if v := os.Getenv("SYNTHOS_CONSENSUS_PEERS"); v != "" {
+		cfg.ConsensusPeers = splitCSV(v)
 	}
 
 	if v := os.Getenv("HSM_ENABLED"); v == "true" {

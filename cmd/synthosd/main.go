@@ -123,10 +123,22 @@ func main() {
 	}
 	a.AttachTransport(t)
 
-	validators := cfg.Validators
-	if len(validators) == 0 && cfg.IsValidator {
-		validators = []string{a.Identity.AgentID}
-	}
+	// consensusEnabled is the real signal for "does this deployment
+	// participate in real multi-party consensus at all" -- true on every
+	// node in the real-consensus roster (producer AND followers alike),
+	// since every one of them independently enforces chain-level quorum on
+	// any block it accepts, not just the one node that happens to initiate
+	// HTTP rounds (that's the separate, narrower cfg.ConsensusPeers below,
+	// only needed on the actual producer). Deliberately NOT gated on
+	// cfg.ConsensusPeers: a follower validator has no proposals to fan out
+	// (so it configures no ConsensusPeers) but still MUST require the real
+	// quorum threshold on every block it accepts via gossip-push or
+	// catch-up, or it would silently accept an under-signed block a
+	// misbehaving or buggy producer sent it.
+	consensusToken := strings.TrimSpace(os.Getenv("SYNTHOS_CONSENSUS_TOKEN"))
+	consensusEnabled := consensusToken != ""
+
+	validators := resolveConsensusValidators(cfg, consensusEnabled, a.Identity.AgentID)
 	totalValidators := len(validators)
 	if totalValidators == 0 {
 		totalValidators = 1
@@ -163,19 +175,9 @@ func main() {
 		// requires before it will ever call TryFinalize on its own proposals.
 		// When cfg.TrustedValidators isn't set, behavior is unchanged: the
 		// roster and quorum come straight from cfg.Validators and the engine's
-		// real BFT threshold, exactly as before.
-		chainValidators := cfg.TrustedValidators
-		chainQuorum := eng.RequiredForFinality()
-		if len(chainValidators) > 0 {
-			// No real multi-party signature-gathering transport is wired for
-			// this deployment (see cfg.Peers / cfg.ListenAddr, both effectively
-			// unused here), so only ONE signature -- the proposer's own
-			// self-approval -- is ever actually gathered on any block,
-			// regardless of how many keys are registered as trusted signers.
-			chainQuorum = 1
-		} else {
-			chainValidators = validators
-		}
+		// real BFT threshold, exactly as before. See resolveChainQuorum's own
+		// doc comment for the consensusEnabled gating.
+		chainValidators, chainQuorum := resolveChainQuorum(cfg.TrustedValidators, validators, consensusEnabled, eng.RequiredForFinality())
 		valKeys, err := buildValidatorKeySet(chainValidators, a.Identity.AgentID, keys.Public, cfg.PeerKeys)
 		if err != nil {
 			panic(fmt.Errorf("building validator key set: %w", err))
@@ -207,13 +209,72 @@ func main() {
 		log.Printf("propose-block: SYNTHOS_PROPOSE_BLOCK_TOKEN not set -- /proposeBlock is disabled for this node (the automatic block-producer loop, if enabled, is unaffected)")
 	}
 	srv.SetPeerURLs(cfg.HTTPPeers)
+	srv.SetConsensusPeerURLs(cfg.ConsensusPeers)
+	srv.ConsensusToken = consensusToken
+	if len(cfg.ConsensusPeers) > 0 && !consensusEnabled {
+		log.Printf("consensus: SYNTHOS_CONSENSUS_PEERS is set but SYNTHOS_CONSENSUS_TOKEN is not -- real consensus rounds cannot authenticate to peers, falling back to single-sequencer behavior")
+	}
 	srv.StartPeerSync(15 * time.Second)
 	startRegistryHeartbeat(cfg.NodeID, ch.ChainID, keys.Public)
-	startBlockProducer(n, ch)
+	startBlockProducer(n, ch, srv)
 	fmt.Printf("synthosd: RPC listening on %s (data dir %s, node_id=%s)\n", cfg.RPCListen, dataDir, cfg.NodeID)
 	if err := http.ListenAndServe(cfg.RPCListen, srv.Handler()); err != nil {
 		panic(err)
 	}
+}
+
+// resolveConsensusValidators decides the roster this node's own Consensus
+// Engine uses for its local self-vote quorum (see node.Node.
+// ProposeBlockHash/SelfVote and consensus.Engine.RequiredForFinality).
+//
+// It deliberately ignores cfg.Validators entirely unless consensusEnabled
+// is true, falling back to just this node's own ID (today's exact
+// behavior) otherwise. This is what makes rolling out real multi-party
+// consensus safe: new code and a config naming a real multi-validator
+// roster can be deployed to every participating node ahead of time and
+// stay completely inert -- each node's own Engine still requires only its
+// own single self-vote to finalize, exactly like before -- right up until
+// SYNTHOS_CONSENSUS_TOKEN is deliberately turned on, on every participating
+// node together, as one clean step. Without this gate, merely deploying a
+// config that names 3 validators would raise this node's own local quorum
+// requirement to 2 immediately, before any real vote-collecting transport
+// existed yet to ever satisfy it, silently halting block production.
+func resolveConsensusValidators(cfg *config.NodeConfig, consensusEnabled bool, selfID string) []string {
+	validators := cfg.Validators
+	if !consensusEnabled {
+		validators = nil
+	}
+	if len(validators) == 0 && cfg.IsValidator {
+		validators = []string{selfID}
+	}
+	return validators
+}
+
+// resolveChainQuorum decides the roster and quorum threshold Chain itself
+// independently enforces on every block it accepts (see chain.Chain.
+// SetValidatorSet) -- the real safety net for both the HTTP consensus path
+// and ordinary gossip-push/catch-up. trustedValidators is cfg.
+// TrustedValidators; validators is this node's own Engine roster (see
+// resolveConsensusValidators); engineQuorum is that Engine's own
+// RequiredForFinality(). Returns (chainValidators, chainQuorum).
+//
+// When trustedValidators is empty, this falls back to validators/
+// engineQuorum unchanged (today's exact behavior for a deployment that
+// never set trusted_validators at all). When trustedValidators is set, the
+// real threshold applies only once consensusEnabled is true -- otherwise
+// this deliberately stays at 1 (only the proposer's own self-approval),
+// since no real vote-collecting transport exists yet to gather more than
+// that, regardless of how many keys are registered as trusted signers.
+func resolveChainQuorum(trustedValidators []string, validators []string, consensusEnabled bool, engineQuorum int) (chainValidators []string, chainQuorum int) {
+	chainValidators = trustedValidators
+	chainQuorum = engineQuorum
+	if len(chainValidators) == 0 {
+		return validators, engineQuorum
+	}
+	if !consensusEnabled {
+		chainQuorum = 1
+	}
+	return chainValidators, chainQuorum
 }
 
 // buildValidatorKeySet resolves the public key for every ID in the
@@ -246,16 +307,36 @@ func buildValidatorKeySet(validators []string, selfID string, selfPub ed25519.Pu
 
 // startBlockProducer runs the automatic block-proposal loop on the single
 // designated sequencer. Enable it on exactly ONE validator via
-// SYNTHOS_BLOCK_PRODUCER=true; the others follow via HTTP peer catch-up. It
-// proposes and finalizes a block whenever transactions are waiting, so the
-// chain advances on its own -- no manual /proposeBlock call needed. Running
-// this on more than one node at once would fork the chain.
+// SYNTHOS_BLOCK_PRODUCER=true; the others follow via HTTP peer catch-up (and,
+// when ConsensusPeers is configured -- see below -- also actually vote on
+// each proposal). Running the producer loop itself on more than one node at
+// once would still fork the chain; that part is unchanged.
 //
 // Env:
-//   SYNTHOS_BLOCK_PRODUCER=true          enable the loop on this node
-//   SYNTHOS_BLOCK_INTERVAL_SECONDS=10    how often to check/produce (default 10)
-//   SYNTHOS_PRODUCE_EMPTY_BLOCKS=true    also produce empty blocks for liveness
-func startBlockProducer(n *node.Node, ch *chain.Chain) {
+//
+//	SYNTHOS_BLOCK_PRODUCER=true          enable the loop on this node
+//	SYNTHOS_BLOCK_INTERVAL_SECONDS=10    how often to check/produce (default 10)
+//	SYNTHOS_PRODUCE_EMPTY_BLOCKS=true    also produce empty blocks for liveness
+//	SYNTHOS_CONSENSUS_PEERS              (via NodeConfig.ConsensusPeers) other
+//	                                      validators to collect real votes from
+//	SYNTHOS_CONSENSUS_TOKEN              shared secret for /consensus/propose
+//
+// When srv has real consensus peers AND a consensus token configured, each
+// tick runs a genuine round: build a candidate, ask every consensus peer to
+// independently validate and vote on it over HTTPS (rpc.Server.
+// ProposeBlockWithConsensus), and only finalize once real quorum -- not just
+// this node's own say-so -- is reached. If quorum isn't reached in time
+// (a peer is down, slow, or disagrees), this tick simply doesn't advance the
+// chain; the next tick tries again at the same height. That's a liveness
+// trade-off, not a safety one: Chain itself independently re-verifies every
+// signature before ever accepting a block, so a bug in the consensus
+// wiring can stall production but can never finalize bad data (see
+// chain.Chain.verifyBlockAuthorizationLocked).
+//
+// Without consensus peers configured (today's default for every deployment
+// except the ones explicitly wired for it), behavior is unchanged from
+// before: propose, self-approve, finalize immediately.
+func startBlockProducer(n *node.Node, ch *chain.Chain, srv *rpc.Server) {
 	if os.Getenv("SYNTHOS_BLOCK_PRODUCER") != "true" {
 		return
 	}
@@ -266,12 +347,30 @@ func startBlockProducer(n *node.Node, ch *chain.Chain) {
 		}
 	}
 	produceEmpty := os.Getenv("SYNTHOS_PRODUCE_EMPTY_BLOCKS") == "true"
-	log.Printf("Block producer enabled: interval=%s produce_empty=%v (single-sequencer)", interval, produceEmpty)
+	realConsensus := srv != nil && len(srv.ConsensusPeerURLs) > 0 && srv.ConsensusToken != ""
+	if realConsensus {
+		log.Printf("Block producer enabled: interval=%s produce_empty=%v (REAL multi-validator consensus, %d peer(s), quorum required)", interval, produceEmpty, len(srv.ConsensusPeerURLs))
+	} else {
+		log.Printf("Block producer enabled: interval=%s produce_empty=%v (single-sequencer)", interval, produceEmpty)
+	}
 	go func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for range ticker.C {
 			if !produceEmpty && len(ch.MempoolSnapshot()) == 0 {
+				continue
+			}
+			if realConsensus {
+				hash, finalized, err := srv.ProposeBlockWithConsensus(consensusRoundTimeout(interval))
+				if err != nil {
+					log.Printf("auto-propose (consensus) failed: %v", err)
+					continue
+				}
+				if !finalized {
+					log.Printf("auto-propose (consensus): quorum not reached this round, hash=%s height=%d -- will retry next tick", hash, ch.Height()+1)
+					continue
+				}
+				log.Printf("auto-proposed block (real quorum reached): height=%d", ch.Height())
 				continue
 			}
 			if _, err := n.ProposeBlockHash(); err != nil {
@@ -281,6 +380,21 @@ func startBlockProducer(n *node.Node, ch *chain.Chain) {
 			log.Printf("auto-proposed block: height=%d", ch.Height())
 		}
 	}()
+}
+
+// consensusRoundTimeout bounds how long a single consensus round (proposing
+// and collecting peer votes) is allowed to take, leaving meaningful headroom
+// below the block-producer's own tick interval so a round that can't reach
+// quorum in time fails fast rather than backing up ticks.
+func consensusRoundTimeout(interval time.Duration) time.Duration {
+	t := interval / 2
+	if t < 2*time.Second {
+		t = 2 * time.Second
+	}
+	if t > 8*time.Second {
+		t = 8 * time.Second
+	}
+	return t
 }
 
 func startRegistryHeartbeat(nodeID string, chainID string, publicKey ed25519.PublicKey) {

@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -381,7 +382,12 @@ func (n *Node) handleRaw(from string, payload []byte) {
 
 	switch env.MessageType {
 	case "block_proposal":
-		// Only validators may propose blocks.
+		// Only validators may propose blocks. This is a cheap early reject
+		// keyed to the envelope's already-verified sender; HandleProposal
+		// below independently re-derives the same fact from the block's
+		// own signature, since the HTTP consensus path (rpc.Server's
+		// /consensus/propose) has no equivalent pre-verified envelope
+		// sender to check here.
 		if !n.IsValidator(env.FromAgentID) {
 			if n.Logf != nil {
 				n.Logf("drop: non-validator proposal from_agent=%s", env.FromAgentID)
@@ -402,65 +408,14 @@ func (n *Node) handleRaw(from string, payload []byte) {
 			}
 			return
 		}
-		// Height sanity: proposal must extend our current tip.
-		expectedHeight := n.Chain.Height() + 1
-		if b.Header.Height != expectedHeight {
+		vote, err := n.HandleProposal(&b)
+		if err != nil {
 			if n.Logf != nil {
-				n.Logf("drop: proposal height mismatch from_agent=%s got=%d expected=%d", env.FromAgentID, b.Header.Height, expectedHeight)
+				n.Logf("warn: proposal handling failed hash=%s from_agent=%s err=%v", b.Hash, env.FromAgentID, err)
 			}
 			return
 		}
-		// Basic chain validation. Everything needed to safely act on a
-		// failure here is already true at this point: the envelope's
-		// signature was verified above against env.FromAgentID's known
-		// public key (VerifyAndUnmarshalEnvelope), the block's own
-		// ProposerID was checked to match that verified sender (so a
-		// forged block can't pin blame on an innocent validator), and the
-		// height check above already restricts this to a proposal
-		// extending our current tip -- so a stale-but-formerly-valid old
-		// block can never land here after it's been superseded. That
-		// means a ValidateBlock failure at this point is real,
-		// independently-checked proof that a known validator proposed a
-		// genuinely invalid block, not a bare accusation.
-		//
-		// This is the Enforcer wiring: SlashingTracker.RecordInvalidBlock
-		// already existed but had no caller anywhere, so a validator could
-		// propose a malformed/invalid block and nothing but a log line
-		// ever happened. Every validator that receives the bad proposal
-		// now independently detects and records it, the same way
-		// double-signing and equivocation already do via OnProposal/OnVote
-		// below.
-		if err := n.Chain.ValidateBlock(&b); err != nil {
-			if n.Logf != nil {
-				n.Logf("warn: proposal validate failed hash=%s err=%v", b.Hash, err)
-			}
-			if n.Slashing != nil {
-				_ = n.Slashing.RecordInvalidBlock(env.FromAgentID, b.Header.Height, err.Error())
-			}
-			return
-		}
-		n.Consensus.OnProposal(&b)
-
-		// Vote independently (validators only).
-		if !n.IsValidator(n.Agent.Identity.AgentID) {
-			return
-		}
-		vote := 1
-		if err := n.Chain.ValidateBlock(&b); err != nil {
-			vote = -1
-		}
-		v := consensus.BlockVote{
-			BlockHash: b.Hash,
-			Height:    b.Header.Height,
-			VoterID:   n.Agent.Identity.AgentID,
-			Vote:      vote,
-		}
-		if vote == 1 {
-			if sig, err := n.Agent.SignRaw(b.QuorumApprovalMessage()); err == nil {
-				v.Signature = "0x" + hex.EncodeToString(sig)
-			}
-		}
-		envOut, err := n.Agent.BuildEnvelope("block_vote", "", consensus.TopicVotes, v)
+		envOut, err := n.Agent.BuildEnvelope("block_vote", "", consensus.TopicVotes, vote)
 		if err == nil {
 			_ = n.Agent.SendEnvelope(envOut)
 		} else if n.Logf != nil {
@@ -489,7 +444,7 @@ func (n *Node) handleRaw(from string, payload []byte) {
 			}
 			return
 		}
-		finalized, _, _, _ := n.Consensus.OnVote(v)
+		finalized, _ := n.HandleVote(v)
 		if finalized {
 			_ = n.TryFinalize(v.BlockHash)
 		}
@@ -571,6 +526,144 @@ func (n *Node) signProposalBlock(b *chain.Block) error {
 	}
 	b.ProposerSignature = "0x" + hex.EncodeToString(sig)
 	return nil
+}
+
+// HandleProposal validates an incoming block proposal and, if this node is
+// itself a registered validator, returns the vote it casts on it. Trust in
+// b.Header.ProposerID comes entirely from Chain.ValidateBlock's own
+// cryptographic check of b.ProposerSignature against that ID's registered
+// validator key (see chain.Chain.verifyBlockAuthorizationLocked) -- this
+// method never trusts a caller-supplied identity, so it's safe to call from
+// a transport with no envelope-level sender verification of its own.
+//
+// Shared by two callers: handleRaw's "block_proposal" case (the TCP gossip
+// path, which additionally checks an already-verified envelope sender first
+// as a cheap early reject before decoding) and rpc.Server's
+// /consensus/propose HTTP handler (the real transport actually wired up in
+// production -- see cmd/synthosd/main.go's startBlockProducer), which has
+// no equivalent pre-verified sender and relies on this check alone.
+func (n *Node) HandleProposal(b *chain.Block) (consensus.BlockVote, error) {
+	if b == nil {
+		return consensus.BlockVote{}, errors.New("missing block")
+	}
+	if !n.IsValidator(b.Header.ProposerID) {
+		return consensus.BlockVote{}, fmt.Errorf("proposer %q is not a registered validator", b.Header.ProposerID)
+	}
+	// Height sanity: proposal must extend our current tip. Checked before
+	// the more expensive full ValidateBlock call below, same ordering
+	// rationale as the TCP path.
+	expectedHeight := n.Chain.Height() + 1
+	if b.Header.Height != expectedHeight {
+		return consensus.BlockVote{}, fmt.Errorf("proposal height mismatch: got %d want %d", b.Header.Height, expectedHeight)
+	}
+	// Basic chain validation, including the cryptographic proposer-signature
+	// check (verifyBlockAuthorizationLocked) that's what actually earns
+	// b.Header.ProposerID our trust. ValidateProposal (not ValidateBlock)
+	// is deliberately used here: this is a bare candidate nobody has voted
+	// on yet, so it cannot possibly carry quorum-of-approvals signatures --
+	// requiring them here would make it impossible for any validator to
+	// ever validate-then-vote on a fresh proposal. The quorum check still
+	// runs for real at finalization (TryFinalize -> Chain.FinalizeBlock),
+	// which is the point that actually matters.
+	//
+	// A failure here is real, independently-checked proof that a known
+	// validator proposed a genuinely invalid block (or that ProposerID's
+	// signature doesn't check out at all), not a bare accusation -- this is
+	// the Enforcer wiring: every validator that receives a bad proposal
+	// independently detects and records it, the same way double-signing and
+	// equivocation already do via OnProposal/OnVote.
+	if err := n.Chain.ValidateProposal(b); err != nil {
+		if n.Slashing != nil {
+			_ = n.Slashing.RecordInvalidBlock(b.Header.ProposerID, b.Header.Height, err.Error())
+		}
+		return consensus.BlockVote{}, fmt.Errorf("invalid proposal: %w", err)
+	}
+	n.Consensus.OnProposal(b)
+
+	// Vote independently (validators only) -- ValidateBlock already
+	// succeeded above, so this is always an approval; a node that
+	// disagreed would have already returned the error above instead of
+	// reaching here.
+	if !n.IsValidator(n.Agent.Identity.AgentID) {
+		return consensus.BlockVote{}, errors.New("this node is not a validator, cannot vote")
+	}
+	v := consensus.BlockVote{
+		BlockHash: b.Hash,
+		Height:    b.Header.Height,
+		VoterID:   n.Agent.Identity.AgentID,
+		Vote:      1,
+	}
+	sig, err := n.Agent.SignRaw(b.QuorumApprovalMessage())
+	if err != nil {
+		return consensus.BlockVote{}, fmt.Errorf("signing vote: %w", err)
+	}
+	v.Signature = "0x" + hex.EncodeToString(sig)
+	return v, nil
+}
+
+// HandleVote records a peer's vote for a proposal this node already knows
+// about (via BuildAndSignProposal or HandleProposal, both of which call
+// Consensus.OnProposal) and reports whether that pushes the tally to real
+// quorum. It does not itself finalize -- callers decide what to do with a
+// true result (see TryFinalize).
+func (n *Node) HandleVote(v consensus.BlockVote) (finalized bool, err error) {
+	finalized, _, _, err = n.Consensus.OnVote(v)
+	return finalized, err
+}
+
+// PeerPublicKey returns the registered public key for a known peer/
+// validator agentID, safe for concurrent use (unlike reading the Peers
+// field directly -- see HasPeer's doc comment for why that matters).
+func (n *Node) PeerPublicKey(agentID string) ([]byte, bool) {
+	n.peersMu.RLock()
+	defer n.peersMu.RUnlock()
+	pub, ok := n.Peers[agentID]
+	return pub, ok
+}
+
+// BuildAndSignProposal builds a new candidate block extending this node's
+// current tip, signs it as proposer, and records it in this node's local
+// Consensus engine as the candidate for its height -- but does NOT
+// broadcast it, vote on it, or finalize it. It exists for orchestrating a
+// real multi-party consensus round over HTTP (see rpc.Server.
+// ProposeBlockWithConsensus), where finalization must wait for
+// independently verified peer votes rather than happening unconditionally
+// the way ProposeBlock/ProposeBlockHash below do.
+func (n *Node) BuildAndSignProposal() (*chain.Block, error) {
+	if !n.IsValidator(n.Agent.Identity.AgentID) {
+		return nil, errors.New("not a validator")
+	}
+	b, err := n.Chain.BuildBlock(n.Agent.Identity.AgentID, n.Agent.ProofRoot(), 1000)
+	if err != nil {
+		return nil, err
+	}
+	if err := n.signProposalBlock(b); err != nil {
+		return nil, err
+	}
+	n.Consensus.OnProposal(b)
+	return b, nil
+}
+
+// SelfVote casts and records this node's own approval vote for a block it
+// just proposed via BuildAndSignProposal, without broadcasting it anywhere
+// -- the caller (rpc.Server.ProposeBlockWithConsensus) is responsible for
+// that as part of the real quorum tally it's assembling.
+func (n *Node) SelfVote(b *chain.Block) (consensus.BlockVote, error) {
+	v := consensus.BlockVote{
+		BlockHash: b.Hash,
+		Height:    b.Header.Height,
+		VoterID:   n.Agent.Identity.AgentID,
+		Vote:      1,
+	}
+	sig, err := n.Agent.SignRaw(b.QuorumApprovalMessage())
+	if err != nil {
+		return consensus.BlockVote{}, err
+	}
+	v.Signature = "0x" + hex.EncodeToString(sig)
+	if _, _, _, err := n.Consensus.OnVote(v); err != nil {
+		return consensus.BlockVote{}, err
+	}
+	return v, nil
 }
 
 // ProposeBlock builds and broadcasts a block proposal.

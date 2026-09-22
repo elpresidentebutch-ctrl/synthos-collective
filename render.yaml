@@ -13,6 +13,18 @@ services:
         value: /data
       - key: SYNTHOS_BOOTSTRAP_IMMUNE_NODE
         value: "true"
+      # Real multi-party consensus: this node (synthos-render-validator-1)
+      # is one of the 3 validators that independently validate and vote on
+      # every block the sequencer (synthos-validator-12) proposes -- see
+      # config/render-node.json's validators/trusted_validators/peer_keys.
+      # It never initiates a round itself (no SYNTHOS_CONSENSUS_PEERS here),
+      # only answers /consensus/propose requests and enforces the real
+      # 2-of-3 quorum on any block it accepts. Must be set to the exact
+      # same value as SYNTHOS_CONSENSUS_TOKEN on synthos-validator-12 and
+      # synthos-validator-13 -- set it once in the Render dashboard (it's
+      # sync: false so it isn't committed here).
+      - key: SYNTHOS_CONSENSUS_TOKEN
+        sync: false
     disk:
       name: synthos-rpc-data
       mountPath: /data
@@ -66,14 +78,29 @@ services:
       - key: SYNTHOS_BOOTSTRAP_IMMUNE_NODE
         value: "true"
       # Single designated sequencer: only this validator auto-produces blocks.
-      # The other validators (11, 13-15) follow via HTTP peer catch-up. Enabling
-      # this on more than one node would fork the chain.
+      # The other validators (11, 13-15) follow via HTTP peer catch-up.
+      # Enabling the producer LOOP on more than one node would still fork the
+      # chain -- that part is unchanged. What changed: this node no longer
+      # just self-approves every block it proposes. With SYNTHOS_CONSENSUS_
+      # PEERS + SYNTHOS_CONSENSUS_TOKEN set, it asks synthos-validator-13 and
+      # synthos-render-validator-1 to independently validate and vote on
+      # each proposal over HTTPS, and only finalizes once a real 2-of-3
+      # quorum of genuine signatures is collected -- see rpc.Server.
+      # ProposeBlockWithConsensus. If quorum isn't reached in time, this
+      # node simply retries at the next tick rather than finalizing alone.
       - key: SYNTHOS_BLOCK_PRODUCER
         value: "true"
       - key: SYNTHOS_BLOCK_INTERVAL_SECONDS
         value: "10"
       - key: SYNTHOS_PRODUCE_EMPTY_BLOCKS
         value: "true"
+      - key: SYNTHOS_CONSENSUS_PEERS
+        value: https://synthos-validator-13.onrender.com,https://synthos-rpc.onrender.com
+      # Must be set to the exact same value as SYNTHOS_CONSENSUS_TOKEN on
+      # synthos-validator-13 and synthos-rpc -- set it once in the Render
+      # dashboard (it's sync: false so it isn't committed here).
+      - key: SYNTHOS_CONSENSUS_TOKEN
+        sync: false
       - key: SYNTHOS_PRIVATE_KEY
         sync: false
     disk:
@@ -101,6 +128,17 @@ services:
         value: https://synthos-www.onrender.com
       - key: SYNTHOS_BOOTSTRAP_IMMUNE_NODE
         value: "true"
+      # Real multi-party consensus: this node independently validates and
+      # votes on every block synthos-validator-12 proposes -- see
+      # config/render-validator-13.json. It never initiates a round itself
+      # (no SYNTHOS_CONSENSUS_PEERS here), only answers /consensus/propose
+      # requests and enforces the real 2-of-3 quorum on any block it
+      # accepts. Must be set to the exact same value as
+      # SYNTHOS_CONSENSUS_TOKEN on synthos-validator-12 and synthos-rpc --
+      # set it once in the Render dashboard (it's sync: false so it isn't
+      # committed here).
+      - key: SYNTHOS_CONSENSUS_TOKEN
+        sync: false
       - key: SYNTHOS_PRIVATE_KEY
         sync: false
     disk:

@@ -322,13 +322,35 @@ func (c *Chain) BuildBlock(proposerID string, proposerPoCRoot string, maxTx int)
 	return b, err
 }
 
+// ValidateBlock reports whether b is a fully valid, ready-to-commit block:
+// correct hashes/state transition, and, once a validator set is configured,
+// both a genuine proposer signature AND real quorum-threshold validator
+// approvals. Use this to check a block that already carries its full set of
+// collected approvals -- e.g. immediately before FinalizeBlock, or when
+// deciding whether to accept a peer's already-finalized block during
+// catch-up. For a bare candidate a proposer has just built (which by
+// definition has zero approvals yet -- nobody has voted on it), use
+// ValidateProposal instead.
 func (c *Chain) ValidateBlock(b *Block) error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.validateBlockLocked(b)
+	return c.validateBlockLocked(b, true)
 }
 
-func (c *Chain) validateBlockLocked(b *Block) error {
+// ValidateProposal checks a freshly-built candidate block -- everything
+// ValidateBlock checks except the quorum-of-approvals count, which cannot
+// possibly be satisfied yet on a block nobody has voted on. The proposer's
+// own signature IS still verified (when a validator set is configured),
+// since that's exactly what a validator needs to confirm before it's
+// willing to vote on the candidate at all -- see node.Node.HandleProposal,
+// the real multi-party consensus round's use of this method.
+func (c *Chain) ValidateProposal(b *Block) error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.validateBlockLocked(b, false)
+}
+
+func (c *Chain) validateBlockLocked(b *Block, requireQuorum bool) error {
 	if b == nil || b.Hash == "" {
 		return ErrBadBlock
 	}
@@ -343,7 +365,7 @@ func (c *Chain) validateBlockLocked(b *Block) error {
 		return ErrBadBlock
 	}
 	if b.Header.Height > 0 && len(c.validatorKeys) > 0 && b.Header.Height >= c.authEnforceFromHeight {
-		if err := c.verifyBlockAuthorizationLocked(b); err != nil {
+		if err := c.verifyBlockAuthorizationLocked(b, requireQuorum); err != nil {
 			return err
 		}
 	}
@@ -383,10 +405,14 @@ func (c *Chain) validateBlockLocked(b *Block) error {
 }
 
 // FinalizeBlock commits exactly the state transition already validated.
+// Unlike ValidateProposal, this always requires real quorum-threshold
+// approvals to already be present on b -- this is the one place that
+// actually matters, since it's the point at which the block becomes
+// permanent chain history.
 func (c *Chain) FinalizeBlock(b *Block) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if err := c.validateBlockLocked(b); err != nil {
+	if err := c.validateBlockLocked(b, true); err != nil {
 		return err
 	}
 
@@ -592,12 +618,18 @@ func (c *Chain) BlockAt(height uint64) *Block {
 	return c.Blocks[height]
 }
 
-// verifyBlockAuthorizationLocked checks that b was actually produced and
-// approved by real, registered validators: a valid proposer signature from
-// Header.ProposerID's registered key, plus valid approval signatures from at
-// least requiredQuorum distinct registered validators. Must be called with
-// c.mu already held.
-func (c *Chain) verifyBlockAuthorizationLocked(b *Block) error {
+// verifyBlockAuthorizationLocked checks that b was actually produced by a
+// real, registered validator: a valid proposer signature from
+// Header.ProposerID's registered key. When requireQuorum is true, it
+// additionally requires valid approval signatures from at least
+// requiredQuorum distinct registered validators -- callers finalizing a
+// block (or checking one that should already be fully approved) always
+// pass true; callers validating a bare candidate that hasn't been voted on
+// yet (see ValidateProposal) pass false, since requiring approvals a
+// candidate cannot possibly have yet would make it impossible for any
+// validator to ever validate-then-vote on a fresh proposal. Must be called
+// with c.mu already held.
+func (c *Chain) verifyBlockAuthorizationLocked(b *Block, requireQuorum bool) error {
 	proposerKey, ok := c.validatorKeys[b.Header.ProposerID]
 	if !ok || len(proposerKey) != ed25519.PublicKeySize {
 		return fmt.Errorf("%w: proposer %q is not a registered validator", ErrBadBlock, b.Header.ProposerID)
@@ -605,6 +637,9 @@ func (c *Chain) verifyBlockAuthorizationLocked(b *Block) error {
 	propSig, err := decodeHexSig(b.ProposerSignature)
 	if err != nil || !ed25519.Verify(proposerKey, []byte(b.Hash), propSig) {
 		return fmt.Errorf("%w: invalid or missing proposer signature", ErrBadBlock)
+	}
+	if !requireQuorum {
+		return nil
 	}
 
 	approvalMsg := b.QuorumApprovalMessage()

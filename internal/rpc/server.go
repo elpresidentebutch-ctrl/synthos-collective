@@ -2,16 +2,22 @@ package rpc
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"synthos-collective/internal/chain"
+	"synthos-collective/internal/consensus"
 	"synthos-collective/internal/node"
 	"synthos-collective/internal/storage"
 )
@@ -37,6 +43,32 @@ type Server struct {
 	// CommunicatorToken, set via cmd/synthosd/main.go from
 	// SYNTHOS_PROPOSE_BLOCK_TOKEN.
 	ProposeBlockToken string
+
+	// ConsensusPeerURLs are the base URLs of the OTHER validators this node
+	// runs a REAL multi-party consensus round with (see
+	// ProposeBlockWithConsensus): each one is asked to validate and vote on
+	// every proposal before it's finalized. Deliberately distinct from
+	// PeerURLs (used only for after-the-fact catch-up/gossip-push to
+	// however many read-only followers exist) -- a node not listed here is
+	// never asked to vote, even if it's a trusted catch-up peer.
+	ConsensusPeerURLs []string
+
+	// ConsensusToken gates /consensus/propose the same way ProposeBlockToken
+	// gates /proposeBlock: a shared operator secret, checked in constant
+	// time, disabled by default. It exists to keep random internet traffic
+	// off the endpoint cheaply -- it is NOT what makes a proposal
+	// trustworthy (that's the block's own ProposerSignature, independently
+	// verified against a registered validator key -- see node.Node.
+	// HandleProposal), so every consensus-participating node must be
+	// configured with the same value.
+	ConsensusToken string
+
+	// consensusClient is used for the outbound propose-and-collect-votes
+	// calls in ProposeBlockWithConsensus. Kept separate from HTTPClient
+	// (used for catch-up/gossip-push) so its timeout can be tuned
+	// independently -- a consensus round needs to fit well inside the
+	// block-producer loop's tick interval.
+	consensusClient *http.Client
 }
 
 func NewServer(c *chain.Chain, st *storage.Store, n *node.Node) *Server {
@@ -65,6 +97,12 @@ func (s *Server) SetPeerURLs(urls []string) {
 	s.PeerURLs = sanitizePeerURLs(urls)
 }
 
+// SetConsensusPeerURLs configures the other validators this node runs a
+// real multi-party consensus round with (see ProposeBlockWithConsensus).
+func (s *Server) SetConsensusPeerURLs(urls []string) {
+	s.ConsensusPeerURLs = sanitizePeerURLs(urls)
+}
+
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", s.handleHealth)
@@ -86,6 +124,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/submitTx", s.handleSubmitTx)
 	mux.HandleFunc("/proposeBlock", s.handleProposeBlock)
 	mux.HandleFunc("/gossip/block", s.handleGossipBlock)
+	mux.HandleFunc("/consensus/propose", s.handleConsensusPropose)
 	mux.HandleFunc("/governance/propose", s.handleGovernancePropose)
 	mux.HandleFunc("/governance/vote", s.handleGovernanceVote)
 	mux.HandleFunc("/governance/execute", s.handleGovernanceExecute)
@@ -593,6 +632,208 @@ func (s *Server) applyPeerBlock(b *chain.Block) (bool, error) {
 		_ = s.Store.Save(s.Chain)
 	}
 	return true, nil
+}
+
+// handleConsensusPropose is the receiving side of real multi-party
+// consensus: a validator running ProposeBlockWithConsensus POSTs a
+// candidate block here, this node independently validates it (via
+// node.Node.HandleProposal, which cryptographically checks the block's own
+// ProposerSignature against a registered validator key -- see that
+// method's doc comment for why no other authentication of the caller is
+// needed) and returns the signed vote it casts. This is the actual live
+// transport for consensus in production; the raw-TCP gossip path in
+// node.Node.Start/handleRaw exists but has no real network wired to it in
+// any current deployment (see cmd/synthosd/main.go).
+func (s *Server) handleConsensusPropose(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.ConsensusToken == "" {
+		http.Error(w, "consensus is disabled for this deployment (no SYNTHOS_CONSENSUS_TOKEN configured)", http.StatusServiceUnavailable)
+		return
+	}
+	given := r.Header.Get("X-Consensus-Token")
+	if given == "" || subtle.ConstantTimeCompare([]byte(given), []byte(s.ConsensusToken)) != 1 {
+		http.Error(w, "unauthorized: missing or incorrect X-Consensus-Token", http.StatusUnauthorized)
+		return
+	}
+	if s.Node == nil {
+		http.Error(w, "node not available", http.StatusServiceUnavailable)
+		return
+	}
+	var body struct {
+		Proposal consensus.BlockProposal `json:"proposal"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	b := body.Proposal.Block
+	vote, err := s.Node.HandleProposal(&b)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true, "vote": vote})
+}
+
+// ProposeBlockWithConsensus builds a new block on top of the current tip,
+// asks every configured ConsensusPeerURLs peer to independently validate
+// and vote on it over HTTPS, and finalizes + broadcasts it only once real
+// quorum -- this node's own vote plus enough independently-verified peer
+// votes, per node.Node.Consensus.RequiredForFinality() -- is reached.
+//
+// If quorum isn't reached within timeout (a peer is down, slow, or
+// disagrees), this returns finalized=false and does NOT finalize anything.
+// That is by design, not a bug to route around: the caller (the
+// block-producer loop) should simply try again at the next tick. Chain
+// itself independently re-verifies every proposer and quorum signature
+// before ever accepting a block (see chain.Chain.
+// verifyBlockAuthorizationLocked) regardless of what this method or its
+// caller believes -- so a bug in this orchestration can stall block
+// production, but it can never finalize a block that didn't genuinely earn
+// real quorum approval.
+func (s *Server) ProposeBlockWithConsensus(timeout time.Duration) (hash string, finalized bool, err error) {
+	if s.Node == nil {
+		return "", false, errors.New("node not available")
+	}
+	b, err := s.Node.BuildAndSignProposal()
+	if err != nil {
+		return "", false, fmt.Errorf("building proposal: %w", err)
+	}
+	if _, err := s.Node.SelfVote(b); err != nil {
+		return b.Hash, false, fmt.Errorf("self-vote: %w", err)
+	}
+
+	finalized = s.collectConsensusVotes(b, timeout)
+	if !finalized {
+		return b.Hash, false, nil
+	}
+	if err := s.Node.TryFinalize(b.Hash); err != nil {
+		return b.Hash, false, fmt.Errorf("finalize: %w", err)
+	}
+	if s.Chain.Tip() == nil || s.Chain.Tip().Hash != b.Hash {
+		// TryFinalize is a no-op if quorum evaporated somehow (e.g. a
+		// concurrent reorg) between collectConsensusVotes and here -- don't
+		// claim finalized if the tip didn't actually move to this block.
+		return b.Hash, false, nil
+	}
+	if s.Store != nil {
+		_ = s.Store.Save(s.Chain)
+	}
+	s.pushBlockToPeers(s.Chain.Tip())
+	return b.Hash, true, nil
+}
+
+// collectConsensusVotes asks every configured consensus peer to vote on b,
+// in parallel, and feeds every independently-verified response into this
+// node's local Consensus tally. Returns whether that tally reached real
+// quorum (it already includes this node's own SelfVote, cast by the
+// caller before this runs). A peer that's unreachable, slow past timeout,
+// or returns a vote that doesn't check out cryptographically against its
+// own registered key is simply skipped -- it does not error the round,
+// matching normal BFT behavior for a peer that's down or misbehaving.
+func (s *Server) collectConsensusVotes(b *chain.Block, timeout time.Duration) (finalized bool) {
+	var wg sync.WaitGroup
+	votes := make(chan consensus.BlockVote, len(s.ConsensusPeerURLs))
+	for _, peer := range s.ConsensusPeerURLs {
+		peer := peer
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			v, err := s.requestConsensusVote(peer, b, timeout)
+			if err != nil {
+				log.Printf("consensus: vote request to %s failed: %v", peer, err)
+				return
+			}
+			if !s.verifyPeerVote(v, b) {
+				log.Printf("consensus: discarding vote from %s that failed independent verification (claimed voter_id=%s)", peer, v.VoterID)
+				return
+			}
+			votes <- v
+		}()
+	}
+	wg.Wait()
+	close(votes)
+
+	for v := range votes {
+		f, err := s.Node.HandleVote(v)
+		if err != nil {
+			continue
+		}
+		if f {
+			finalized = true
+		}
+	}
+	return finalized
+}
+
+// requestConsensusVote POSTs a candidate block to one consensus peer's
+// /consensus/propose and returns the vote it casts, or an error if the
+// peer is unreachable, times out, or rejects the proposal.
+func (s *Server) requestConsensusVote(peer string, b *chain.Block, timeout time.Duration) (consensus.BlockVote, error) {
+	body, err := json.Marshal(map[string]any{
+		"proposal": consensus.BlockProposal{Block: *b, Height: b.Header.Height},
+	})
+	if err != nil {
+		return consensus.BlockVote{}, err
+	}
+	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(peer, "/")+"/consensus/propose", bytes.NewReader(body))
+	if err != nil {
+		return consensus.BlockVote{}, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if s.ConsensusToken != "" {
+		req.Header.Set("X-Consensus-Token", s.ConsensusToken)
+	}
+	client := s.consensusClient
+	if client == nil {
+		client = &http.Client{Timeout: timeout}
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return consensus.BlockVote{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return consensus.BlockVote{}, fmt.Errorf("%s: %s", resp.Status, strings.TrimSpace(string(respBody)))
+	}
+	var out struct {
+		Vote consensus.BlockVote `json:"vote"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return consensus.BlockVote{}, err
+	}
+	return out.Vote, nil
+}
+
+// verifyPeerVote independently checks that a vote returned by a consensus
+// peer really is a valid ed25519 signature, by the claimed voter's own
+// registered public key, over this exact block's QuorumApprovalMessage.
+// This is defense-in-depth, not the actual safety boundary: Chain
+// re-verifies every QuorumSignatures entry itself before ever accepting a
+// block (see chain.Chain.verifyBlockAuthorizationLocked), so a vote that
+// slipped past this check could still never finalize a block on its own.
+// What this buys is keeping this node's local Consensus tally (and
+// therefore its decision about when to even attempt TryFinalize) honest,
+// rather than lettable a malformed or spoofed HTTP response nudge that
+// local bookkeeping around for no reason.
+func (s *Server) verifyPeerVote(v consensus.BlockVote, b *chain.Block) bool {
+	if v.Vote != 1 || v.BlockHash != b.Hash || v.Height != b.Header.Height || v.Signature == "" {
+		return false
+	}
+	pub, ok := s.Node.PeerPublicKey(v.VoterID)
+	if !ok || len(pub) != ed25519.PublicKeySize {
+		return false
+	}
+	sigHex := strings.TrimPrefix(v.Signature, "0x")
+	sig, err := hex.DecodeString(sigHex)
+	if err != nil || len(sig) != ed25519.SignatureSize {
+		return false
+	}
+	return ed25519.Verify(ed25519.PublicKey(pub), b.QuorumApprovalMessage(), sig)
 }
 
 func (s *Server) StartPeerSync(interval time.Duration) {
