@@ -60,7 +60,13 @@ func newConsensusTestValidator(t *testing.T, id string, genesis chain.Genesis) *
 	}
 
 	srv := NewServer(ch, nil, n)
-	srv.ConsensusToken = "test-shared-secret"
+	// Each simulated validator gets its OWN distinct inbound secret, not
+	// one shared value -- this is exactly the per-operator scoping this
+	// harness needs to actually exercise (see Server.ConsensusPeerTokens'
+	// doc comment). Tests that need to authenticate directly to one
+	// validator's endpoint use that validator's own srv.ConsensusToken,
+	// never a hardcoded shared literal.
+	srv.ConsensusToken = "test-secret-" + id
 
 	return &consensusTestValidator{id: id, agent: a, chain: ch, node: n, server: srv}
 }
@@ -117,6 +123,14 @@ func wireThreeValidators(t *testing.T) (p, f1, f2 *consensusTestValidator) {
 	})
 
 	p.server.SetConsensusPeerURLs([]string{f1.http.URL, f2.http.URL})
+	// Give the producer each follower's own distinct token to present when
+	// calling that specific follower -- proves the real per-peer routing
+	// path (not the shared-secret fallback) is what makes a normal round
+	// work in this harness.
+	p.server.ConsensusPeerTokens = map[string]string{
+		f1.http.URL: f1.server.ConsensusToken,
+		f2.http.URL: f2.server.ConsensusToken,
+	}
 	// Also wire the ordinary gossip-push path so a genuinely finalized
 	// block actually reaches followers, the same as production.
 	p.server.SetPeerURLs([]string{f1.http.URL, f2.http.URL})
@@ -313,7 +327,7 @@ func TestHandleConsensusPropose_RejectsInvalidProposerSignature(t *testing.T) {
 		t.Fatal(err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Consensus-Token", "test-shared-secret")
+	req.Header.Set("X-Consensus-Token", f1.server.ConsensusToken)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -324,6 +338,59 @@ func TestHandleConsensusPropose_RejectsInvalidProposerSignature(t *testing.T) {
 	}
 	if f1.chain.Height() != 0 {
 		t.Fatalf("follower height = %d, want 0 -- must never accept an unsigned/forged proposal", f1.chain.Height())
+	}
+}
+
+// TestHandleConsensusPropose_RejectsAnotherValidatorsOwnToken proves tokens
+// are genuinely per-operator, not fungible across the validator set: a
+// value that IS a real, currently-valid secret for f2 must still be
+// rejected by f1, exactly like any other wrong token. This is the actual
+// property per-peer tokens exist for -- a compromised or leaked copy of
+// one follower's secret must not be usable to authenticate to a DIFFERENT
+// follower.
+func TestHandleConsensusPropose_RejectsAnotherValidatorsOwnToken(t *testing.T) {
+	p, f1, f2 := wireThreeValidators(t)
+	_ = p
+
+	req, err := http.NewRequest(http.MethodPost, f1.http.URL+"/consensus/propose", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// f2's real token, presented to f1.
+	req.Header.Set("X-Consensus-Token", f2.server.ConsensusToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401 -- f2's own valid token must not authenticate to f1", resp.StatusCode)
+	}
+}
+
+// TestConsensusRound_FallsBackToSharedTokenWhenNoPeerEntryConfigured proves
+// the backward-compatibility path: a deployment that hasn't configured
+// ConsensusPeerTokens at all (an old single-shared-secret setup, or a test
+// harness that predates this feature) still works exactly as before --
+// every peer call falls back to this node's own plain ConsensusToken.
+func TestConsensusRound_FallsBackToSharedTokenWhenNoPeerEntryConfigured(t *testing.T) {
+	p, f1, f2 := wireThreeValidators(t)
+
+	// Simulate an unmigrated deployment: every node (incl. the two
+	// followers) agrees on one identical shared value, and the producer is
+	// NOT given any per-peer routing table.
+	const legacySharedSecret = "legacy-shared-secret"
+	p.server.ConsensusToken = legacySharedSecret
+	f1.server.ConsensusToken = legacySharedSecret
+	f2.server.ConsensusToken = legacySharedSecret
+	p.server.ConsensusPeerTokens = nil
+
+	hash, finalized, err := p.server.ProposeBlockWithConsensus(3 * time.Second)
+	if err != nil {
+		t.Fatalf("ProposeBlockWithConsensus: %v", err)
+	}
+	if !finalized {
+		t.Fatalf("expected the legacy shared-secret fallback to still reach real quorum, hash=%s", hash)
 	}
 }
 
@@ -364,7 +431,7 @@ func TestFollowerRetry_DoesNotCorruptLocalStateOrSlashProducer(t *testing.T) {
 			t.Fatal(err)
 		}
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-Consensus-Token", "test-shared-secret")
+		req.Header.Set("X-Consensus-Token", f1.server.ConsensusToken)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatal(err)

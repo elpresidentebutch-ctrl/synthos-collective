@@ -214,6 +214,27 @@ func main() {
 	if len(cfg.ConsensusPeers) > 0 && !consensusEnabled {
 		log.Printf("consensus: SYNTHOS_CONSENSUS_PEERS is set but SYNTHOS_CONSENSUS_TOKEN is not -- real consensus rounds cannot authenticate to peers, falling back to single-sequencer behavior")
 	}
+	// SYNTHOS_CONSENSUS_PEER_TOKENS, when set, is a JSON object mapping
+	// each ConsensusPeers URL to the specific outbound secret this node
+	// should present when calling that peer -- see Server.
+	// ConsensusPeerTokens' doc comment for why per-peer secrets exist
+	// instead of one shared SYNTHOS_CONSENSUS_TOKEN value on every node.
+	// Only meaningful on a block-producing node (the only one that ever
+	// calls out to ConsensusPeerURLs); harmless to leave unset everywhere
+	// else. Absent or empty, every peer falls back to plain
+	// SYNTHOS_CONSENSUS_TOKEN, unchanged from before this existed.
+	if raw := strings.TrimSpace(os.Getenv("SYNTHOS_CONSENSUS_PEER_TOKENS")); raw != "" {
+		var peerTokens map[string]string
+		if err := json.Unmarshal([]byte(raw), &peerTokens); err != nil {
+			panic(fmt.Errorf("parsing SYNTHOS_CONSENSUS_PEER_TOKENS as a JSON object of peer-url -> token: %w", err))
+		}
+		srv.ConsensusPeerTokens = peerTokens
+		for _, peer := range cfg.ConsensusPeers {
+			if _, ok := peerTokens[peer]; !ok {
+				log.Printf("consensus: SYNTHOS_CONSENSUS_PEER_TOKENS is set but has no entry for configured peer %s -- it will fall back to this node's own SYNTHOS_CONSENSUS_TOKEN for that peer", peer)
+			}
+		}
+	}
 	srv.StartPeerSync(15 * time.Second)
 	startRegistryHeartbeat(cfg.NodeID, ch.ChainID, keys.Public)
 	startBlockProducer(n, ch, srv)

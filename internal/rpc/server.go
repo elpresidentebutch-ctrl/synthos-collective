@@ -54,14 +54,37 @@ type Server struct {
 	ConsensusPeerURLs []string
 
 	// ConsensusToken gates /consensus/propose the same way ProposeBlockToken
-	// gates /proposeBlock: a shared operator secret, checked in constant
-	// time, disabled by default. It exists to keep random internet traffic
-	// off the endpoint cheaply -- it is NOT what makes a proposal
-	// trustworthy (that's the block's own ProposerSignature, independently
-	// verified against a registered validator key -- see node.Node.
-	// HandleProposal), so every consensus-participating node must be
-	// configured with the same value.
+	// gates /proposeBlock: an operator secret, checked in constant time,
+	// disabled by default. It exists to keep random internet traffic off
+	// the endpoint cheaply -- it is NOT what makes a proposal trustworthy
+	// (that's the block's own ProposerSignature, independently verified
+	// against a registered validator key -- see node.Node.HandleProposal).
+	//
+	// This is THIS node's own inbound secret: whatever calls this node's
+	// /consensus/propose must present it. It must be unique per node, not
+	// shared across the whole validator set -- see ConsensusPeerTokens for
+	// why. (An earlier version of this deployment used one identical value
+	// on every node; that meant no single operator could ever be added or
+	// revoked without rotating the secret for everyone else too, and a
+	// leaked copy from any one node's environment could be used to spam
+	// every other node's endpoint, not just its own.)
 	ConsensusToken string
+
+	// ConsensusPeerTokens holds, for a block-producing node, the specific
+	// outbound secret to present when calling each individual peer's own
+	// /consensus/propose -- keyed by the exact URL as it appears in
+	// ConsensusPeerURLs. Each peer independently sets its own ConsensusToken
+	// (its inbound secret) and only that peer needs to be told its own
+	// entry here: adding a new peer means both sides agree on one new
+	// value, and revoking one means deleting one entry here plus that
+	// peer's own ConsensusToken, without touching any other peer's secret
+	// or causing an outage anywhere else.
+	//
+	// A peer URL with no entry here falls back to ConsensusToken (this
+	// node's own inbound secret, sent as the outbound value too) --
+	// backward compatible with a single-shared-secret deployment that
+	// hasn't migrated to per-peer secrets yet.
+	ConsensusPeerTokens map[string]string
 
 	// consensusClient is used for the outbound propose-and-collect-votes
 	// calls in ProposeBlockWithConsensus. Kept separate from HTTPClient
@@ -653,6 +676,10 @@ func (s *Server) handleConsensusPropose(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "consensus is disabled for this deployment (no SYNTHOS_CONSENSUS_TOKEN configured)", http.StatusServiceUnavailable)
 		return
 	}
+	// Checked only against THIS node's own inbound secret (see
+	// ConsensusToken's doc comment) -- a caller presenting some other
+	// node's valid-but-different token is rejected exactly like a caller
+	// presenting nothing at all.
 	given := r.Header.Get("X-Consensus-Token")
 	if given == "" || subtle.ConstantTimeCompare([]byte(given), []byte(s.ConsensusToken)) != 1 {
 		http.Error(w, "unauthorized: missing or incorrect X-Consensus-Token", http.StatusUnauthorized)
@@ -784,7 +811,14 @@ func (s *Server) requestConsensusVote(peer string, b *chain.Block, timeout time.
 		return consensus.BlockVote{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if s.ConsensusToken != "" {
+	// Prefer this specific peer's own assigned secret (see
+	// ConsensusPeerTokens' doc comment); only fall back to this node's own
+	// inbound token when no per-peer entry is configured for it, so an
+	// unmigrated deployment keeps working under the old shared-secret
+	// behavior.
+	if tok, ok := s.ConsensusPeerTokens[peer]; ok && tok != "" {
+		req.Header.Set("X-Consensus-Token", tok)
+	} else if s.ConsensusToken != "" {
 		req.Header.Set("X-Consensus-Token", s.ConsensusToken)
 	}
 	client := s.consensusClient
