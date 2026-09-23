@@ -19,23 +19,29 @@ import (
 //     that isn't real consensus on one of the nodes).
 //   - All three carry the same 3 real public keys for that roster, so every
 //     node can verify every other node's proposer signature and votes.
-//   - Only the designated block producer (synthos-validator-12) has
-//     consensus_peers configured -- a follower has no proposals to fan out,
-//     so it should never try.
+//   - Every validator has consensus_peers configured -- the OTHER two, never
+//     itself -- so that any one of them can act as producer for a height
+//     under SYNTHOS_PRODUCER_ROTATION (see internal/consensus/rotation.go
+//     and cmd/synthosd/main.go's startBlockProducer). Before rotation
+//     existed, only synthos-validator-12 (the sole hardcoded producer) had
+//     consensus_peers; now that any validator may become the scheduled
+//     producer for a given height/round, every validator needs a real path
+//     to ask the other two for their votes, regardless of which one(s)
+//     currently have SYNTHOS_BLOCK_PRODUCER=true set live.
 //
 // This exists because a typo or copy-paste mistake in these JSON files
 // would only otherwise surface once deployed against the live chain, which
 // is exactly the kind of mistake this test is meant to catch first.
 func TestRealConsensusDeploymentConfigsAgree(t *testing.T) {
-	producer, err := config.LoadNodeConfig("../../config/render-validator-12.json")
+	v12, err := config.LoadNodeConfig("../../config/render-validator-12.json")
 	if err != nil {
 		t.Fatalf("loading render-validator-12.json: %v", err)
 	}
-	follower1, err := config.LoadNodeConfig("../../config/render-validator-13.json")
+	v13, err := config.LoadNodeConfig("../../config/render-validator-13.json")
 	if err != nil {
 		t.Fatalf("loading render-validator-13.json: %v", err)
 	}
-	follower2, err := config.LoadNodeConfig("../../config/render-node.json")
+	rpcNode, err := config.LoadNodeConfig("../../config/render-node.json")
 	if err != nil {
 		t.Fatalf("loading render-node.json: %v", err)
 	}
@@ -46,14 +52,19 @@ func TestRealConsensusDeploymentConfigsAgree(t *testing.T) {
 		"synthos-validator-13":       "0xc0985da91bf00d997d6f9731e681af62bfa1ae13b10ea67e0e7d901b45ae38f1",
 		"synthos-render-validator-1": "0x14d371a7ed892a1fe5a16413f483c3730b3d52ef0ac8b6663e70389fae10e4f5",
 	}
+	selfURL := map[string]string{
+		"synthos-validator-12":       "https://synthos-validator-12.onrender.com",
+		"synthos-validator-13":       "https://synthos-validator-13.onrender.com",
+		"synthos-render-validator-1": "https://synthos-rpc.onrender.com",
+	}
 
 	for _, tc := range []struct {
 		name string
 		cfg  *config.NodeConfig
 	}{
-		{"synthos-validator-12 (producer)", producer},
-		{"synthos-validator-13 (follower)", follower1},
-		{"synthos-render-validator-1 (follower)", follower2},
+		{"synthos-validator-12", v12},
+		{"synthos-validator-13", v13},
+		{"synthos-render-validator-1", rpcNode},
 	} {
 		if got := tc.cfg.Validators; !equalStringSets(got, wantRoster) {
 			t.Errorf("%s: validators = %v, want %v", tc.name, got, wantRoster)
@@ -69,23 +80,20 @@ func TestRealConsensusDeploymentConfigsAgree(t *testing.T) {
 				t.Errorf("%s: peer_keys[%q] = %q, want %q", tc.name, id, got, wantKey)
 			}
 		}
-	}
 
-	if len(producer.ConsensusPeers) != 2 {
-		t.Errorf("producer consensus_peers = %v, want exactly 2 (the other two validators)", producer.ConsensusPeers)
-	}
-	for _, self := range []string{"https://synthos-validator-12.onrender.com"} {
-		for _, peer := range producer.ConsensusPeers {
+		// Every validator needs a real path to ask each OTHER validator for
+		// a vote (rotation means any of them may become producer for a
+		// given height), and must never list itself (a node doesn't ask
+		// itself over HTTP for a vote it already cast via SelfVote).
+		if len(tc.cfg.ConsensusPeers) != 2 {
+			t.Errorf("%s: consensus_peers = %v, want exactly 2 (the other two validators)", tc.name, tc.cfg.ConsensusPeers)
+		}
+		self := selfURL[tc.cfg.NodeID]
+		for _, peer := range tc.cfg.ConsensusPeers {
 			if peer == self {
-				t.Errorf("producer consensus_peers must not include itself: %v", producer.ConsensusPeers)
+				t.Errorf("%s: consensus_peers must not include itself (%s): %v", tc.name, self, tc.cfg.ConsensusPeers)
 			}
 		}
-	}
-	if len(follower1.ConsensusPeers) != 0 {
-		t.Errorf("synthos-validator-13 (follower) consensus_peers = %v, want none -- it never initiates a round", follower1.ConsensusPeers)
-	}
-	if len(follower2.ConsensusPeers) != 0 {
-		t.Errorf("synthos-render-validator-1 (follower) consensus_peers = %v, want none -- it never initiates a round", follower2.ConsensusPeers)
 	}
 }
 
