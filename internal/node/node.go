@@ -75,6 +75,14 @@ type Node struct {
 	// startup/config, but not guaranteed to never race a live connection)
 	// needed the same protection.
 	peersMu sync.RWMutex
+
+	// voteLock guards against a genuine fork under multi-producer
+	// rotation: see SetProducerRotationLockTimeout's doc comment.
+	voteLockMu       sync.Mutex
+	voteLockHeight   uint64
+	voteLockProposer string
+	voteLockAt       time.Time
+	voteLockTimeout  time.Duration
 }
 
 // CommunicatorMessage is one real, envelope-verified message this node has
@@ -229,6 +237,83 @@ func (n *Node) SetValidators(validators []string) {
 	if n.Consensus != nil {
 		n.Consensus.SetValidators(validators)
 	}
+}
+
+// SetProducerRotationLockTimeout turns on the cross-round vote lock and
+// sets how long it holds. Zero (the default) leaves this node's behavior
+// completely unchanged from single-producer deployments: HandleProposal
+// accepts whatever not-yet-finalized-height proposal it's given, exactly
+// as it always has.
+//
+// The problem this exists for: in a deployment where more than one
+// validator can legitimately become "the producer" for a height (real
+// multi-producer rotation with round-based failover -- see
+// consensus.ExpectedProposer/CurrentRound), a naive follower would happily
+// sign a vote for proposer A's round-0 candidate, and later, if proposer B
+// takes over after a timeout and asks the same follower to vote on its own
+// (different) round-1 candidate for the SAME still-unfinalized height,
+// sign that too -- HandleProposal has no memory of what it already voted
+// for. Two different candidates can each independently gather enough of
+// these honestly-but-carelessly-issued signatures to reach real quorum
+// through two different producers, which is a genuine fork: two
+// different nodes each holding an independently valid, independently
+// verifiable "finalized" block at the same height with no way to tell
+// which one is canonical.
+//
+// The fix is a lock, not a vote (this deployment has no gossiped
+// prevote/precommit phase to build a Tendermint-style provably-safe
+// unlock certificate from): once this node votes for a candidate at a
+// height, it refuses to vote for a DIFFERENT candidate from a DIFFERENT
+// proposer at that same height until timeout has passed with no further
+// legitimate activity at that height. A SAME-proposer retry (the producer
+// abandoning its own earlier candidate for a fresh one, exactly what
+// ProposeBlockWithConsensus already does every unfinished tick) is never
+// blocked by this lock at all -- see HandleProposal's use of this check.
+//
+// timeout must be set well above the round-advance timing on the sending
+// side (how soon the next validator in rotation starts trying) so that,
+// in the overwhelmingly common case, a genuinely still-alive-but-slow
+// producer's delayed broadcast of an already-quorum'd block has every
+// realistic chance to arrive and advance this node's own Chain.Height()
+// (which makes the lock moot -- Chain itself rejects any later proposal
+// for a height it's already past) before the lock would otherwise let a
+// competing candidate through. This is a timeout-based safety margin, not
+// a formally airtight one under arbitrary network delay -- pick timeout
+// generously (minutes, not seconds) relative to how long this
+// deployment's nodes actually take to recover from a restart or a
+// transient partition.
+func (n *Node) SetProducerRotationLockTimeout(timeout time.Duration) {
+	n.voteLockMu.Lock()
+	defer n.voteLockMu.Unlock()
+	n.voteLockTimeout = timeout
+}
+
+// checkAndUpdateVoteLock is the actual enforcement for
+// SetProducerRotationLockTimeout: called from HandleProposal before it
+// records or votes on anything, for every not-yet-finalized-height
+// proposal this node is asked to vote on.
+func (n *Node) checkAndUpdateVoteLock(height uint64, proposerID string) error {
+	n.voteLockMu.Lock()
+	defer n.voteLockMu.Unlock()
+
+	if n.voteLockTimeout <= 0 {
+		return nil // rotation locking disabled: legacy single-producer behavior, unchanged
+	}
+
+	if n.voteLockHeight == height && n.voteLockProposer != "" && n.voteLockProposer != proposerID {
+		if age := time.Since(n.voteLockAt); age < n.voteLockTimeout {
+			return fmt.Errorf("locked to proposer %q at height %d (voted %s ago); refusing to vote for a competing proposal from %q until the lock times out in %s",
+				n.voteLockProposer, height, age.Round(time.Second), proposerID, (n.voteLockTimeout - age).Round(time.Second))
+		}
+		// Lock expired with no sign of the earlier producer finishing its
+		// round -- this is the actual failover path. Fall through and
+		// re-lock onto the new proposer below.
+	}
+
+	n.voteLockHeight = height
+	n.voteLockProposer = proposerID
+	n.voteLockAt = time.Now()
+	return nil
 }
 
 func (n *Node) AddPeer(agentID string, pubKeyHex string) error {
@@ -578,22 +663,36 @@ func (n *Node) HandleProposal(b *chain.Block) (consensus.BlockVote, error) {
 		}
 		return consensus.BlockVote{}, fmt.Errorf("invalid proposal: %w", err)
 	}
+	// Cross-round vote lock (a no-op unless this deployment has opted into
+	// multi-producer rotation -- see SetProducerRotationLockTimeout's doc
+	// comment for the fork this closes and why a lock rather than a vote
+	// is the mechanism). Checked before RecordReceivedProposal so a
+	// rejected proposal never touches this node's proposal/vote bookkeeping
+	// at all.
+	if err := n.checkAndUpdateVoteLock(b.Header.Height, b.Header.ProposerID); err != nil {
+		return consensus.BlockVote{}, err
+	}
 	// RecordReceivedProposal, not OnProposal: the height check above
 	// (b.Header.Height == n.Chain.Height()+1) already guarantees this
 	// proposal is about a height nothing has finalized yet on this node.
-	// In this network's single-producer-per-round design, that means any
-	// second proposal we see here for the same height is necessarily the
-	// SAME producer retrying its own round (exactly the scenario
-	// BuildAndSignProposal/RecordOwnProposal already had to handle on the
-	// producer's own side) -- not a second producer racing to fork an
-	// already-decided height. OnProposal's double-sign detection doesn't
-	// know that distinction: it flags any second (proposer, height)
-	// sighting regardless of whether the block content even differs,
-	// which silently slashed the producer's balance in THIS node's own
-	// local state on every ordinary retry -- confirmed live: validator-13
-	// and synthos-rpc each independently voted correctly on block 34160
-	// (their real quorum signatures are on it), but one of the retries
-	// that led up to it also corrupted their own local view of
+	// With rotation locking off (today's default, and every deployment
+	// that hasn't opted in), that means any second proposal we see here
+	// for the same height is necessarily the SAME producer retrying its
+	// own round (exactly the scenario BuildAndSignProposal/
+	// RecordOwnProposal already had to handle on the producer's own side)
+	// -- not a second producer racing to fork an already-decided height.
+	// With rotation locking on, the check just above is what makes that
+	// guarantee hold for a DIFFERENT proposer too: anything that reaches
+	// this line already passed the lock, so it's either the same producer
+	// retrying, or a later round's producer whose predecessor has gone
+	// silent past the lock timeout. OnProposal's double-sign detection
+	// doesn't know either distinction: it flags any second (proposer,
+	// height) sighting regardless of whether the block content even
+	// differs, which silently slashed the producer's balance in THIS
+	// node's own local state on every ordinary retry -- confirmed live:
+	// validator-13 and synthos-rpc each independently voted correctly on
+	// block 34160 (their real quorum signatures are on it), but one of the
+	// retries that led up to it also corrupted their own local view of
 	// validator-12's balance, which permanently broke their own
 	// independently-recomputed state root for every block from 34160
 	// onward ("bad block" on every catch-up attempt, forever, since nothing

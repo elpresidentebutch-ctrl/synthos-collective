@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"synthos-collective/internal/agent"
@@ -237,7 +238,25 @@ func main() {
 	}
 	srv.StartPeerSync(15 * time.Second)
 	startRegistryHeartbeat(cfg.NodeID, ch.ChainID, keys.Public)
-	startBlockProducer(n, ch, srv)
+
+	// SYNTHOS_PRODUCER_ROTATION_LOCK_SECONDS wires the safety-critical
+	// cross-round vote lock (see node.Node.SetProducerRotationLockTimeout's
+	// doc comment) -- this must be set on EVERY validator in a
+	// rotation-enabled deployment, not just the one(s) with
+	// SYNTHOS_PRODUCER_ROTATION=true below, since a pure follower still
+	// votes and still needs the lock the moment more than one validator can
+	// legitimately propose. Left unset (0), the lock stays fully disabled
+	// and behavior is unchanged from today.
+	if v := strings.TrimSpace(os.Getenv("SYNTHOS_PRODUCER_ROTATION_LOCK_SECONDS")); v != "" {
+		if secs, err := strconv.Atoi(v); err == nil && secs > 0 {
+			n.SetProducerRotationLockTimeout(time.Duration(secs) * time.Second)
+			log.Printf("producer rotation: cross-round vote lock enabled, timeout=%ds", secs)
+		} else {
+			log.Printf("producer rotation: SYNTHOS_PRODUCER_ROTATION_LOCK_SECONDS=%q is not a positive integer, ignoring (lock stays disabled)", v)
+		}
+	}
+
+	startBlockProducer(n, ch, srv, a.Identity.AgentID, validators)
 	fmt.Printf("synthosd: RPC listening on %s (data dir %s, node_id=%s)\n", cfg.RPCListen, dataDir, cfg.NodeID)
 	if err := http.ListenAndServe(cfg.RPCListen, srv.Handler()); err != nil {
 		panic(err)
@@ -326,12 +345,13 @@ func buildValidatorKeySet(validators []string, selfID string, selfPub ed25519.Pu
 	return out, nil
 }
 
-// startBlockProducer runs the automatic block-proposal loop on the single
-// designated sequencer. Enable it on exactly ONE validator via
+// startBlockProducer runs the automatic block-proposal loop. Enable it via
 // SYNTHOS_BLOCK_PRODUCER=true; the others follow via HTTP peer catch-up (and,
 // when ConsensusPeers is configured -- see below -- also actually vote on
-// each proposal). Running the producer loop itself on more than one node at
-// once would still fork the chain; that part is unchanged.
+// each proposal). Running the producer loop unconditionally on more than
+// one node at once would still fork the chain -- that's still true, and is
+// exactly what SYNTHOS_PRODUCER_ROTATION (below) exists to do safely
+// instead of just not doing it.
 //
 // Env:
 //
@@ -341,6 +361,12 @@ func buildValidatorKeySet(validators []string, selfID string, selfPub ed25519.Pu
 //	SYNTHOS_CONSENSUS_PEERS              (via NodeConfig.ConsensusPeers) other
 //	                                      validators to collect real votes from
 //	SYNTHOS_CONSENSUS_TOKEN              shared secret for /consensus/propose
+//	SYNTHOS_PRODUCER_ROTATION=true       opt into round-robin multi-producer
+//	                                      rotation (see below); default off
+//	SYNTHOS_PRODUCER_ROUND_SECONDS       how long the height's scheduled
+//	                                      producer gets before the next
+//	                                      validator in rotation also becomes
+//	                                      eligible to try (default 3x interval)
 //
 // When srv has real consensus peers AND a consensus token configured, each
 // tick runs a genuine round: build a candidate, ask every consensus peer to
@@ -357,7 +383,32 @@ func buildValidatorKeySet(validators []string, selfID string, selfPub ed25519.Pu
 // Without consensus peers configured (today's default for every deployment
 // except the ones explicitly wired for it), behavior is unchanged from
 // before: propose, self-approve, finalize immediately.
-func startBlockProducer(n *node.Node, ch *chain.Chain, srv *rpc.Server) {
+//
+// SYNTHOS_PRODUCER_ROTATION=true turns this from "the single designated
+// sequencer" into one of several validators taking scheduled turns: every
+// tick, this node computes (from rotation, the shared validators list in
+// the exact order every node's config agrees on, and how long it's been
+// since the chain's height last moved) whose turn it currently is via
+// consensus.ExpectedProposer/CurrentRound, and only attempts to propose
+// when that's itself. If the scheduled producer for a height doesn't
+// deliver within its round window, the schedule mechanically advances to
+// the next validator in rotation -- no explicit "detect the old one is
+// down" step needed, since every rotation-enabled node is independently
+// running the exact same clock-driven computation.
+//
+// This scheduling is a LIVENESS/fairness mechanism only; it deliberately
+// does not need to be perfectly synchronized across nodes to stay SAFE.
+// The actual safety boundary against two different validators each
+// gathering quorum for two different blocks at one height (a real fork)
+// is node.Node's cross-round vote lock (see SetProducerRotationLockTimeout,
+// wired from SYNTHOS_PRODUCER_ROTATION_LOCK_SECONDS in main) on the
+// RECEIVING side of every node -- that holds regardless of any bug,
+// clock-skew, or race in this scheduling logic. Every validator in a
+// rotation-enabled deployment must have that lock timeout set, not just
+// the ones with SYNTHOS_PRODUCER_ROTATION=true here (a pure follower still
+// votes, and still needs the lock the moment more than one validator can
+// legitimately propose).
+func startBlockProducer(n *node.Node, ch *chain.Chain, srv *rpc.Server, selfID string, rotation []string) {
 	if os.Getenv("SYNTHOS_BLOCK_PRODUCER") != "true" {
 		return
 	}
@@ -369,7 +420,40 @@ func startBlockProducer(n *node.Node, ch *chain.Chain, srv *rpc.Server) {
 	}
 	produceEmpty := os.Getenv("SYNTHOS_PRODUCE_EMPTY_BLOCKS") == "true"
 	realConsensus := srv != nil && len(srv.ConsensusPeerURLs) > 0 && srv.ConsensusToken != ""
-	if realConsensus {
+
+	rotationEnabled := os.Getenv("SYNTHOS_PRODUCER_ROTATION") == "true" && len(rotation) > 1
+	roundInterval := 3 * interval
+	if v := os.Getenv("SYNTHOS_PRODUCER_ROUND_SECONDS"); v != "" {
+		if secs, err := strconv.Atoi(v); err == nil && secs > 0 {
+			roundInterval = time.Duration(secs) * time.Second
+		}
+	}
+	var scheduleMu sync.Mutex
+	lastHeight := ch.Height()
+	lastHeightAt := time.Now()
+	// isMyTurn lazily resets the round clock whenever it notices the
+	// chain's height has moved since it last checked -- see
+	// consensus.CurrentRound's doc comment for why this local,
+	// unsynchronized clock only needs to be roughly right, not exactly
+	// agreed with any other node's.
+	isMyTurn := func() (mine bool, target uint64, expected string, round int) {
+		scheduleMu.Lock()
+		defer scheduleMu.Unlock()
+		h := ch.Height()
+		if h != lastHeight {
+			lastHeight = h
+			lastHeightAt = time.Now()
+		}
+		// The actual decision is consensus.ShouldPropose (unit-tested in
+		// internal/consensus/rotation_test.go); this closure's only job is
+		// tracking the local, unsynchronized "how long has this height
+		// been open" clock the doc comment above describes.
+		return consensus.ShouldPropose(selfID, rotation, h, time.Since(lastHeightAt), roundInterval)
+	}
+
+	if rotationEnabled {
+		log.Printf("Block producer enabled: interval=%s produce_empty=%v (REAL multi-validator consensus, %d peer(s), quorum required, ROTATION enabled: %d validators, round=%s)", interval, produceEmpty, len(srv.ConsensusPeerURLs), len(rotation), roundInterval)
+	} else if realConsensus {
 		log.Printf("Block producer enabled: interval=%s produce_empty=%v (REAL multi-validator consensus, %d peer(s), quorum required)", interval, produceEmpty, len(srv.ConsensusPeerURLs))
 	} else {
 		log.Printf("Block producer enabled: interval=%s produce_empty=%v (single-sequencer)", interval, produceEmpty)
@@ -378,6 +462,18 @@ func startBlockProducer(n *node.Node, ch *chain.Chain, srv *rpc.Server) {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for range ticker.C {
+			if rotationEnabled {
+				mine, target, expected, round := isMyTurn()
+				if !mine {
+					if round > 0 && n != nil {
+						// Best-effort bookkeeping only (real downtime
+						// tracking, not a safety mechanism) -- see
+						// Node.NoteMissedSlot's doc comment.
+						n.NoteMissedSlot(expected, target)
+					}
+					continue
+				}
+			}
 			if !produceEmpty && len(ch.MempoolSnapshot()) == 0 {
 				continue
 			}
