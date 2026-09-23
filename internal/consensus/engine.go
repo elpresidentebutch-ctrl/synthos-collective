@@ -183,10 +183,20 @@ func (e *Engine) RecordOwnProposal(b *chain.Block) {
 		return
 	}
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	h := b.Header.Height
 	e.proposalsByHeight[h] = b
 	e.votes[h] = make(map[string]voteRecord)
+	tracker := e.slashTracker
+	e.mu.Unlock()
+
+	// Abandoning this height's old candidate (if any) also retires
+	// RecordEquivocation's separate, longer-lived memory of who voted for
+	// what here -- see ForgetVotesAtHeight's doc comment for why a stale
+	// entry there would otherwise falsely flag the very next legitimate
+	// vote on the fresh candidate as equivocation.
+	if tracker != nil {
+		tracker.ForgetVotesAtHeight(h)
+	}
 }
 
 // RecordReceivedProposal registers a proposal received from the network

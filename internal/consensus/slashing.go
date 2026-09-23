@@ -161,6 +161,36 @@ func (st *SlashingTracker) RecordEquivocation(validatorID string, blockHeight ui
 		fmt.Sprintf("validator voted for both %s and %s at height %d", prior, blockHash, blockHeight))
 }
 
+// ForgetVotesAtHeight clears every validator's remembered vote-hash for the
+// given height, so a later vote for a different hash at that same height
+// is never mistaken for equivocation. It exists for exactly the reason
+// Engine.RecordOwnProposal/RecordReceivedProposal already reset the
+// Engine's own ephemeral votes[height] tally: abandoning an unfinalized
+// round's candidate -- a producer's own HTTP-consensus retry, or a later
+// round's legitimately different proposer taking over after the earlier
+// one stalled -- is not equivocation by anyone who voted on the
+// now-abandoned candidate. See RecordOwnProposal's doc comment for the
+// identical reasoning already established and shipped for
+// OnProposal/DetectDoubleSigning.
+//
+// Without this, RecordEquivocation's height-keyed memory (deliberately
+// kept separate from, and longer-lived than, Engine's own votes[height])
+// would permanently remember the first hash any validator ever voted for
+// at a given height and falsely flag every later, entirely legitimate
+// vote for a fresh retry as a real safety violation -- real balance
+// penalty included. This has been dormant in production only because no
+// real transaction activity has yet perturbed a retry into building a
+// different block hash than the one before it; it stops being dormant the
+// moment either happens (real mempool activity, or multiple producers
+// taking turns).
+func (st *SlashingTracker) ForgetVotesAtHeight(height uint64) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	for validatorID := range st.votedHashes {
+		delete(st.votedHashes[validatorID], height)
+	}
+}
+
 // recordSlashingLocked (internal) records a slashing event and reduces validator stake
 func (st *SlashingTracker) recordSlashingLocked(validatorID string, eventType SlashingType, blockHeight uint64, evidence string) error {
 	// Record the event

@@ -152,6 +152,117 @@ func TestEngine_RecordOwnProposal_NeverFalselySlashesOnRetry(t *testing.T) {
 	}
 }
 
+// TestEngine_RecordOwnProposal_NeverFalselySlashesSelfVoteOnRetry
+// reproduces a second, separate false-slashing bug in the same family as
+// TestEngine_RecordOwnProposal_NeverFalselySlashesOnRetry above, but on the
+// OnVote/RecordEquivocation path instead of OnProposal/DetectDoubleSigning.
+//
+// ProposeBlockWithConsensus calls SelfVote (-> Engine.OnVote) on every
+// retry, for whatever fresh candidate that retry just built. Before this
+// fix, RecordEquivocation's own height-keyed memory of "the first hash
+// this validator voted for" was never cleared by RecordOwnProposal, so a
+// producer's second retry -- voting for its own second, different
+// candidate at the still-unfinalized height -- looked identical to a real
+// safety violation and triggered a real balance penalty. This was dormant
+// only because no real transaction activity had yet made two retries at
+// one height actually build different-hash blocks.
+func TestEngine_RecordOwnProposal_NeverFalselySlashesSelfVoteOnRetry(t *testing.T) {
+	e := NewEngine(1)
+	e.SetValidators([]string{"producer"})
+	tracker := NewSlashingTracker(SlashingParams{DoubleSignPenalty: 1000})
+	slashed := false
+	tracker.SetExecuteSlash(func(validatorID string, penalty uint64) { slashed = true })
+	e.SetSlashingTracker(tracker)
+
+	for i := 0; i < 5; i++ {
+		b := &chain.Block{
+			Header: chain.BlockHeader{Height: 12, ProposerID: "producer"},
+			Hash:   fmt.Sprintf("0xretry%d", i),
+		}
+		e.RecordOwnProposal(b)
+		if _, _, _, err := e.OnVote(BlockVote{BlockHash: b.Hash, Height: 12, VoterID: "producer", Vote: 1}); err != nil {
+			t.Fatalf("retry %d: self-vote for the freshest own proposal must succeed, got: %v", i, err)
+		}
+	}
+
+	if slashed {
+		t.Fatal("a producer self-voting on its own retried candidates must never be slashed for equivocation")
+	}
+	if n := tracker.TotalSlashEvents(); n != 0 {
+		t.Fatalf("expected zero slashing events from own-proposal retry self-votes, got %d", n)
+	}
+}
+
+// TestEngine_RecordOwnProposal_PeerVotesAcrossRetriesNeverFalselySlashPeer
+// proves the same fix also protects a PEER's vote history, not just the
+// producer's own: a follower asked to vote on retry after retry (each a
+// fresh candidate for the same still-unfinalized height) must never be
+// flagged as equivocating just because the producer kept abandoning and
+// replacing its own candidate.
+func TestEngine_RecordOwnProposal_PeerVotesAcrossRetriesNeverFalselySlashPeer(t *testing.T) {
+	e := NewEngine(2)
+	e.SetValidators([]string{"producer", "peer"})
+	tracker := NewSlashingTracker(SlashingParams{DoubleSignPenalty: 1000})
+	slashed := false
+	tracker.SetExecuteSlash(func(validatorID string, penalty uint64) { slashed = true })
+	e.SetSlashingTracker(tracker)
+
+	for i := 0; i < 3; i++ {
+		b := &chain.Block{
+			Header: chain.BlockHeader{Height: 20, ProposerID: "producer"},
+			Hash:   fmt.Sprintf("0xround%d", i),
+		}
+		e.RecordOwnProposal(b)
+		if _, _, _, err := e.OnVote(BlockVote{BlockHash: b.Hash, Height: 20, VoterID: "peer", Vote: 1}); err != nil {
+			t.Fatalf("round %d: peer's vote on the current candidate must succeed, got: %v", i, err)
+		}
+	}
+
+	if slashed {
+		t.Fatal("a peer honestly voting on each retry's fresh candidate must never be slashed for equivocation")
+	}
+	if n := tracker.TotalSlashEvents(); n != 0 {
+		t.Fatalf("expected zero slashing events, got %d", n)
+	}
+}
+
+// TestEngine_ForgetVotesAtHeight_StillDetectsRealEquivocationAfterAReset is
+// a guard rail on the fix above: ForgetVotesAtHeight must only forgive a
+// vote-hash change that happens because of a genuine round reset
+// (RecordOwnProposal/RecordReceivedProposal), not open a permanent hole --
+// a peer that votes for the CURRENT candidate and then, with no further
+// reset, also votes for a DIFFERENT hash at the same height is still
+// equivocating and must still be caught.
+func TestEngine_ForgetVotesAtHeight_StillDetectsRealEquivocationAfterAReset(t *testing.T) {
+	e := NewEngine(2)
+	e.SetValidators([]string{"producer", "peer"})
+	tracker := NewSlashingTracker(SlashingParams{DoubleSignPenalty: 1000})
+	var slashedValidator string
+	tracker.SetExecuteSlash(func(validatorID string, penalty uint64) { slashedValidator = validatorID })
+	e.SetSlashingTracker(tracker)
+
+	b1 := &chain.Block{Header: chain.BlockHeader{Height: 30, ProposerID: "producer"}, Hash: "0xretryA"}
+	e.RecordOwnProposal(b1)
+	if _, _, _, err := e.OnVote(BlockVote{BlockHash: b1.Hash, Height: 30, VoterID: "peer", Vote: 1}); err != nil {
+		t.Fatalf("first vote on the current candidate: %v", err)
+	}
+	if n := tracker.TotalSlashEvents(); n != 0 {
+		t.Fatalf("no reset happened yet, expected zero slash events, got %d", n)
+	}
+
+	// No RecordOwnProposal/RecordReceivedProposal reset here -- peer now
+	// equivocates for real, voting for a second, different hash at the
+	// same still-canonical height.
+	_, _, _, _ = e.OnVote(BlockVote{BlockHash: "0xsomethingElse", Height: 30, VoterID: "peer", Vote: 1})
+
+	if slashedValidator != "peer" {
+		t.Fatalf("expected peer to still be slashed for a real equivocation with no intervening reset, got slashedValidator=%q", slashedValidator)
+	}
+	if n := tracker.TotalSlashEvents(); n != 1 {
+		t.Fatalf("expected exactly 1 slash event, got %d", n)
+	}
+}
+
 // TestEngine_OnProposal_StillDetectsRealDoubleSigning is a guard rail: the
 // fix above must not weaken OnProposal itself. A validator whose proposals
 // arrive via the network path (HandleProposal, observing what OTHER nodes
