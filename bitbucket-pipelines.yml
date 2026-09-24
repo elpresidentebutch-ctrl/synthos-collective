@@ -1,0 +1,108 @@
+# ---------------------------------------------------------------------------
+# SYNTHOS node binary releases (Bitbucket Pipelines)
+#
+# Builds real, auditable cross-platform binaries straight from this repo's
+# source and publishes them as Bitbucket Downloads, so anyone downloading a
+# SYNTHOS node binary can trace it back to the exact commit that built it --
+# rather than depending on some separate, unaudited build process.
+#
+# This is the Bitbucket-native equivalent of .github/workflows/release.yml
+# and .gitlab-ci.yml. Same two binaries, same meaning:
+#   - synthos-node-<os>-<arch>[.exe]   built from cmd/silentnode: the
+#     outbound-only Proof-of-Uptime candidate client (no open ports, no
+#     consensus participation). This is what the public "run a node"
+#     download should point at for someone just getting started.
+#   - synthosd-<os>-<arch>[.exe]       built from cmd/synthosd: the real
+#     validator/consensus binary. Running this does not by itself make
+#     anyone an active validator -- joining the live validator set is
+#     still a separate, deliberate operator step (shared genesis, peer
+#     registration, consensus tokens), not something this pipeline grants.
+#
+# Triggers:
+#   - Pushing a tag like v1.2.3 builds the binaries AND uploads them (plus
+#     a SHA256SUMS file) to this repo's Bitbucket Downloads.
+#   - A manual "Run pipeline" > Custom: release-build-check builds the
+#     same artifacts without uploading, so the build can be sanity-checked
+#     before cutting a real tag.
+#
+# Setup required (one-time, in Repository settings > Repository variables):
+#   ATLASSIAN_ACCOUNT_EMAIL  - the Atlassian account email used to create
+#                              an API token (Secured)
+#   ATLASSIAN_API_TOKEN      - a scoped Atlassian API token for that
+#                              account, with permission to upload repo
+#                              downloads (Secured)
+# Without these two variables set, the upload step will fail -- the build
+# steps themselves do not need them.
+# ---------------------------------------------------------------------------
+
+image: golang:1.25
+
+definitions:
+  steps:
+    - step: &build-linux-amd64
+        name: Build linux/amd64
+        script:
+          - mkdir -p dist
+          - GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/synthos-node-linux-amd64 ./cmd/silentnode
+          - GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/synthosd-linux-amd64 ./cmd/synthosd
+        artifacts:
+          - dist/**
+    - step: &build-darwin-arm64
+        name: Build darwin/arm64
+        script:
+          - mkdir -p dist
+          - GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o dist/synthos-node-darwin-arm64 ./cmd/silentnode
+          - GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o dist/synthosd-darwin-arm64 ./cmd/synthosd
+        artifacts:
+          - dist/**
+    - step: &build-darwin-amd64
+        name: Build darwin/amd64
+        script:
+          - mkdir -p dist
+          - GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/synthos-node-darwin-amd64 ./cmd/silentnode
+          - GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/synthosd-darwin-amd64 ./cmd/synthosd
+        artifacts:
+          - dist/**
+    - step: &build-windows-amd64
+        name: Build windows/amd64
+        script:
+          - mkdir -p dist
+          - GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/synthos-node-windows-amd64.exe ./cmd/silentnode
+          - GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/synthosd-windows-amd64.exe ./cmd/synthosd
+        artifacts:
+          - dist/**
+    - step: &checksums-and-upload
+        name: Checksums + upload to Downloads
+        script:
+          - cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS && cd ..
+          - |
+            if [ -z "$ATLASSIAN_ACCOUNT_EMAIL" ] || [ -z "$ATLASSIAN_API_TOKEN" ]; then
+              echo "ATLASSIAN_ACCOUNT_EMAIL / ATLASSIAN_API_TOKEN repository variables are not set -- skipping upload."
+              echo "Set them in Repository settings > Repository variables to enable publishing."
+              exit 1
+            fi
+          - |
+            for f in dist/*; do
+              name="$(basename "$f")"
+              echo "uploading $name"
+              curl --fail -u "$ATLASSIAN_ACCOUNT_EMAIL:$ATLASSIAN_API_TOKEN" \
+                -X POST "https://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_OWNER/$BITBUCKET_REPO_SLUG/downloads" \
+                -F "files=@$f"
+            done
+
+pipelines:
+  tags:
+    'v*':
+      - parallel:
+          - step: *build-linux-amd64
+          - step: *build-darwin-arm64
+          - step: *build-darwin-amd64
+          - step: *build-windows-amd64
+      - step: *checksums-and-upload
+  custom:
+    release-build-check:
+      - parallel:
+          - step: *build-linux-amd64
+          - step: *build-darwin-arm64
+          - step: *build-darwin-amd64
+          - step: *build-windows-amd64
