@@ -8,23 +8,23 @@ Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
 
 ## Current Status
 
-Status as of September 23, 2026:
+Status as of September 24, 2026:
 
 ### Network / live services
 
-Carried forward from the last confirmed check on August 12, 2026 -- not re-verified in this update:
+Verified directly against the Render dashboard on September 24, 2026 (not just carried forward this time):
 
-- Live RPC endpoint: `https://rpc.ishamwilliamsblockchains.com`
-- Public website: `https://www.ishamwilliamsblockchains.com` (the bare domain without `www.` does not currently resolve -- a DNS fix is still needed)
-- Live explorer (linked from the public website): `https://synthos-explorer.onrender.com`
-- Render registry/backend service: `https://synthos-www.onrender.com` (serves `/explorer.html`, `/api/explorer/*`, and the early-access routes; matches what `render.yaml` actually deploys)
+- Live RPC endpoint: `https://rpc.ishamwilliamsblockchains.com` -- confirmed live. This is a custom domain mapped straight to the `synthos-rpc` Render service, which is Live and deployed at commit `cd6263b` (current `main`).
+- Render registry/backend service: `https://synthos-www.onrender.com` -- confirmed live, also deployed at `cd6263b`. Serves `/explorer.html`, `/api/explorer/*`, and the early-access routes, matching what `render.yaml` actually deploys.
+- Public website: `https://www.ishamwilliamsblockchains.com` -- **not hosted on Render.** It's built and hosted separately via Lovable (per this repo's own commit history), so no custom domain for it is attached to any Render service and its live status can't be confirmed from the Render dashboard. The bare domain without `www.` still does not resolve.
+- Live explorer: previously listed here as `https://synthos-explorer.onrender.com`, but **no Render service by that name exists.** The account has 7 services total (4 active, 3 suspended) and none is named `synthos-explorer`. Either the explorer lives somewhere else (unconfirmed) or this URL is stale -- treat it as unverified until it's checked directly.
 - Network name: `synthos-mainnet-1`
 - Coin display name: `SYN coins`
 - Coin symbol: `SYN`
 
-As of the last check, the network service was online and serving RPC/status routes. Public sale/payment execution remains intentionally gated until production custody, legal, and deployment controls are finalized.
+Public sale/payment execution remains intentionally gated until production custody, legal, and deployment controls are finalized.
 
-Note: an old Render service at `https://synthos-collective.onrender.com` may still exist under this account, disconnected from the live network (it reports zero active nodes). It predates the current `synthos-www` / `synthos-explorer` setup and should be retired or redirected in the Render dashboard so it doesn't get shared as the live site by mistake.
+Note: the old Render service previously flagged here at `https://synthos-collective.onrender.com` no longer appears on the account at all -- it's gone, not just disconnected. No further cleanup needed there.
 
 ### Source control & release pipeline
 
