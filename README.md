@@ -8,7 +8,11 @@ Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
 
 ## Current Status
 
-Status as of August 12, 2026:
+Status as of September 23, 2026:
+
+### Network / live services
+
+Carried forward from the last confirmed check on August 12, 2026 -- not re-verified in this update:
 
 - Live RPC endpoint: `https://rpc.ishamwilliamsblockchains.com`
 - Public website: `https://www.ishamwilliamsblockchains.com` (the bare domain without `www.` does not currently resolve -- a DNS fix is still needed)
@@ -18,9 +22,17 @@ Status as of August 12, 2026:
 - Coin display name: `SYN coins`
 - Coin symbol: `SYN`
 
-The network service is online and serving RPC/status routes. Public sale/payment execution remains intentionally gated until production custody, legal, and deployment controls are finalized.
+As of the last check, the network service was online and serving RPC/status routes. Public sale/payment execution remains intentionally gated until production custody, legal, and deployment controls are finalized.
 
 Note: an old Render service at `https://synthos-collective.onrender.com` may still exist under this account, disconnected from the live network (it reports zero active nodes). It predates the current `synthos-www` / `synthos-explorer` setup and should be retired or redirected in the Render dashboard so it doesn't get shared as the live site by mistake.
+
+### Source control & release pipeline
+
+- **GitHub** ([`elpresidentebutch-ctrl/synthos-collective`](https://github.com/elpresidentebutch-ctrl/synthos-collective)) is the primary public repository. GitHub Actions is currently unable to run because of an account billing lock, so the release workflow (`.github/workflows/release.yml`) exists in the repo but cannot execute until that's resolved.
+- **GitLab** (mirror, `synthos-collective-group/synthos-collective`) has a working release pipeline (`.gitlab-ci.yml`). Release `v0.1.0` is live and public, with all 8 cross-platform node binaries (`synthos-node-*`, `synthosd-*` for linux/amd64, darwin/arm64, darwin/amd64, windows/amd64) plus `SHA256SUMS` attached.
+- **Bitbucket** (mirror, `synthoscollective/synthos-collective`, private) was added this week with the full commit history imported from GitHub. A `bitbucket-pipelines.yml` publishes the same cross-platform binaries to Bitbucket Downloads on a tag push, but it hasn't been exercised with a real release yet -- treat it as unverified until a tag is pushed and the run is checked.
+
+In short: GitHub is the canonical public source, GitLab is the one platform with a binary release actually published, and Bitbucket is a private mirror with an as-yet-untested release pipeline.
 
 ## Important Security Notice
 
