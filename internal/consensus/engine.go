@@ -94,7 +94,34 @@ func (e *Engine) isRegisteredValidator(voterID string) bool {
 	return ok
 }
 
+// RequiredForFinality returns the number of approve votes needed to finalize
+// a block at the engine's current validator-set size.
+//
+// This takes e.mu itself. It didn't used to: for as long as this engine's
+// validator set was only ever written once, synchronously, before any
+// reader goroutine started, an unlocked read of totalValidators here was
+// safe by construction. That stopped being true once
+// cmd/synthosd/main.go's validator-roster refresh loop (see
+// docs/VALIDATOR_ONBOARDING.md's Phase 2) began calling SetValidators
+// periodically from its own background goroutine, concurrently with every
+// normal request-handling path that computes finality (FinalityStatus,
+// OnVote) -- an unlocked read of totalValidators racing that locked write
+// is a genuine data race regardless of which side takes a lock, and
+// go test -race catches it as soon as a real concurrent SetValidators
+// caller exists (the refresh loop's own integration test in
+// cmd/synthosd does). See requiredForFinalityLocked for the call sites
+// that already hold e.mu and would deadlock on this locking version.
 func (e *Engine) RequiredForFinality() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.requiredForFinalityLocked()
+}
+
+// requiredForFinalityLocked is RequiredForFinality's actual computation,
+// split out so that call sites which already hold e.mu (FinalityStatus,
+// OnVote) can use it directly instead of recursively locking a
+// non-reentrant sync.Mutex, which would deadlock.
+func (e *Engine) requiredForFinalityLocked() int {
 	if e.totalValidators <= 0 {
 		return 1
 	}
@@ -246,9 +273,9 @@ func (e *Engine) FinalityStatus(blockHash string) (finalized bool, votesFor int,
 		}
 	}
 	if !found {
-		return false, 0, e.RequiredForFinality(), false
+		return false, 0, e.requiredForFinalityLocked(), false
 	}
-	required = e.RequiredForFinality()
+	required = e.requiredForFinalityLocked()
 	for _, rec := range e.votes[height] {
 		if rec.BlockHash == blockHash && rec.Vote == 1 {
 			votesFor++
@@ -293,7 +320,7 @@ func (e *Engine) OnVote(v BlockVote) (finalized bool, votesFor int, required int
 		e.votes[h][v.VoterID] = voteRecord{BlockHash: v.BlockHash, Vote: v.Vote, Signature: v.Signature}
 	}
 
-	required = e.RequiredForFinality()
+	required = e.requiredForFinalityLocked()
 	for _, rec := range e.votes[h] {
 		if rec.BlockHash == v.BlockHash && rec.Vote == 1 {
 			votesFor++

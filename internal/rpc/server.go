@@ -51,7 +51,28 @@ type Server struct {
 	// PeerURLs (used only for after-the-fact catch-up/gossip-push to
 	// however many read-only followers exist) -- a node not listed here is
 	// never asked to vote, even if it's a trusted catch-up peer.
+	//
+	// This field is safe to read directly ONLY before any goroutine that
+	// might call SetConsensusPeerURLs concurrently has started (e.g. a
+	// one-time value read during startup, before the block-producer loop
+	// begins) -- see consensusPeerURLsMu's doc comment for why a
+	// concurrent updater changes that.
 	ConsensusPeerURLs []string
+
+	// consensusPeerURLsMu guards ConsensusPeerURLs against a genuine data
+	// race: collectConsensusVotes reads it from the block-producer's
+	// long-running background goroutine, and cmd/synthosd/main.go's
+	// validator-roster refresh loop (see docs/VALIDATOR_ONBOARDING.md's
+	// Phase 2) now calls SetConsensusPeerURLs periodically from a SEPARATE
+	// goroutine to add newly-approved, directly-reachable validators
+	// without a redeploy. Before that refresh loop existed,
+	// SetConsensusPeerURLs was only ever called once, synchronously,
+	// before the block-producer goroutine started -- so this race could
+	// not occur. collectConsensusVotes snapshots ConsensusPeerURLs once
+	// under this lock at the top of each round rather than reading the
+	// field directly, so a concurrent update never produces a torn read
+	// and never changes the peer list mid-round.
+	consensusPeerURLsMu sync.RWMutex
 
 	// ConsensusToken gates /consensus/propose the same way ProposeBlockToken
 	// gates /proposeBlock: an operator secret, checked in constant time,
@@ -123,7 +144,30 @@ func (s *Server) SetPeerURLs(urls []string) {
 // SetConsensusPeerURLs configures the other validators this node runs a
 // real multi-party consensus round with (see ProposeBlockWithConsensus).
 func (s *Server) SetConsensusPeerURLs(urls []string) {
-	s.ConsensusPeerURLs = sanitizePeerURLs(urls)
+	sanitized := sanitizePeerURLs(urls)
+	s.consensusPeerURLsMu.Lock()
+	s.ConsensusPeerURLs = sanitized
+	s.consensusPeerURLsMu.Unlock()
+}
+
+// ConsensusPeerURLsSnapshot returns a copy of the current
+// ConsensusPeerURLs, safe to call concurrently with SetConsensusPeerURLs.
+// collectConsensusVotes uses this instead of reading the field directly,
+// and it's exported so that anything outside this package -- an admin/
+// status endpoint, a test -- that wants to inspect the current peer list
+// after startup (once a concurrent updater such as cmd/synthosd's
+// validator-roster refresh loop may be running) has a safe way to do it
+// too; the field's own doc comment says direct reads are only safe before
+// that point, so callers need a real alternative, not just a warning.
+func (s *Server) ConsensusPeerURLsSnapshot() []string {
+	s.consensusPeerURLsMu.RLock()
+	defer s.consensusPeerURLsMu.RUnlock()
+	if len(s.ConsensusPeerURLs) == 0 {
+		return nil
+	}
+	out := make([]string, len(s.ConsensusPeerURLs))
+	copy(out, s.ConsensusPeerURLs)
+	return out
 }
 
 func (s *Server) Handler() http.Handler {
@@ -762,9 +806,13 @@ func (s *Server) ProposeBlockWithConsensus(timeout time.Duration) (hash string, 
 // own registered key is simply skipped -- it does not error the round,
 // matching normal BFT behavior for a peer that's down or misbehaving.
 func (s *Server) collectConsensusVotes(b *chain.Block, timeout time.Duration) (finalized bool) {
+	// Snapshot once, under consensusPeerURLsMu, rather than reading
+	// s.ConsensusPeerURLs directly -- see consensusPeerURLsMu's doc
+	// comment for why a concurrent updater makes a direct read unsafe.
+	peers := s.ConsensusPeerURLsSnapshot()
 	var wg sync.WaitGroup
-	votes := make(chan consensus.BlockVote, len(s.ConsensusPeerURLs))
-	for _, peer := range s.ConsensusPeerURLs {
+	votes := make(chan consensus.BlockVote, len(peers))
+	for _, peer := range peers {
 		peer := peer
 		wg.Add(1)
 		go func() {

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -160,6 +161,17 @@ func main() {
 			panic(err)
 		}
 	}
+	// Hoisted out of the block below so startValidatorRosterSync (wired up
+	// further down, once srv exists) can reuse the exact same baseline
+	// chainValidators/valKeys that ch.SetValidatorSet was just called with
+	// here -- that parity is what makes an empty registry roster a true
+	// no-op on top of this startup state, not an accidental second source
+	// of truth. Left nil when len(validators) == 0 (consensus disabled or
+	// this node isn't a validator at all), in which case
+	// startValidatorRosterSync's own consensusEnabled gate keeps it inert
+	// too.
+	var chainValidators []string
+	var valKeys map[string]ed25519.PublicKey
 	if len(validators) > 0 {
 		// Require every finalized block to carry a real proposer signature
 		// plus quorum-threshold validator approvals (see chain.Chain.
@@ -178,8 +190,10 @@ func main() {
 		// roster and quorum come straight from cfg.Validators and the engine's
 		// real BFT threshold, exactly as before. See resolveChainQuorum's own
 		// doc comment for the consensusEnabled gating.
-		chainValidators, chainQuorum := resolveChainQuorum(cfg.TrustedValidators, validators, consensusEnabled, eng.RequiredForFinality())
-		valKeys, err := buildValidatorKeySet(chainValidators, a.Identity.AgentID, keys.Public, cfg.PeerKeys)
+		var chainQuorum int
+		var err error
+		chainValidators, chainQuorum = resolveChainQuorum(cfg.TrustedValidators, validators, consensusEnabled, eng.RequiredForFinality())
+		valKeys, err = buildValidatorKeySet(chainValidators, a.Identity.AgentID, keys.Public, cfg.PeerKeys)
 		if err != nil {
 			panic(fmt.Errorf("building validator key set: %w", err))
 		}
@@ -238,6 +252,20 @@ func main() {
 	}
 	srv.StartPeerSync(15 * time.Second)
 	startRegistryHeartbeat(cfg.NodeID, ch.ChainID, keys.Public)
+	// Picks up validators approved through the registry's Phase-1 queue
+	// (cmd/cloudless-registry/main.go's handleAPIAdminValidatorByID)
+	// without requiring a redeploy. Reuses SYNTHOS_REGISTRY_URL -- already
+	// set on every real deployment for startRegistryHeartbeat above -- so
+	// no new configuration is needed to activate this. See
+	// docs/VALIDATOR_ONBOARDING.md's Phase 2 and startValidatorRosterSync's
+	// own doc comment for the full design and safety gating.
+	startValidatorRosterSync(
+		ch, n, srv, a.Identity.AgentID,
+		chainValidators, valKeys, validators, cfg.ConsensusPeers,
+		strings.TrimRight(os.Getenv("SYNTHOS_REGISTRY_URL"), "/"),
+		consensusEnabled,
+		60*time.Second,
+	)
 
 	// SYNTHOS_PRODUCER_ROTATION_LOCK_SECONDS wires the safety-critical
 	// cross-round vote lock (see node.Node.SetProducerRotationLockTimeout's
@@ -343,6 +371,220 @@ func buildValidatorKeySet(validators []string, selfID string, selfPub ed25519.Pu
 		out[id] = ed25519.PublicKey(pubBytes)
 	}
 	return out, nil
+}
+
+// rosterEntry is one validator entry from the registry's public
+// GET /api/validators/roster endpoint (see cmd/cloudless-registry/
+// main.go's handleAPIValidatorsRoster). Only the fields this node needs
+// are decoded; unknown fields are ignored.
+type rosterEntry struct {
+	NodeID    string `json:"node_id"`
+	PublicKey string `json:"public_key"`
+	PublicURL string `json:"public_url"`
+	Reachable bool   `json:"reachable"`
+}
+
+// fetchValidatorRoster fetches the current approved-validator roster from
+// the registry. A non-2xx response or a body that doesn't decode as
+// expected is returned as an error -- callers should treat that as "skip
+// this tick, keep the current validator set" (see startValidatorRosterSync),
+// never as "the roster is now empty."
+func fetchValidatorRoster(client *http.Client, registryURL string) ([]rosterEntry, error) {
+	req, err := http.NewRequest(http.MethodGet, registryURL+"/api/validators/roster", nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("registry returned status %d fetching validator roster", resp.StatusCode)
+	}
+	var body struct {
+		Validators []rosterEntry `json:"validators"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, fmt.Errorf("decoding validator roster response: %w", err)
+	}
+	return body.Validators, nil
+}
+
+// mergeValidatorRoster computes the validator ID list, validator public-key
+// map, and consensus-peer URL list that should be active right now, given
+// this node's static config baseline and the latest fetched registry
+// roster. See docs/VALIDATOR_ONBOARDING.md's Phase 2 for the full design.
+//
+// It is pure and deterministic: the same inputs always produce the same
+// output. Calling it repeatedly with an unchanged roster reproduces the
+// identical result every time (idempotent, so it's safe to call on a fixed
+// timer indefinitely), and an empty roster reproduces exactly the
+// static-config-only baseline this node already runs today -- callers that
+// want fail-soft behavior on a registry outage should simply not call this
+// at all on a fetch error, rather than calling it with an empty roster
+// (which would be indistinguishable from "the registry legitimately has no
+// approved validators," not from "the registry is unreachable").
+//
+// A roster entry is skipped -- never causes an error -- if its node_id is
+// empty or equal to selfID, or its public_key doesn't decode to a valid
+// Ed25519 key: a malformed or self-referential registry entry must never
+// be able to halt a running validator's refresh loop. A roster entry only
+// contributes to the returned consensus-peer URL list when it is marked
+// Reachable and has a non-empty PublicURL -- an approved validator with
+// neither (the common case for a home/laptop operator) becomes a trusted
+// signer (added to validators/keys) but is not yet actively asked to vote;
+// closing that gap is Phase 3 (the mailbox relay), not this function.
+func mergeValidatorRoster(
+	staticValidators []string,
+	staticKeys map[string]ed25519.PublicKey,
+	staticConsensusPeerURLs []string,
+	selfID string,
+	roster []rosterEntry,
+) (validators []string, keys map[string]ed25519.PublicKey, consensusPeerURLs []string) {
+	validatorSet := make(map[string]struct{}, len(staticValidators))
+	for _, id := range staticValidators {
+		if _, ok := validatorSet[id]; !ok {
+			validatorSet[id] = struct{}{}
+			validators = append(validators, id)
+		}
+	}
+
+	keys = make(map[string]ed25519.PublicKey, len(staticKeys))
+	for id, pub := range staticKeys {
+		keys[id] = pub
+	}
+
+	peerSet := make(map[string]struct{}, len(staticConsensusPeerURLs))
+	for _, url := range staticConsensusPeerURLs {
+		if _, ok := peerSet[url]; !ok {
+			peerSet[url] = struct{}{}
+			consensusPeerURLs = append(consensusPeerURLs, url)
+		}
+	}
+
+	for _, entry := range roster {
+		id := strings.TrimSpace(entry.NodeID)
+		if id == "" || id == selfID {
+			continue
+		}
+		pubBytes, err := synthoscrypto.PublicKeyBytes(entry.PublicKey)
+		if err != nil || len(pubBytes) != ed25519.PublicKeySize {
+			continue
+		}
+		if _, ok := validatorSet[id]; !ok {
+			validatorSet[id] = struct{}{}
+			validators = append(validators, id)
+		}
+		keys[id] = ed25519.PublicKey(pubBytes)
+
+		url := strings.TrimSpace(entry.PublicURL)
+		if entry.Reachable && url != "" {
+			if _, ok := peerSet[url]; !ok {
+				peerSet[url] = struct{}{}
+				consensusPeerURLs = append(consensusPeerURLs, url)
+			}
+		}
+	}
+
+	sort.Strings(validators)
+	sort.Strings(consensusPeerURLs)
+	return validators, keys, consensusPeerURLs
+}
+
+// startValidatorRosterSync periodically fetches the registry's public
+// validator roster and folds any newly-approved validators into this
+// node's live trust state, so a Phase-1 approval (see
+// cmd/cloudless-registry/main.go's handleAPIAdminValidatorByID) actually
+// takes effect on a running network -- without a redeploy. See
+// docs/VALIDATOR_ONBOARDING.md's Phase 2 for the full design.
+//
+// Deliberately gated on consensusEnabled and registryURL being non-empty:
+// with no real vote-collecting transport (consensusEnabled false) or no
+// registry to ask (registryURL empty), silently growing the quorum this
+// node demands would only ever stall block production for no benefit --
+// the same rollout-safety reasoning resolveConsensusValidators/
+// resolveChainQuorum already apply to the static config path. Returns
+// immediately, doing nothing, when either gate fails; callers do not need
+// to check these themselves first.
+//
+// Fail-soft: a fetch error or unreachable registry simply logs and skips
+// that tick, leaving whatever validator set is already active untouched --
+// a registry outage must never be able to shrink or strand an
+// already-working validator set. Every tick recomputes the full target
+// state from staticValidators/staticKeys/staticConsensusPeerURLs (this
+// node's original config baseline, captured once at startup) merged with
+// the latest roster, via mergeValidatorRoster -- never by incrementally
+// mutating whatever the previous tick left behind -- so a validator that's
+// later revoked from the registry (see handleAPIAdminValidatorByID's
+// revoke action) actually drops back out on the next successful tick,
+// rather than staying trusted forever once added.
+//
+// Safe to run on every validator (producer and followers alike), not just
+// one: chain.SetValidatorSet and Node.SetValidators are exactly what
+// startup already calls once; this only re-calls them periodically with a
+// possibly-larger roster. SetConsensusPeerURLs is safe to call from this
+// goroutine concurrently with the block-producer loop's own use of
+// ConsensusPeerURLs -- see rpc.Server's consensusPeerURLsMu doc comment.
+func startValidatorRosterSync(
+	ch *chain.Chain,
+	n *node.Node,
+	srv *rpc.Server,
+	selfID string,
+	staticChainValidators []string,
+	staticChainKeys map[string]ed25519.PublicKey,
+	staticEngineValidators []string,
+	staticConsensusPeerURLs []string,
+	registryURL string,
+	consensusEnabled bool,
+	interval time.Duration,
+) {
+	if !consensusEnabled || registryURL == "" {
+		return
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	go func() {
+		for {
+			time.Sleep(interval)
+			roster, err := fetchValidatorRoster(client, registryURL)
+			if err != nil {
+				log.Printf("validator roster sync: %v -- keeping current validator set", err)
+				continue
+			}
+
+			// Two separate merges, deliberately: chainValidators/staticChainKeys
+			// and staticEngineValidators can legitimately differ (see
+			// resolveChainQuorum's doc comment -- a single-sequencer deployment
+			// trusts more IDs at the Chain level than it counts toward this
+			// node's own local self-vote quorum). Applying the same roster
+			// growth to each baseline separately, rather than unifying them
+			// into one merge, preserves that distinction instead of silently
+			// erasing it.
+			chainValidators, chainKeys, consensusPeerURLs := mergeValidatorRoster(
+				staticChainValidators, staticChainKeys, staticConsensusPeerURLs, selfID, roster,
+			)
+			engineValidators, _, _ := mergeValidatorRoster(staticEngineValidators, nil, nil, selfID, roster)
+
+			for id, pub := range chainKeys {
+				if id == selfID {
+					continue
+				}
+				if err := n.AddPeer(id, hex.EncodeToString(pub)); err != nil {
+					log.Printf("validator roster sync: registering peer %q: %v", id, err)
+				}
+			}
+			n.SetValidators(engineValidators)
+			quorum := 1
+			if n.Consensus != nil {
+				quorum = n.Consensus.RequiredForFinality()
+			}
+			ch.SetValidatorSet(chainKeys, quorum)
+			srv.SetConsensusPeerURLs(consensusPeerURLs)
+			if len(chainValidators) != len(staticChainValidators) {
+				log.Printf("validator roster sync: active validator set is now %d (started with %d): %v", len(chainValidators), len(staticChainValidators), chainValidators)
+			}
+		}
+	}()
 }
 
 // startBlockProducer runs the automatic block-proposal loop. Enable it via

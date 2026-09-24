@@ -66,40 +66,72 @@ does **not** yet close the "reachability" half, and it does not yet make a
 live `synthosd` process pick up a newly approved validator automatically
 -- see Phases 2 and 3.
 
-## Phase 2 -- live validator-set refresh (designed, not yet built)
+## Phase 2 -- live validator-set refresh (shipped)
 
-Every `synthosd` process resolves its trusted validator set exactly once,
-at startup, from static config (`cmd/synthosd/main.go`'s
+Every `synthosd` process used to resolve its trusted validator set exactly
+once, at startup, from static config (`cmd/synthosd/main.go`'s
 `resolveConsensusValidators` / `resolveChainQuorum` /
-`chain.Chain.SetValidatorSet`). This was deliberately built that way, with
-extensive rollout-safety gating (see that file's doc comments), so a bug
-here is exactly the class of incident this project has already hit twice
-(the false-self-slashing bugs both came from consensus code that was
-under-tested for exactly this kind of edge case).
+`chain.Chain.SetValidatorSet`). That startup-only path still exists and is
+still what a fresh process boots from; what's new is a background loop that
+keeps it current afterward, so an approval from Phase 1's queue actually
+takes effect on an already-running network without a redeploy.
 
-The plan: add a periodic refresh (mirroring the existing 15-second
-`StartPeerSync` catch-up loop's cadence and style) that:
+`cmd/synthosd/main.go`'s `startValidatorRosterSync` runs once per minute
+(mirroring the existing 15-second `StartPeerSync` catch-up loop's cadence
+and style, just slower since validator-set changes are rarer and higher
+stakes than ordinary catch-up gossip) and:
 
 1. Fetches `GET /api/validators/roster` from the registry.
-2. Computes the union of the node's static `trusted_validators`/
-   `peer_keys` and the dynamic roster.
+2. `mergeValidatorRoster` computes the union of the node's static
+   `trusted_validators`/`peer_keys` and the dynamic roster -- separately
+   for the Chain's enforced roster and the Engine's local quorum roster,
+   preserving `resolveChainQuorum`'s documented distinction between the
+   two rather than assuming they're always identical.
 3. Recomputes the required quorum for the new total (2/3-plus-one of the
-   combined set, not a fixed number), and re-calls `chain.SetValidatorSet`
-   with the updated key map and quorum.
-4. Fails soft: if the registry is unreachable, keep the last-known set
-   rather than shrinking back to just the static config (a registry outage
-   must never be able to strand or halt the existing three-validator
-   network).
-5. Is idempotent: calling it twice with the same roster must be a no-op,
-   and it must produce the identical result whether a validator was in the
-   set from process start or added on a later refresh.
+   combined set, via `consensus.Engine.RequiredForFinality`, not a fixed
+   number), registers any newly-approved validator's key via
+   `node.Node.AddPeer`, and re-calls `chain.SetValidatorSet` and
+   `node.Node.SetValidators` with the updated set.
+4. Adds a newly-approved validator's `public_url` to
+   `rpc.Server.ConsensusPeerURLs` (via `SetConsensusPeerURLs`) only when
+   the registry marks it `reachable` -- an operator with no reachable URL
+   (the home-PC case) becomes a trusted signer but isn't yet asked to
+   vote directly; see Phase 3.
+5. Fails soft: if the registry is unreachable, the tick is skipped and the
+   last-known set is kept rather than shrinking back to just the static
+   config (a registry outage must never be able to strand or halt the
+   existing three-validator network).
+6. Is idempotent: calling `mergeValidatorRoster` twice with the same
+   roster is a no-op, and it produces the identical result whether a
+   validator was in the set from process start or added on a later
+   refresh.
 
-This is the piece that makes an approval in Phase 1 actually take effect on
-a running network without a redeploy. It should ship as its own commit with
-its own dedicated test suite (constructing a live `Chain`/`Engine`/`Node`
-trio, proving the union/quorum math, the fail-soft behavior, and the
-idempotency, the same rigor as every other consensus change in this repo's
-history) before Phase 3 builds on top of it.
+This also required a real concurrency fix, found and closed as part of
+shipping this: `rpc.Server.ConsensusPeerURLs` used to be safe to read
+directly from the block-producer's long-running goroutine only because it
+was set exactly once, synchronously, before that goroutine ever started --
+this refresh loop turns that into a genuine second concurrent writer, so
+`ConsensusPeerURLs` is now guarded by its own mutex
+(`consensusPeerURLsMu`), with `ConsensusPeerURLsSnapshot()` as the safe way
+to read it from outside the package. A second, subtler instance of the same
+class of bug was caught by this feature's own integration test (run under
+`-race`, with concurrent Engine reads deliberately hammering it the whole
+time): `consensus.Engine.RequiredForFinality()` read `totalValidators` with
+no lock at all, safe for the same "only ever written once at startup"
+reason -- SetValidators now has a second, periodic caller too, so
+`RequiredForFinality()` takes `e.mu` itself, with an unexported
+`requiredForFinalityLocked` for the call sites that already hold it.
+
+Tests: `cmd/synthosd/validator_roster_sync_test.go` covers
+`mergeValidatorRoster` (union/dedup/self-exclusion/invalid-key-handling/
+idempotency/empty-roster-reproduces-baseline), `fetchValidatorRoster`
+(success/non-2xx/malformed-body), and an end-to-end
+`startValidatorRosterSync` test against a real `Chain`/`Engine`/`Node`/
+`Server` stack and a fake registry, proving the live quorum genuinely
+grows on approval and shrinks back on revocation, plus the reachable-vs-
+not distinction for `ConsensusPeerURLs`. `internal/rpc/
+consensus_peer_urls_race_test.go` covers the `ConsensusPeerURLs` fix in
+isolation.
 
 ## Phase 3 -- reaching a home-PC validator (designed, not yet built)
 
@@ -146,11 +178,17 @@ property rather than introducing a new one.
 
 ## What this means for the website promise
 
-Once Phases 2 and 3 ship, "run a node for a month and get approved" can
-become genuinely true end to end: verified uptime -> appears in the
-pending queue -> project owner approves -> the node starts actually
-receiving proposals and voting within a couple of poll cycles, all without
-a redeploy, and without requiring the operator to run anything other than
-the existing push-button download. Until then, the node page should keep
-describing this accurately: uptime is paid, and validator promotion is a
-reviewed, manual step -- not an automatic one.
+With Phase 2 shipped, "verified uptime -> appears in the pending queue ->
+project owner approves -> the node is a real trusted signer within a
+minute, without a redeploy" is now genuinely true -- for an operator with a
+reachable `public_url` (approved with one, e.g. a real server). For a
+home-PC operator (no `public_url`, the common case for the public
+push-button download), approval makes them trusted but they still can't be
+asked to vote directly -- nothing can reach them -- until Phase 3's mailbox
+relay ships. So the node page should still describe this accurately today:
+uptime is paid; validator promotion is a reviewed, manual step, not
+automatic; and it takes effect immediately for a directly reachable
+operator, but a home-PC operator's approval doesn't yet mean their node is
+actually voting. Once Phase 3 ships, that last gap closes too and the
+original "run a node for a month and get approved" promise becomes true
+end to end for every operator, home PC included.
