@@ -61,6 +61,29 @@ type peer struct {
 	VerifiedUptimeMS   int64    `json:"verified_uptime_ms,omitempty"`
 	LastNonce          string   `json:"last_nonce,omitempty"`
 	HostedProofSession bool     `json:"hosted_proof_session,omitempty"`
+
+	// ValidatorApproved, ValidatorApprovedAt, and ValidatorPublicURL track
+	// this operator's promotion from candidate to real validator. This is
+	// deliberately a manual, admin-approved step (see
+	// handleAPIAdminValidatorByID) rather than something that flips on its
+	// own once VerifiedUptimeMS crosses rewardEpoch: reward eligibility
+	// ("has proven a full month of real uptime") and validator-set
+	// membership ("is trusted to vote on blocks") are related but distinct
+	// -- the operator earns money for the former automatically, but only a
+	// deliberate admin decision grants the latter, since a forged or
+	// careless addition to the trusted validator set is a consensus-safety
+	// question, not just a rewards one.
+	//
+	// ValidatorPublicURL is empty for an operator with no inbound-reachable
+	// endpoint (the common case for a home/laptop candidate) -- such a
+	// validator is approved and trusted, but nothing yet delivers proposals
+	// to or collects votes from it (that transport is the roster-relay
+	// follow-up; see docs/VALIDATOR_ONBOARDING.md). When set, it names a
+	// public URL other validators can call directly, the same way the
+	// existing Render-hosted validators are reached today.
+	ValidatorApproved   bool   `json:"validator_approved,omitempty"`
+	ValidatorApprovedAt int64  `json:"validator_approved_at,omitempty"`
+	ValidatorPublicURL  string `json:"validator_public_url,omitempty"`
 }
 
 type mailboxMessage struct {
@@ -201,6 +224,9 @@ func main() {
 	mux.HandleFunc("/api/nodes/heartbeat", s.handleAPINodeHeartbeat)
 	mux.HandleFunc("/api/nodes/provision", s.handleAPIProvisionNode)
 	mux.HandleFunc("/api/nodes/", s.handleAPINodeByID)
+	mux.HandleFunc("/api/admin/validators/pending", s.handleAPIAdminValidatorsPending)
+	mux.HandleFunc("/api/admin/validators/", s.handleAPIAdminValidatorByID)
+	mux.HandleFunc("/api/validators/roster", s.handleAPIValidatorsRoster)
 	mux.HandleFunc("/api/contact", s.handleAPIContact)
 	mux.HandleFunc("/api/early-access/config", s.handleAPIEarlyAccessConfig)
 	mux.HandleFunc("/api/early-access/payment-intents", s.handleAPIEarlyAccessPaymentIntents)
@@ -269,6 +295,10 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 			"POST /api/nodes/heartbeat",
 			"GET /api/nodes/ID/status",
 			"POST /api/nodes/provision",
+			"GET /api/admin/validators/pending (requires X-Registry-Secret)",
+			"POST /api/admin/validators/ID/approve (requires X-Registry-Secret)",
+			"POST /api/admin/validators/ID/revoke (requires X-Registry-Secret)",
+			"GET /api/validators/roster",
 			"POST /api/contact",
 			"GET /api/early-access/config",
 			"POST /api/early-access/payment-intents",
@@ -1133,6 +1163,184 @@ func (s *server) handleAPINodeByID(w http.ResponseWriter, r *http.Request) {
 		"ok":            true,
 		"node":          nodeStatus(entry, time.Now()),
 		"reward_policy": validatorRewardPolicy(),
+	})
+}
+
+// handleAPIAdminValidatorsPending lists every registered peer that has
+// earned validator-promotion eligibility (a validator_candidate role with a
+// full verified month of real, non-hosted uptime -- exactly the same
+// "accepted"/rewardEligible computation nodeStatus already exposes on
+// GET /api/nodes/ID/status) but has not yet been approved as a real
+// validator. This is the admin's "who's ready" queue: it replaces manually
+// checking each candidate's uptime and hand-editing a Render config file
+// with a single list to review before calling the approve endpoint below.
+//
+// Being on this list is informational only -- it does not grant anything
+// by itself. Approval always requires the separate, deliberate POST below.
+func (s *server) handleAPIAdminValidatorsPending(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.authorized(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	now := time.Now()
+	s.mu.RLock()
+	pending := make([]map[string]any, 0)
+	for _, p := range s.state.Peers {
+		if p.ValidatorApproved {
+			continue
+		}
+		role := defaultString(p.Role, normalizeRole(p.Kind))
+		if roleKind(role) != "validator" {
+			continue
+		}
+		status := nodeStatus(p, now)
+		accepted, _ := status["accepted"].(bool)
+		if !accepted {
+			continue
+		}
+		firstEligible := ""
+		if rewardMap, ok := status["reward"].(map[string]any); ok {
+			if v, ok := rewardMap["first_reward_eligibility"].(string); ok {
+				firstEligible = v
+			}
+		}
+		pending = append(pending, map[string]any{
+			"node_id":                  p.Name,
+			"public_key":               p.PublicKey,
+			"verified_uptime_s":        status["verified_uptime_s"],
+			"uptime_percent":           status["uptime_percent"],
+			"last_heartbeat_at":        status["last_heartbeat_at"],
+			"first_reward_eligibility": firstEligible,
+		})
+	}
+	s.mu.RUnlock()
+	sort.Slice(pending, func(i, j int) bool {
+		return fmt.Sprint(pending[i]["node_id"]) < fmt.Sprint(pending[j]["node_id"])
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "pending": pending, "count": len(pending)})
+}
+
+// handleAPIAdminValidatorByID approves or revokes a peer's validator
+// promotion. This is the one deliberate, admin-controlled action that
+// actually grants validator status -- nothing does this automatically, no
+// matter how long a candidate has been running (see the ValidatorApproved
+// doc comment on the peer struct for why that's a safety choice, not an
+// oversight).
+//
+// Approving requires the peer to already have a registered Ed25519 public
+// key (from at least one real signed heartbeat) -- without one there is no
+// key to trust as a validator signer at all. It does NOT require the peer
+// to already be in the pending-eligible list above: that list is a
+// convenience filter, not a gate, since the admin may have reasons (a known
+// operator, a co-founder's own second machine, testing) to approve someone
+// before a full month has elapsed.
+//
+// An optional JSON body {"public_url": "https://..."} records a directly
+// reachable endpoint for this validator, for deployments that run on a real
+// server with a public IP. Left empty (the common case for a home/laptop
+// operator), this validator is trusted but not yet reachable by anything --
+// see docs/VALIDATOR_ONBOARDING.md for the relay transport that closes that
+// gap; it is not part of this endpoint.
+func (s *server) handleAPIAdminValidatorByID(w http.ResponseWriter, r *http.Request) {
+	if !s.authorized(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/admin/validators/"), "/")
+	parts := strings.Split(path, "/")
+	if len(parts) != 2 || (parts[1] != "approve" && parts[1] != "revoke") {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	nodeID := sanitize(parts[0])
+	action := parts[1]
+
+	var body struct {
+		PublicURL string `json:"public_url"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+	}
+
+	s.mu.Lock()
+	entry, ok := s.state.Peers[nodeID]
+	if !ok {
+		s.mu.Unlock()
+		http.Error(w, "node not found", http.StatusNotFound)
+		return
+	}
+	switch action {
+	case "approve":
+		if entry.PublicKey == "" {
+			s.mu.Unlock()
+			http.Error(w, "node has no registered public key yet -- it must send at least one real signed heartbeat before it can be approved as a validator", http.StatusBadRequest)
+			return
+		}
+		entry.ValidatorApproved = true
+		entry.ValidatorApprovedAt = time.Now().UnixMilli()
+		entry.ValidatorPublicURL = strings.TrimSpace(body.PublicURL)
+		entry.Role = "validator"
+	case "revoke":
+		entry.ValidatorApproved = false
+		entry.ValidatorApprovedAt = 0
+		entry.ValidatorPublicURL = ""
+	}
+	s.state.Peers[nodeID] = entry
+	s.mu.Unlock()
+
+	if err := s.persist(); err != nil {
+		log.Printf("persist warning: %v", err)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":       true,
+		"node_id":  nodeID,
+		"action":   action,
+		"approved": entry.ValidatorApproved,
+	})
+}
+
+// handleAPIValidatorsRoster publicly lists every approved validator's ID,
+// public key, and (if set) directly reachable URL. This is the source of
+// truth a running node would poll to learn about validators added after it
+// last started, instead of only trusting whatever trusted_validators/
+// peer_keys were baked into its config file at deploy time. Consuming this
+// roster to actually update a live node's trusted validator set is not
+// part of this endpoint -- see docs/VALIDATOR_ONBOARDING.md.
+func (s *server) handleAPIValidatorsRoster(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	s.mu.RLock()
+	roster := make([]map[string]any, 0)
+	for _, p := range s.state.Peers {
+		if !p.ValidatorApproved || p.PublicKey == "" {
+			continue
+		}
+		roster = append(roster, map[string]any{
+			"node_id":     p.Name,
+			"public_key":  p.PublicKey,
+			"public_url":  p.ValidatorPublicURL,
+			"reachable":   p.ValidatorPublicURL != "",
+			"approved_at": millisRFC3339(p.ValidatorApprovedAt),
+		})
+	}
+	s.mu.RUnlock()
+	sort.Slice(roster, func(i, j int) bool {
+		return fmt.Sprint(roster[i]["node_id"]) < fmt.Sprint(roster[j]["node_id"])
+	})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":         true,
+		"validators": roster,
+		"count":      len(roster),
 	})
 }
 
