@@ -40,8 +40,8 @@
         </div>
       </div>
       <aside class="panel pad">
-        <h2>Validator reward rule</h2>
-        <p>Approved validator operators may earn <b class="ok">5,000 SYN/month</b> base, with up to <b class="ok">7,500 SYN/month</b> maximum after one full month of verified uptime.</p>
+        <h2>Uptime reward rule</h2>
+        <p>Verified operators are paid for uptime: <b class="ok">5,000 SYN/month</b> base, up to <b class="ok">7,500 SYN/month</b> maximum, once a full month of verified uptime is on record. This is payment for proven uptime — it is not a promise of being added to the live consensus validator set.</p>
         <p class="muted">No payment is made for clicking the button alone. Rewards require the installed runner to keep sending real signed uptime proofs.</p>
       </aside>
     </section>
@@ -126,7 +126,6 @@
       ["sync", "Synced near network height"],
       ["capabilities", "Seven capabilities verified"],
       ["reward", "Reward eligibility"],
-      ["promotion", "Validator promotion"],
     ];
     let session = null;
     let pollTimer = null;
@@ -495,7 +494,6 @@
         sync: !!s?.synced || (s?.height || 0) > 0,
         capabilities: CAPS.every(([id]) => hasCap(id, caps, capabilityStatus)),
         reward: !!s?.reward?.eligible,
-        promotion: !!s?.accepted,
       };
       document.getElementById("steps").innerHTML = STEP_LABELS.map(([id, label]) =>
         `<li><span>${label}</span><span class="pill ${done[id] ? "ok" : "pending"}">${done[id] ? "complete" : "pending"}</span></li>`
