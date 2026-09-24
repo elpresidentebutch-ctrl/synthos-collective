@@ -250,6 +250,16 @@ func main() {
 			}
 		}
 	}
+	// Reused by startValidatorRosterSync, the mailbox relay's producer side
+	// (rpc.Server's RegistryURL/RegistrySecret, set once here before any
+	// goroutine that reads them starts -- see those fields' doc comments),
+	// and startMailboxRelayListener below. Already set on every real
+	// deployment for startRegistryHeartbeat's own heartbeat.
+	registryURL := strings.TrimRight(os.Getenv("SYNTHOS_REGISTRY_URL"), "/")
+	registrySecret := os.Getenv("SYNTHOS_REGISTRY_SECRET")
+	srv.RegistryURL = registryURL
+	srv.RegistrySecret = registrySecret
+
 	srv.StartPeerSync(15 * time.Second)
 	startRegistryHeartbeat(cfg.NodeID, ch.ChainID, keys.Public)
 	// Picks up validators approved through the registry's Phase-1 queue
@@ -262,10 +272,20 @@ func main() {
 	startValidatorRosterSync(
 		ch, n, srv, a.Identity.AgentID,
 		chainValidators, valKeys, validators, cfg.ConsensusPeers,
-		strings.TrimRight(os.Getenv("SYNTHOS_REGISTRY_URL"), "/"),
+		registryURL,
 		consensusEnabled,
 		60*time.Second,
 	)
+	// Phase 3: lets THIS node vote in consensus even when it has no
+	// reachable public URL of its own (approved via Phase 1, relayed via
+	// Phase 2's roster sync into someone else's MailboxRelayPeers) --
+	// polling its own mailbox for a proposal instead of waiting for an
+	// inbound /consensus/propose call nothing could ever make. See
+	// mailbox_relay.go and docs/VALIDATOR_ONBOARDING.md's Phase 3. Safe to
+	// run on every node unconditionally: a directly-reachable validator's
+	// mailbox simply stays empty, since no producer ever has a reason to
+	// list it in MailboxRelayPeers.
+	startMailboxRelayListener(n, a.Identity.AgentID, registryURL, registrySecret, consensusEnabled, 2*time.Second)
 
 	// SYNTHOS_PRODUCER_ROTATION_LOCK_SECONDS wires the safety-critical
 	// cross-round vote lock (see node.Node.SetProducerRotationLockTimeout's
@@ -492,6 +512,43 @@ func mergeValidatorRoster(
 	return validators, keys, consensusPeerURLs
 }
 
+// mailboxRelayPeersFromRoster returns the validator IDs from roster that
+// are approved (every entry in the roster response already is -- see
+// handleAPIValidatorsRoster) but have no reachable direct URL: the
+// home/laptop case mergeValidatorRoster deliberately leaves out of
+// consensusPeerURLs. These are exactly the validators Phase 3's mailbox
+// relay (see internal/rpc/mailbox_relay.go) can still reach -- through the
+// registry's mailbox instead of a direct HTTPS call.
+//
+// Pure and deterministic, matching mergeValidatorRoster's own validation:
+// an entry is skipped, never causes an error, if its node_id is empty or
+// equal to selfID, or its public_key doesn't decode to a valid Ed25519 key
+// -- a malformed or self-referential registry entry must never be able to
+// halt or corrupt a running validator's relay-peer list. Checks both
+// Reachable and PublicURL rather than trusting Reachable alone, since a
+// future registry response that sets one without the other should still
+// resolve safely here rather than accidentally trying to mailbox-relay to
+// (or drop) a validator that's actually directly reachable.
+func mailboxRelayPeersFromRoster(roster []rosterEntry, selfID string) []string {
+	var peers []string
+	for _, entry := range roster {
+		id := strings.TrimSpace(entry.NodeID)
+		if id == "" || id == selfID {
+			continue
+		}
+		pubBytes, err := synthoscrypto.PublicKeyBytes(entry.PublicKey)
+		if err != nil || len(pubBytes) != ed25519.PublicKeySize {
+			continue
+		}
+		if entry.Reachable && strings.TrimSpace(entry.PublicURL) != "" {
+			continue
+		}
+		peers = append(peers, id)
+	}
+	sort.Strings(peers)
+	return peers
+}
+
 // startValidatorRosterSync periodically fetches the registry's public
 // validator roster and folds any newly-approved validators into this
 // node's live trust state, so a Phase-1 approval (see
@@ -526,6 +583,12 @@ func mergeValidatorRoster(
 // possibly-larger roster. SetConsensusPeerURLs is safe to call from this
 // goroutine concurrently with the block-producer loop's own use of
 // ConsensusPeerURLs -- see rpc.Server's consensusPeerURLsMu doc comment.
+//
+// Also calls SetMailboxRelayPeers every tick (Phase 3): a roster entry
+// that's trusted but has no reachable URL doesn't just sit there uncalled
+// forever -- it's handed to the mailbox relay (internal/rpc/
+// mailbox_relay.go) so a home/laptop validator's vote can still actually
+// reach the producer.
 func startValidatorRosterSync(
 	ch *chain.Chain,
 	n *node.Node,
@@ -580,6 +643,7 @@ func startValidatorRosterSync(
 			}
 			ch.SetValidatorSet(chainKeys, quorum)
 			srv.SetConsensusPeerURLs(consensusPeerURLs)
+			srv.SetMailboxRelayPeers(mailboxRelayPeersFromRoster(roster, selfID))
 			if len(chainValidators) != len(staticChainValidators) {
 				log.Printf("validator roster sync: active validator set is now %d (started with %d): %v", len(chainValidators), len(staticChainValidators), chainValidators)
 			}
@@ -661,7 +725,17 @@ func startBlockProducer(n *node.Node, ch *chain.Chain, srv *rpc.Server, selfID s
 		}
 	}
 	produceEmpty := os.Getenv("SYNTHOS_PRODUCE_EMPTY_BLOCKS") == "true"
-	realConsensus := srv != nil && len(srv.ConsensusPeerURLs) > 0 && srv.ConsensusToken != ""
+	// ConsensusPeerURLsSnapshot, not the field directly: main() calls
+	// startValidatorRosterSync (whose goroutine can call
+	// SetConsensusPeerURLs as soon as its first tick fires) before this
+	// function, so by the time this reads the peer count -- once here, and
+	// again in the two log lines below -- a concurrent writer may already
+	// exist. See consensusPeerURLsMu's doc comment.
+	var consensusPeers []string
+	if srv != nil {
+		consensusPeers = srv.ConsensusPeerURLsSnapshot()
+	}
+	realConsensus := srv != nil && len(consensusPeers) > 0 && srv.ConsensusToken != ""
 
 	rotationEnabled := os.Getenv("SYNTHOS_PRODUCER_ROTATION") == "true" && len(rotation) > 1
 	roundInterval := 3 * interval
@@ -694,9 +768,9 @@ func startBlockProducer(n *node.Node, ch *chain.Chain, srv *rpc.Server, selfID s
 	}
 
 	if rotationEnabled {
-		log.Printf("Block producer enabled: interval=%s produce_empty=%v (REAL multi-validator consensus, %d peer(s), quorum required, ROTATION enabled: %d validators, round=%s)", interval, produceEmpty, len(srv.ConsensusPeerURLs), len(rotation), roundInterval)
+		log.Printf("Block producer enabled: interval=%s produce_empty=%v (REAL multi-validator consensus, %d peer(s), quorum required, ROTATION enabled: %d validators, round=%s)", interval, produceEmpty, len(consensusPeers), len(rotation), roundInterval)
 	} else if realConsensus {
-		log.Printf("Block producer enabled: interval=%s produce_empty=%v (REAL multi-validator consensus, %d peer(s), quorum required)", interval, produceEmpty, len(srv.ConsensusPeerURLs))
+		log.Printf("Block producer enabled: interval=%s produce_empty=%v (REAL multi-validator consensus, %d peer(s), quorum required)", interval, produceEmpty, len(consensusPeers))
 	} else {
 		log.Printf("Block producer enabled: interval=%s produce_empty=%v (single-sequencer)", interval, produceEmpty)
 	}

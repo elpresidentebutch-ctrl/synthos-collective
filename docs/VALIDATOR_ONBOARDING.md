@@ -133,34 +133,51 @@ not distinction for `ConsensusPeerURLs`. `internal/rpc/
 consensus_peer_urls_race_test.go` covers the `ConsensusPeerURLs` fix in
 isolation.
 
-## Phase 3 -- reaching a home-PC validator (designed, not yet built)
+## Phase 3 -- reaching a home-PC validator (shipped)
 
-A newly approved validator with no `ValidatorPublicURL` still can't be
-called. The plan reuses a piece of infrastructure that already exists and
-is already deployed: the registry's generic mailbox
-(`POST /mailbox`, `GET /mailbox?name=NODE`, in `cmd/cloudless-registry/
-main.go`'s `handleMailbox`) -- a named, persisted, pull-based message queue
-originally built for the "cloudless" agent-messaging design, and a natural
-fit here:
+A newly approved validator with no `ValidatorPublicURL` used to become a
+trusted signer (Phase 2) but stay uncalled forever -- nothing could reach
+it to ask for a vote. This closes that gap by reusing a piece of
+infrastructure that already existed and was already deployed: the
+registry's generic mailbox (`POST /mailbox`, `GET /mailbox?name=NODE`, in
+`cmd/cloudless-registry/main.go`'s `handleMailbox`) -- a named, persisted,
+pull-based message queue originally built for the "cloudless"
+agent-messaging design, and a natural fit here:
 
-1. When a producer's `ProposeBlockWithConsensus` reaches a consensus peer
-   with no known reachable URL, instead of `POST <url>/consensus/propose`
-   it does `POST /mailbox {"to": "<peerID>", "type": "consensus_proposal",
-   "payload": <the signed proposal>}`.
-2. The relay-only validator's process (not `cmd/silentnode` -- it needs the
-   real proposal-validation and vote-signing logic in `internal/node`, just
-   driven by polling instead of an inbound listener) polls
-   `GET /mailbox?name=<its own ID>` every couple of seconds -- comfortably
-   inside the existing round window (`SYNTHOS_PRODUCER_ROUND_SECONDS`,
-   default 3x the block interval) -- and still purely outbound, so it still
-   runs fine behind a home router.
-3. On receiving a proposal, it runs the exact same validation
-   (`ValidateProposal`) and self-signing (`SelfVote`) logic every validator
-   already runs today, then posts its signed vote back via
+1. `internal/rpc/mailbox_relay.go`'s `collectMailboxVotes`, called from
+   `collectConsensusVotes` alongside (not after -- both run for the same
+   timeout budget) the existing direct-HTTP peer loop: for every validator
+   in `rpc.Server.MailboxRelayPeers` (populated each tick by
+   `cmd/synthosd/main.go`'s `mailboxRelayPeersFromRoster`, straight from
+   the same roster tick `mergeValidatorRoster` already reads -- see Phase
+   2), it `POST /mailbox {"to": "<peerID>", "from": "<selfID>", "type":
+   "consensus_proposal", "payload": {"proposal": ...}}`, then polls its
+   own mailbox (`GET /mailbox?name=<selfID>`) every 400ms until either
+   every relay peer has answered or the round's timeout elapses.
+2. `cmd/synthosd/mailbox_relay.go`'s `startMailboxRelayListener` runs
+   inside every `synthosd` process (not `cmd/silentnode` -- it needs the
+   real proposal-validation and vote-signing logic in `internal/node`,
+   which only `synthosd` has), polling its own mailbox every 2 seconds --
+   comfortably inside the existing round window
+   (`SYNTHOS_PRODUCER_ROUND_SECONDS`, default 3x the block interval) --
+   and still purely outbound, so it still runs fine behind a home router.
+   Harmless to run unconditionally on every node: a directly-reachable
+   validator is never listed in anyone's `MailboxRelayPeers`, so its own
+   mailbox just stays empty.
+3. On receiving a `consensus_proposal` message, it calls the exact same
+   `node.Node.HandleProposal` every validator already runs for the
+   direct-HTTP path -- real height/signature/quorum-lock validation, then
+   a real signed vote -- and posts that vote back via
    `POST /mailbox {"to": "<producer ID>", "type": "consensus_vote", ...}`.
-4. The producer, which is directly reachable, polls its own mailbox for
-   matching votes while a round is open and feeds them into the existing
-   vote-counting path exactly as a directly-received vote would be.
+   A proposal that fails validation is logged and dropped, exactly like a
+   rejected direct-HTTP call would be; it never crashes the loop.
+4. The producer's poll in step 1 decodes each `consensus_vote` reply and
+   runs it through `verifyPeerVote` -- the identical independent
+   ed25519-signature check a directly-received vote goes through -- before
+   it ever reaches `Node.HandleVote`. A relay peer that never answers,
+   answers late, or replies with something that doesn't verify is simply
+   absent from the round's tally, matching normal BFT handling of a peer
+   that's down or misbehaving.
 
 **Why this doesn't weaken consensus safety:** the mailbox is a dumb,
 unauthenticated (today; `REGISTRY_SECRET` is unset in production, so
@@ -169,26 +186,41 @@ to be trusted, because every proposal and vote it carries is independently
 signed and independently re-verified by the receiving side exactly as it
 is today -- `chain.Chain`'s own authorization check re-verifies every
 proposer and quorum signature "regardless of what this orchestration code
-believes" (existing doc comment on the consensus-wiring commit). A
-compromised or malicious registry can delay or drop relay messages -- at
-worst causing a missed vote or a failed round, which the existing rotation/
-failover logic already handles -- but it cannot forge a vote or finalize an
-unearned block. This preserves the project's existing trust-minimization
-property rather than introducing a new one.
+believes" (existing doc comment on the consensus-wiring commit), and
+`verifyPeerVote` (step 4 above) is real, tested defense-in-depth on top of
+that, not just a doc-comment claim: `TestCollectMailboxVotes_
+DiscardsForgedVote` proves a message claiming to be a valid vote but
+carrying a bogus signature is actually discarded, not just trusted because
+it arrived with the right shape. A compromised or malicious registry can
+delay or drop relay messages -- at worst causing a missed vote or a failed
+round, which the existing rotation/failover logic already handles -- but it
+cannot forge a vote or finalize an unearned block. This preserves the
+project's existing trust-minimization property rather than introducing a
+new one.
+
+Tests: `internal/rpc/mailbox_relay_test.go` covers the producer side end to
+end against a real second validator (`TestProposeBlockWithConsensus_
+ReachesQuorumViaMailboxRelay` -- 2 validators, quorum 2, so finalizing at
+all proves the relay vote genuinely arrived and verified), the forged-vote
+rejection above, and the fail-soft timeout behavior for an unanswered relay
+peer. `cmd/synthosd/mailbox_relay_test.go` covers the relay-listener side
+end to end (`TestStartMailboxRelayListener_ValidatesAndPostsVoteBack` --
+proves the posted-back vote's signature independently verifies against the
+relay validator's real public key), rejection of an invalid proposal
+without crashing the loop, the rollout-safety gating, and
+`mailboxRelayPeersFromRoster`'s own union/exclusion logic.
 
 ## What this means for the website promise
 
-With Phase 2 shipped, "verified uptime -> appears in the pending queue ->
-project owner approves -> the node is a real trusted signer within a
-minute, without a redeploy" is now genuinely true -- for an operator with a
-reachable `public_url` (approved with one, e.g. a real server). For a
-home-PC operator (no `public_url`, the common case for the public
-push-button download), approval makes them trusted but they still can't be
-asked to vote directly -- nothing can reach them -- until Phase 3's mailbox
-relay ships. So the node page should still describe this accurately today:
-uptime is paid; validator promotion is a reviewed, manual step, not
-automatic; and it takes effect immediately for a directly reachable
-operator, but a home-PC operator's approval doesn't yet mean their node is
-actually voting. Once Phase 3 ships, that last gap closes too and the
-original "run a node for a month and get approved" promise becomes true
-end to end for every operator, home PC included.
+With Phases 2 and 3 both shipped, "verified uptime -> appears in the
+pending queue -> project owner approves -> the node actually receives
+proposals and votes within a couple of poll cycles, without a redeploy" is
+now genuinely true end to end -- for a directly reachable operator (Phase
+2's consensus-peer path) and for a home-PC operator with no public URL
+(Phase 3's mailbox relay) alike, using nothing but the existing push-button
+download. So the node page's "run a node for a month and get approved" can
+now describe the real, current behavior rather than something still in
+progress: uptime is paid, and validator promotion is still a reviewed,
+manual step (deliberately -- see "the two things that have to be true"
+above), but once approved, an operator's node -- home PC included -- is
+actually voting, not just carrying a flag nothing acts on.

@@ -113,6 +113,41 @@ type Server struct {
 	// independently -- a consensus round needs to fit well inside the
 	// block-producer loop's tick interval.
 	consensusClient *http.Client
+
+	// RegistryURL is the base registry URL (e.g. https://synthos-registry.
+	// onrender.com, from SYNTHOS_REGISTRY_URL) used for the mailbox relay
+	// (see mailbox_relay.go and docs/VALIDATOR_ONBOARDING.md's Phase 3).
+	// Set once at startup, in cmd/synthosd/main.go's main(), before any
+	// goroutine that reads it starts -- like ConsensusPeerURLs used to be
+	// safe to read unlocked, this field is never reassigned afterward, so
+	// it needs no mutex of its own.
+	RegistryURL string
+
+	// RegistrySecret is the optional X-Registry-Secret value to present
+	// when POSTing to the registry's mailbox (SYNTHOS_REGISTRY_SECRET),
+	// matching startRegistryHeartbeat's convention. Same
+	// set-once-at-startup safety as RegistryURL.
+	RegistrySecret string
+
+	// MailboxRelayPeers are validator IDs this node can only reach through
+	// the registry's mailbox (POST/GET /mailbox), not a direct HTTPS call
+	// -- approved validators with no reachable public URL, the common case
+	// for a home/laptop operator. See docs/VALIDATOR_ONBOARDING.md's Phase
+	// 3. Disjoint from ConsensusPeerURLs by construction (mergeValidatorRoster's
+	// caller computes them from the same roster tick, but a validator only
+	// ever lands in one list depending on whether it has a public_url).
+	//
+	// Guarded the same way, and for the same reason, as ConsensusPeerURLs:
+	// cmd/synthosd/main.go's validator-roster refresh loop calls
+	// SetMailboxRelayPeers periodically from its own goroutine, concurrently
+	// with every block-production round reading it via
+	// MailboxRelayPeersSnapshot inside collectConsensusVotes.
+	MailboxRelayPeers []string
+
+	// mailboxRelayPeersMu guards MailboxRelayPeers exactly as
+	// consensusPeerURLsMu guards ConsensusPeerURLs -- see that field's doc
+	// comment for the concurrency history this closes.
+	mailboxRelayPeersMu sync.RWMutex
 }
 
 func NewServer(c *chain.Chain, st *storage.Store, n *node.Node) *Server {
@@ -167,6 +202,32 @@ func (s *Server) ConsensusPeerURLsSnapshot() []string {
 	}
 	out := make([]string, len(s.ConsensusPeerURLs))
 	copy(out, s.ConsensusPeerURLs)
+	return out
+}
+
+// SetMailboxRelayPeers configures the validator IDs this node should reach
+// through the registry's mailbox rather than a direct HTTPS call (see
+// MailboxRelayPeers's doc comment and mailbox_relay.go).
+func (s *Server) SetMailboxRelayPeers(peerIDs []string) {
+	sanitized := sanitizeMailboxRelayPeers(peerIDs)
+	s.mailboxRelayPeersMu.Lock()
+	s.MailboxRelayPeers = sanitized
+	s.mailboxRelayPeersMu.Unlock()
+}
+
+// MailboxRelayPeersSnapshot returns a copy of the current
+// MailboxRelayPeers, safe to call concurrently with SetMailboxRelayPeers --
+// see ConsensusPeerURLsSnapshot's doc comment for why collectConsensusVotes
+// (via collectMailboxVotes) uses this instead of reading the field
+// directly.
+func (s *Server) MailboxRelayPeersSnapshot() []string {
+	s.mailboxRelayPeersMu.RLock()
+	defer s.mailboxRelayPeersMu.RUnlock()
+	if len(s.MailboxRelayPeers) == 0 {
+		return nil
+	}
+	out := make([]string, len(s.MailboxRelayPeers))
+	copy(out, s.MailboxRelayPeers)
 	return out
 }
 
@@ -805,13 +866,20 @@ func (s *Server) ProposeBlockWithConsensus(timeout time.Duration) (hash string, 
 // or returns a vote that doesn't check out cryptographically against its
 // own registered key is simply skipped -- it does not error the round,
 // matching normal BFT behavior for a peer that's down or misbehaving.
+//
+// Also asks every MailboxRelayPeers validator (one with no directly
+// callable URL, reached instead through the registry's mailbox -- see
+// mailbox_relay.go) in parallel with the direct-HTTP peers above, not
+// after: both run for the same timeout budget, so a round with relay
+// validators doesn't take any longer than one without.
 func (s *Server) collectConsensusVotes(b *chain.Block, timeout time.Duration) (finalized bool) {
 	// Snapshot once, under consensusPeerURLsMu, rather than reading
 	// s.ConsensusPeerURLs directly -- see consensusPeerURLsMu's doc
 	// comment for why a concurrent updater makes a direct read unsafe.
 	peers := s.ConsensusPeerURLsSnapshot()
+	relayPeers := s.MailboxRelayPeersSnapshot()
 	var wg sync.WaitGroup
-	votes := make(chan consensus.BlockVote, len(peers))
+	votes := make(chan consensus.BlockVote, len(peers)+len(relayPeers))
 	for _, peer := range peers {
 		peer := peer
 		wg.Add(1)
@@ -827,6 +895,15 @@ func (s *Server) collectConsensusVotes(b *chain.Block, timeout time.Duration) (f
 				return
 			}
 			votes <- v
+		}()
+	}
+	if len(relayPeers) > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for _, v := range s.collectMailboxVotes(b, relayPeers, timeout) {
+				votes <- v
+			}
 		}()
 	}
 	wg.Wait()
