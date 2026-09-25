@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"synthos-collective/internal/agent"
@@ -29,10 +30,20 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	// Load genesis from config/genesis.json if present, otherwise use
+	// defaults -- needed either way now: to bootstrap a fresh chain, or (see
+	// SeedGenesisState below) to give a restored chain the pre-block-1
+	// state TryReorg needs to safely replay an alternative branch.
+	gen := loadGenesis("config/genesis.json")
+	maxHotBlocks := maxHotBlocksFromEnv()
 
 	// Try load existing chain snapshot.
 	var c *chain.Chain
 	if snap, err := st.Load(); err == nil && snap != nil && len(snap.Blocks) > 0 && snap.State != nil {
+		genesisChain, err := chain.NewChain(gen)
+		if err != nil {
+			panic(err)
+		}
 		c = &chain.Chain{
 			ChainID:   snap.ChainID,
 			TxChainID: snap.TxChainID,
@@ -42,13 +53,27 @@ func main() {
 			Blocks:    snap.Blocks,
 			Mempool:   make(map[string]chain.Tx),
 		}
+		c.SeedGenesisState(genesisChain.State)
+		// A one-time legacy-format snapshot loads c.Blocks with the chain's
+		// ENTIRE history. Archive all of it now, while maxHotBlocks is still
+		// unset (0, unbounded) and every block is still in memory, so nothing
+		// gets trimmed away before it's ever durably archived under blocks/ --
+		// see storage.Store's doc comment. Cheap no-op for an
+		// already-split-format snapshot. Only after this does RestoreHotWindow
+		// enable trimming going forward.
+		_ = st.Save(c)
+		// Restore how much history had already been trimmed out of memory
+		// (0/nil/nil for a legacy snapshot, meaning "nothing trimmed yet")
+		// and (re)apply the configured bound -- see internal/chain's
+		// SetHotWindow/RestoreHotWindow for why this keeps RAM use bounded
+		// regardless of how large the chain's full history has grown.
+		c.RestoreHotWindow(snap.HotWindowStart, snap.HotWindowBaseState, snap.HotWindowBaseBlock, maxHotBlocks, st)
 	} else {
-		// Load genesis from config/genesis.json if present, otherwise use defaults.
-		gen := loadGenesis("config/genesis.json")
 		c, err = chain.NewChain(gen)
 		if err != nil {
 			panic(err)
 		}
+		c.SetHotWindow(maxHotBlocks, st)
 		_ = st.Save(c)
 		for addr, bal := range gen.Alloc {
 			fmt.Printf("Funded %s with %d SYN\n", addr, bal)
@@ -147,6 +172,24 @@ func loadGenesis(path string) chain.Genesis {
 		},
 		Metadata: map[string]any{"symbol": "SYN", "decimals": 0},
 	}
+}
+
+// defaultMaxHotBlocks/maxHotBlocksFromEnv mirror cmd/synthosd's -- see that
+// binary's copy for the full reasoning. Duplicated rather than shared
+// because these are separate main packages; SYNTHOS_MAX_HOT_BLOCKS is the
+// same env var both binaries honor.
+const defaultMaxHotBlocks = 2000
+
+func maxHotBlocksFromEnv() int {
+	raw := strings.TrimSpace(os.Getenv("SYNTHOS_MAX_HOT_BLOCKS"))
+	if raw == "" {
+		return defaultMaxHotBlocks
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return defaultMaxHotBlocks
+	}
+	return n
 }
 
 // newSoloValidatorNode builds a single-validator Node so this RPC instance can

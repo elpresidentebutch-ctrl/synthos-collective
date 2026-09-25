@@ -51,6 +51,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	maxHotBlocks := maxHotBlocksFromEnv()
 
 	// Initialize or load chain.
 	var ch *chain.Chain
@@ -79,6 +80,23 @@ func main() {
 		// (already built above for the snapshot-freshness check) so fork-choice
 		// reorgs work after a restart too.
 		ch.SeedGenesisState(genesisChain.State)
+		// A one-time legacy-format snapshot loads ch.Blocks with the chain's
+		// ENTIRE history (see storage.Store's loadLegacyFormat), not yet
+		// bounded by any hot window. Archive all of it now, while maxHotBlocks
+		// is still unset (0, unbounded) and every block is still in memory, so
+		// nothing gets trimmed away before it's ever durably archived under
+		// blocks/ -- this is the one-time migration step storage.Store's own
+		// doc comment describes. For an already-split-format snapshot this is
+		// a cheap no-op re-save (everything's already archived). Only after
+		// this does RestoreHotWindow enable trimming going forward.
+		_ = st.Save(ch)
+		// Restore how much history had already been trimmed out of memory
+		// (0/nil/nil for a legacy snapshot, meaning "nothing trimmed yet")
+		// and (re)apply the configured bound -- see internal/chain's
+		// SetHotWindow/RestoreHotWindow and internal/storage's split-format
+		// Load for why this keeps RAM use bounded regardless of how large
+		// the chain's full history has grown.
+		ch.RestoreHotWindow(snap.HotWindowStart, snap.HotWindowBaseState, snap.HotWindowBaseBlock, maxHotBlocks, st)
 	} else {
 		ch, err = chain.NewChain(gen)
 		if err != nil {
@@ -86,6 +104,7 @@ func main() {
 		}
 		// Ensure ChainID matches genesis when bootstrapping.
 		ch.ChainID = gen.ChainID
+		ch.SetHotWindow(maxHotBlocks, st)
 		_ = st.Save(ch)
 	}
 
@@ -975,6 +994,31 @@ func shouldRefreshHeightZeroSnapshot(snap *storage.Snapshot, genesisChain *chain
 		return true
 	}
 	return snap.State.Root() != genesisChain.State.Root()
+}
+
+// defaultMaxHotBlocks bounds how many of the most recent finalized blocks
+// stay in memory once SYNTHOS_MAX_HOT_BLOCKS isn't set to something else --
+// see chain.Chain.SetHotWindow. Chosen to comfortably exceed any realistic
+// reorg depth (TryReorg's only production caller only ever contests a
+// height at or very near the current tip) while still bounding memory well
+// below what full, ever-growing chain history would otherwise cost.
+const defaultMaxHotBlocks = 2000
+
+// maxHotBlocksFromEnv reads SYNTHOS_MAX_HOT_BLOCKS, falling back to
+// defaultMaxHotBlocks if unset or not a positive integer. A value <= 0
+// (explicitly configured) disables trimming entirely, restoring the
+// original unbounded-in-memory behavior -- an escape hatch, not the
+// intended steady-state configuration for a long-running node.
+func maxHotBlocksFromEnv() int {
+	raw := strings.TrimSpace(os.Getenv("SYNTHOS_MAX_HOT_BLOCKS"))
+	if raw == "" {
+		return defaultMaxHotBlocks
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return defaultMaxHotBlocks
+	}
+	return n
 }
 
 // nodeKeys returns the ed25519 identity synthosd should run with. An

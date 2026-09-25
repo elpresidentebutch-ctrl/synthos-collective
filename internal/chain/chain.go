@@ -72,6 +72,60 @@ type Chain struct {
 	// history. Grandfathering that range in is the only way a new or
 	// resyncing node can ever get past it.
 	stateRootEnforceFromHeight uint64
+
+	// --- Bounded in-memory block retention (see SetHotWindow) ---
+	//
+	// Blocks holds every finalized block from genesis by default (index ==
+	// height), which is how every pre-existing caller and test still
+	// behaves: maxHotBlocks starts at 0 ("unbounded"), so none of this new
+	// machinery does anything until SetHotWindow/RestoreHotWindow is
+	// actually called. A long-running chain that does opt in trims the
+	// oldest entries out of Blocks once it grows past maxHotBlocks, so RAM
+	// use stops growing once it reaches the configured window instead of
+	// growing forever with chain height.
+
+	// hotWindowStart is the height of Blocks[0]. Zero for a chain that has
+	// never trimmed anything (Blocks still holds full history from genesis,
+	// exactly as before this field existed). Every direct height->index
+	// lookup into Blocks (blockAtLocked, BlocksFrom, TryReorg's prefix
+	// build) must subtract this before indexing.
+	hotWindowStart uint64
+
+	// maxHotBlocks bounds how many of the most recent finalized blocks stay
+	// in Blocks; <= 0 (the default) means unbounded. Set via SetHotWindow.
+	maxHotBlocks int
+
+	// coldBlocks, when non-nil, is consulted by blockAtLocked/BlocksFrom for
+	// any height below hotWindowStart that trimming has evicted from
+	// memory. Set via SetHotWindow/RestoreHotWindow, normally to the same
+	// *storage.Store the chain is periodically saved to -- see
+	// storage.Store.ColdBlockAt.
+	coldBlocks ColdBlockReader
+
+	// hotWindowBaseState/hotWindowBaseBlock cache the state and the anchor
+	// block exactly as of height hotWindowStart-1 -- i.e. immediately
+	// before the current hot window begins. TryReorg needs this as its
+	// replay starting point once genesis itself has been trimmed out of
+	// memory (see hotWindowBaseStateLocked/hotWindowBaseBlockLocked, which
+	// fall back to genesisState/Blocks[0] whenever hotWindowStart is still
+	// 0, so these two fields are only ever meaningfully populated after the
+	// first real trim -- see trimHotWindowLocked). RestoreHotWindow
+	// reconstructs them from a storage.Store snapshot after a restart.
+	hotWindowBaseState *State
+	hotWindowBaseBlock *Block
+}
+
+// ColdBlockReader supplies a finalized block that has aged out of Chain's
+// bounded in-memory retention window (see SetHotWindow), read back from
+// wherever it was durably archived. Implemented by *storage.Store, which
+// reads blocks/<height>.json on demand -- callers never need to hold full
+// chain history in RAM just to serve an old block to a resyncing peer.
+type ColdBlockReader interface {
+	// ColdBlockAt returns the finalized block at height, and false if it
+	// isn't available (never existed, or the archive is missing/corrupt for
+	// some other reason -- callers must treat false as "not found", never
+	// panic or fabricate a stand-in block).
+	ColdBlockAt(height uint64) (*Block, bool)
 }
 
 var (
@@ -158,6 +212,169 @@ func NewChain(genesis Genesis) (*Chain, error) {
 	return c, nil
 }
 
+// SetHotWindow bounds how much finalized block history Chain keeps in
+// memory, trimming the oldest entries out of Blocks once it grows past
+// maxHotBlocks and falling back to coldReader (may be nil) to serve an
+// older height on demand -- see blockAtLocked/BlocksFrom. maxHotBlocks <= 0
+// disables trimming entirely (the default), preserving the original
+// unbounded-in-memory behavior. Safe to call at any time, including right
+// after NewChain; trims immediately if Blocks already exceeds the new
+// bound. For a chain being restored from a storage snapshot that already
+// had history trimmed out when it was saved, use RestoreHotWindow instead
+// so the hot-window checkpoint carries over correctly.
+func (c *Chain) SetHotWindow(maxHotBlocks int, coldReader ColdBlockReader) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.maxHotBlocks = maxHotBlocks
+	c.coldBlocks = coldReader
+	c.trimHotWindowLocked()
+}
+
+// RestoreHotWindow reconstructs a chain's hot-window bookkeeping after
+// loading a split-format snapshot (see storage.Store) that already had
+// hotWindowStart > 0 when it was last saved -- i.e. some history had
+// already been trimmed out of memory by the process that saved it.
+// baseState/baseBlock must be the state and block exactly as of height
+// hotWindowStart-1 (storage.Store's Load records both alongside the
+// snapshot); either may be nil (a legacy, never-trimmed snapshot has
+// neither), in which case the existing genesis-derived defaults are left
+// in place -- so calling this with hotWindowStart==0 and nil/nil is always
+// a safe no-op for the checkpoint fields. Call once, right after
+// constructing Chain from a snapshot and after SeedGenesisState, before the
+// chain starts accepting new blocks.
+func (c *Chain) RestoreHotWindow(hotWindowStart uint64, baseState *State, baseBlock *Block, maxHotBlocks int, coldReader ColdBlockReader) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.hotWindowStart = hotWindowStart
+	if baseState != nil {
+		c.hotWindowBaseState = baseState.Clone()
+	}
+	if baseBlock != nil {
+		c.hotWindowBaseBlock = baseBlock
+	}
+	c.maxHotBlocks = maxHotBlocks
+	c.coldBlocks = coldReader
+	// A restored snapshot -- especially a freshly migrated legacy one,
+	// which loads with Blocks holding its entire historical run -- may
+	// already exceed the newly configured bound; trim it down immediately
+	// rather than waiting for the next block, exactly like SetHotWindow.
+	c.trimHotWindowLocked()
+}
+
+// HotWindowInfo describes how much of a chain's finalized history
+// currently lives in memory, for a Store to persist alongside the
+// blocks/state SnapshotData already returns -- see RestoreHotWindow for
+// reloading it. BaseState/BaseBlock are exactly as of height Start-1: for
+// a chain that has never trimmed anything (Start == 0) that's genesis, so
+// callers don't need to special-case the untrimmed case.
+type HotWindowInfo struct {
+	Start     uint64
+	BaseState *State
+	BaseBlock *Block
+}
+
+func (c *Chain) HotWindowInfo() HotWindowInfo {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	info := HotWindowInfo{Start: c.hotWindowStart, BaseBlock: c.hotWindowBaseBlockLocked()}
+	if bs := c.hotWindowBaseStateLocked(); bs != nil {
+		info.BaseState = bs.Clone()
+	}
+	return info
+}
+
+// hotWindowBaseStateLocked returns the state exactly as of height
+// hotWindowStart-1. When nothing has been trimmed yet (hotWindowStart ==
+// 0) that's simply genesisState, so no separate bookkeeping is needed for
+// the common, untrimmed case -- hotWindowBaseState is only ever populated
+// once trimHotWindowLocked has actually evicted something. Must be called
+// with c.mu already held.
+func (c *Chain) hotWindowBaseStateLocked() *State {
+	if c.hotWindowStart == 0 {
+		return c.genesisState
+	}
+	return c.hotWindowBaseState
+}
+
+// hotWindowBaseBlockLocked returns the anchor block for hot-window replay:
+// the block immediately preceding hotWindowStart. When nothing has been
+// trimmed yet, that's simply Blocks[0] (genesis for a normal chain) --
+// once trimming has advanced hotWindowStart past 0, the true anchor block
+// is no longer in Blocks at all (it was evicted), so trimHotWindowLocked
+// caches it explicitly beforehand. Must be called with c.mu already held.
+func (c *Chain) hotWindowBaseBlockLocked() *Block {
+	if c.hotWindowStart == 0 {
+		if len(c.Blocks) == 0 {
+			return nil
+		}
+		return c.Blocks[0]
+	}
+	return c.hotWindowBaseBlock
+}
+
+// trimHotWindowLocked evicts the oldest in-memory blocks once len(Blocks)
+// exceeds maxHotBlocks, advancing hotWindowStart (and the hot-window
+// checkpoint) to match. No-ops if maxHotBlocks <= 0, if there's nothing to
+// trim yet, or if the checkpoint can't be safely advanced -- trimming is
+// strictly best-effort and must never be allowed to risk state
+// correctness or fail block production; worst case it just leaves a few
+// more blocks in memory than configured until it can safely catch up.
+// Must be called with c.mu already held for writing.
+func (c *Chain) trimHotWindowLocked() {
+	if c.maxHotBlocks <= 0 {
+		return
+	}
+	excess := len(c.Blocks) - c.maxHotBlocks
+	if excess <= 0 {
+		return
+	}
+	baseState := c.hotWindowBaseStateLocked()
+	if baseState == nil {
+		return
+	}
+	next := baseState.Clone()
+	for i := 0; i < excess; i++ {
+		var err error
+		next, err = c.advanceCheckpointStateLocked(next, c.Blocks[i])
+		if err != nil {
+			return
+		}
+	}
+	c.hotWindowBaseState = next
+	c.hotWindowBaseBlock = c.Blocks[excess-1]
+	// Copy into a fresh backing array rather than just re-slicing, so the
+	// evicted blocks' *Block pointers (and everything they retain -- Tx
+	// slices, vote maps) actually become unreachable and collectible; a
+	// bare c.Blocks[excess:] would keep the whole old backing array (and
+	// every block pointer in it) alive for as long as the new slice header
+	// still points into any part of it, defeating the entire point of
+	// trimming.
+	c.Blocks = append([]*Block(nil), c.Blocks[excess:]...)
+	c.hotWindowStart += uint64(excess)
+}
+
+// advanceCheckpointStateLocked returns a clone of st with b's transactions
+// and block-economics reward applied -- the same state transition
+// FinalizeBlock performs, minus its state-root verification, since b was
+// already fully validated once (by FinalizeBlock or TryReorg) before it
+// ever reached c.Blocks. Used only to advance the hot-window checkpoint
+// past a block being evicted from memory; never touches c.State itself.
+// Deliberately duplicated rather than factored into FinalizeBlock's own
+// path, so this new, best-effort bookkeeping can never change the
+// behavior of the one function every validator's real finality depends on.
+func (c *Chain) advanceCheckpointStateLocked(st *State, b *Block) (*State, error) {
+	next := st.Clone()
+	for _, tx := range b.Tx {
+		if err := next.ApplyTx(tx); err != nil {
+			return nil, fmt.Errorf("replay transaction %s: %w", tx.ID, err)
+		}
+	}
+	if err := applyBlockEconomics(next, b.Tx, c.resolveProposerAddressLocked(b.Header.ProposerID)); err != nil {
+		return nil, err
+	}
+	return next, nil
+}
+
 func (c *Chain) Height() uint64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -184,18 +401,58 @@ func (c *Chain) tipLocked() *Block {
 	return c.Blocks[len(c.Blocks)-1]
 }
 
-// BlocksFrom returns all blocks from height from onward.
+// BlocksFrom returns all blocks from height from onward -- the mechanism
+// peer catch-up (CatchUpOnce/StartPeerSync) and the /blocks HTTP endpoint
+// both rely on to let a fresh or resyncing node rebuild its entire history
+// from genesis, so it must keep working for any from, including heights
+// this chain has long since trimmed out of memory: those are read back on
+// demand from coldBlocks (see SetHotWindow), one height at a time, without
+// ever holding the chain lock while doing disk I/O.
 func (c *Chain) BlocksFrom(from int) []*Block {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	if from < 0 {
 		from = 0
 	}
-	if from >= len(c.Blocks) {
+	fromHeight := uint64(from)
+
+	c.mu.RLock()
+	if len(c.Blocks) == 0 {
+		c.mu.RUnlock()
 		return nil
 	}
-	out := make([]*Block, len(c.Blocks[from:]))
-	copy(out, c.Blocks[from:])
+	tipHeight := c.Blocks[len(c.Blocks)-1].Header.Height
+	hotStart := c.hotWindowStart
+	reader := c.coldBlocks
+	if fromHeight > tipHeight {
+		c.mu.RUnlock()
+		return nil
+	}
+	var hot []*Block
+	if fromHeight >= hotStart {
+		idx := fromHeight - hotStart
+		if idx < uint64(len(c.Blocks)) {
+			hot = make([]*Block, len(c.Blocks)-int(idx))
+			copy(hot, c.Blocks[idx:])
+		}
+	} else {
+		hot = make([]*Block, len(c.Blocks))
+		copy(hot, c.Blocks)
+	}
+	c.mu.RUnlock()
+
+	if fromHeight >= hotStart || reader == nil {
+		return hot
+	}
+	out := make([]*Block, 0, int(hotStart-fromHeight)+len(hot))
+	for h := fromHeight; h < hotStart; h++ {
+		blk, ok := reader.ColdBlockAt(h)
+		if !ok {
+			// A gap in the archive -- stop rather than hand a resyncing
+			// peer a discontiguous range it could misapply.
+			return out
+		}
+		out = append(out, blk)
+	}
+	out = append(out, hot...)
 	return out
 }
 
@@ -463,6 +720,7 @@ func (c *Chain) FinalizeBlock(b *Block) error {
 	}
 	b.Finalized = true
 	c.Blocks = append(c.Blocks, b)
+	c.trimHotWindowLocked()
 	return nil
 }
 
@@ -635,15 +893,50 @@ func (c *Chain) SeedGenesisState(genesisState *State) {
 }
 
 // BlockAt returns the finalized block at the given height, or nil if the
-// chain hasn't reached that height. Blocks are stored contiguously by
-// height (index == height), so this is a direct lookup.
+// chain hasn't reached that height or the block simply isn't available.
+// Blocks are stored contiguously by height starting at hotWindowStart
+// (index == height - hotWindowStart) while trimming is disabled (the
+// default) hotWindowStart is always 0, so this is a direct lookup exactly
+// as before. Once history has been trimmed out of memory, a height below
+// hotWindowStart falls through to coldBlocks (see SetHotWindow) -- read
+// without holding the chain lock, so a peer catching up on old history
+// never blocks live block production.
 func (c *Chain) BlockAt(height uint64) *Block {
 	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if height >= uint64(len(c.Blocks)) {
-		return nil
+	blk, maybeCold := c.blockAtLocked(height)
+	reader := c.coldBlocks
+	c.mu.RUnlock()
+	if blk != nil || !maybeCold || reader == nil {
+		return blk
 	}
-	return c.Blocks[height]
+	if cb, ok := reader.ColdBlockAt(height); ok {
+		return cb
+	}
+	return nil
+}
+
+// blockAtLocked returns the in-memory block at height if it's within the
+// current hot window (maybeCold=false either way), or (nil, true) if
+// height is a plausible-but-trimmed height the caller should retry via
+// coldBlocks, or (nil, false) if height is simply out of range (beyond the
+// current tip, or the chain isn't initialized yet) and no cold lookup
+// could possibly help. Must be called with c.mu already held.
+func (c *Chain) blockAtLocked(height uint64) (blk *Block, maybeCold bool) {
+	if len(c.Blocks) == 0 {
+		return nil, false
+	}
+	tipHeight := c.Blocks[len(c.Blocks)-1].Header.Height
+	if height > tipHeight {
+		return nil, false
+	}
+	if height < c.hotWindowStart {
+		return nil, true
+	}
+	idx := height - c.hotWindowStart
+	if idx >= uint64(len(c.Blocks)) {
+		return nil, true
+	}
+	return c.Blocks[idx], false
 }
 
 // verifyBlockAuthorizationLocked checks that b was actually produced by a
@@ -726,6 +1019,20 @@ func (c *Chain) TryReorg(forkHeight uint64, candidate []*Block) (bool, error) {
 		c.mu.Unlock()
 		return false, fmt.Errorf("%w: invalid fork height %d", ErrBadBlock, forkHeight)
 	}
+	if forkHeight < c.hotWindowStart {
+		hotWindowStart := c.hotWindowStart
+		c.mu.Unlock()
+		// Everything below the hot window has already been superseded by
+		// at least maxHotBlocks-worth of later, quorum-finalized history --
+		// under real BFT finality a genuinely honest competing branch this
+		// deep essentially can't exist, and TryReorg's only production
+		// caller (applyPeerBlock) only ever contests a height at or very
+		// near the current tip. Refusing here trades an
+		// unreachable-in-practice capability for never having to hold full
+		// chain history in memory just in case -- the same fail-safe
+		// posture as the "genesis state not seeded" case above.
+		return false, fmt.Errorf("reorg unavailable: fork height %d predates the retained hot window (starts at %d)", forkHeight, hotWindowStart)
+	}
 	if len(candidate) == 0 {
 		c.mu.Unlock()
 		return false, errors.New("empty candidate branch")
@@ -735,13 +1042,37 @@ func (c *Chain) TryReorg(forkHeight uint64, candidate []*Block) (bool, error) {
 		return false, fmt.Errorf("%w: candidate branch must start at height %d", ErrBadBlock, forkHeight)
 	}
 
-	prefix := make([]*Block, forkHeight)
-	copy(prefix, c.Blocks[:forkHeight])
-	currentTail := make([]*Block, uint64(len(c.Blocks))-forkHeight)
-	copy(currentTail, c.Blocks[forkHeight:])
+	hotStart := c.hotWindowStart
+	// c.Blocks[i] always has height hotStart+i. The replay anchor
+	// (baseBlock, resolved below) is conceptually the block at height
+	// hotStart-1 -- except when hotStart == 0, where there is no height
+	// -1: genesis itself (c.Blocks[0]) serves as the anchor instead, since
+	// it's never replayed through FinalizeBlock (see NewChain), so it must
+	// be excluded from prefix (the blocks that DO need replaying) even
+	// though it's the first entry in c.Blocks.
+	prefixStartIdx := uint64(0)
+	if hotStart == 0 {
+		prefixStartIdx = 1
+	}
+	prefixEndIdx := forkHeight - hotStart
+	prefix := make([]*Block, prefixEndIdx-prefixStartIdx)
+	copy(prefix, c.Blocks[prefixStartIdx:prefixEndIdx])
+	currentTail := make([]*Block, uint64(len(c.Blocks))-prefixEndIdx)
+	copy(currentTail, c.Blocks[prefixEndIdx:])
 	validatorKeys := c.validatorKeys
 	requiredQuorum := c.requiredQuorum
-	genesisState := c.genesisState.Clone()
+	// baseState/baseBlock anchor the replay at the hot window's own
+	// boundary instead of always genesis. For a chain that has never
+	// trimmed anything (hotStart == 0) these are exactly
+	// genesisState/Blocks[0], so behavior is identical to before this
+	// existed; see hotWindowBaseStateLocked/hotWindowBaseBlockLocked.
+	baseState := c.hotWindowBaseStateLocked()
+	baseBlock := c.hotWindowBaseBlockLocked()
+	if baseState == nil || baseBlock == nil {
+		c.mu.Unlock()
+		return false, errors.New("reorg unavailable: hot-window checkpoint not established")
+	}
+	baseState = baseState.Clone()
 	chainID, txChainID := c.ChainID, c.transactionChainIDLocked()
 	startLen := len(c.Blocks)
 	c.mu.Unlock() // release the real chain's lock while we do the (possibly slow) replay work off to the side
@@ -769,18 +1100,23 @@ func (c *Chain) TryReorg(forkHeight uint64, candidate []*Block) (bool, error) {
 	// reorg can only ever install a branch that is independently just as
 	// valid as if every block in it had been finalized block-by-block from
 	// scratch.
+	// scratch is seeded with baseBlock as its sole anchor block (needed so
+	// the first replayed prefix block's ParentHash has something to check
+	// against -- see validateBlockLocked) and baseState as the state
+	// immediately before it; scratch.FinalizeBlock's own trimming is
+	// inert here since scratch.maxHotBlocks is left at its zero value.
 	scratch := &Chain{
 		ChainID:        chainID,
 		TxChainID:      txChainID,
-		State:          genesisState,
+		State:          baseState,
 		DEX:            NewDEX(),
 		Oracle:         NewOracle(),
-		Blocks:         []*Block{prefix[0]},
+		Blocks:         []*Block{baseBlock},
 		Mempool:        make(map[string]Tx),
 		validatorKeys:  validatorKeys,
 		requiredQuorum: requiredQuorum,
 	}
-	for _, blk := range prefix[1:] {
+	for _, blk := range prefix {
 		cp := *blk
 		if err := scratch.FinalizeBlock(&cp); err != nil {
 			return false, fmt.Errorf("internal error replaying agreed history at height %d: %w", blk.Header.Height, err)
@@ -802,13 +1138,17 @@ func (c *Chain) TryReorg(forkHeight uint64, candidate []*Block) (bool, error) {
 	// their senders can simply resubmit if still relevant.
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if len(c.Blocks) != startLen {
+	if len(c.Blocks) != startLen || c.hotWindowStart != hotStart {
 		return false, errors.New("chain advanced during reorg replay, aborting")
 	}
-	newBlocks := make([]*Block, 0, len(prefix)+len(scratch.Blocks)-1)
+	// scratch.Blocks is [baseBlock, replayed-prefix..., replayed-candidate...];
+	// skip the seeded anchor and the (already-known-valid, unchanged) prefix,
+	// keeping only the freshly replayed candidate tail.
+	newBlocks := make([]*Block, 0, len(prefix)+len(candidate))
 	newBlocks = append(newBlocks, prefix...)
-	newBlocks = append(newBlocks, scratch.Blocks[len(prefix):]...)
+	newBlocks = append(newBlocks, scratch.Blocks[1+len(prefix):]...)
 	c.Blocks = newBlocks
 	c.State = scratch.State
+	c.trimHotWindowLocked()
 	return true, nil
 }
