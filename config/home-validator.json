@@ -1,0 +1,29 @@
+{
+  "node_id": "synthos-home-1",
+  "data_dir": "data-home-1",
+  "is_validator": true,
+  "rpc_listen": ":8091",
+  "genesis_path": "config/genesis.json",
+  "peers": [],
+  "http_peers": [
+    "https://synthos-rpc.onrender.com",
+    "https://synthos-validator-12.onrender.com",
+    "https://synthos-validator-13.onrender.com"
+  ],
+  "listen_addr": ":0",
+  "validators": [],
+  "trusted_validators": [
+    "synthos-validator-12",
+    "synthos-validator-13",
+    "synthos-render-validator-1",
+    "synthos-home-1"
+  ],
+  "peer_keys": {
+    "synthos-validator-12": "0x5528a57c397d8539d88b3ef5dbecdec3ec8ca261afd2eb44e9992098c652c355",
+    "synthos-validator-13": "0xc0985da91bf00d997d6f9731e681af62bfa1ae13b10ea67e0e7d901b45ae38f1",
+    "synthos-render-validator-1": "0x14d371a7ed892a1fe5a16413f483c3730b3d52ef0ac8b6663e70389fae10e4f5"
+  },
+  "consensus_peers": [],
+  "auth_enforce_from_height": 15265,
+  "state_root_enforce_from_height": 30000
+}
