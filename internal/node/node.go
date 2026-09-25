@@ -658,7 +658,39 @@ func (n *Node) HandleProposal(b *chain.Block) (consensus.BlockVote, error) {
 	// independently detects and records it, the same way double-signing and
 	// equivocation already do via OnProposal/OnVote.
 	if err := n.Chain.ValidateProposal(b); err != nil {
-		if n.Slashing != nil {
+		// Do not treat chain.ErrStateRootMismatch as slashable misbehavior.
+		// Every OTHER ValidateProposal failure is a structural fact about
+		// the block's own bytes (bad hash, bad merkle root, wrong parent/
+		// height, bad signature) -- true for any validator regardless of
+		// their own state, so an honest validator rejecting it is real,
+		// independent proof the proposer sent something bad. A state-root
+		// mismatch is different: it only means THIS node's own recomputed
+		// state, starting from THIS node's own current State, didn't land
+		// where the proposer said it would -- which is equally consistent
+		// with an honest proposer and a follower whose own State has
+		// already drifted (a transient race, a prior soft desync, still
+		// catching up on a roster change the proposer already knows
+		// about). Live incident: while the validator set was churning
+		// (a candidate approved then revoked within the same window) and
+		// synthos-rpc had independently stalled behind, validator-13
+		// rejected a retried proposal from validator-12 as a state-root
+		// mismatch and (before this fix) called RecordInvalidBlock on it,
+		// which real-slashes the proposer's balance in THIS node's own
+		// local state only (SetExecuteSlash mutates chain.State directly,
+		// synchronously, outside the deterministic block-apply path every
+		// other validator also runs). That single unilateral debit
+		// permanently diverged validator-13's own state root from its
+		// peers from that point on -- surviving a full process restart,
+		// since the corrupted State gets persisted to disk by the very
+		// next unrelated Store.Save (e.g. handleSubmitTx saves on every
+		// accepted transaction, not just on finalize). This is the same
+		// false-self-slashing bug class already fixed twice before
+		// (b2376d3, 8843ac9) for two other triggers of the same root
+		// cause: a local, unilateral "I disagree" being treated as proof
+		// the other party misbehaved. See chain.ErrStateRootMismatch's
+		// doc comment for why this is the one ValidateProposal check that
+		// can never safely be that proof.
+		if n.Slashing != nil && !errors.Is(err, chain.ErrStateRootMismatch) {
 			_ = n.Slashing.RecordInvalidBlock(b.Header.ProposerID, b.Header.Height, err.Error())
 		}
 		return consensus.BlockVote{}, fmt.Errorf("invalid proposal: %w", err)

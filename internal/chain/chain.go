@@ -77,6 +77,34 @@ type Chain struct {
 var (
 	ErrNoGenesis = errors.New("genesis not initialized")
 	ErrBadBlock  = errors.New("bad block")
+
+	// ErrStateRootMismatch is validateBlockLocked's verdict specifically
+	// when every check on the block's own bytes already passed (correct
+	// parent/height, correct hash, correct tx-merkle-root, valid tx
+	// signatures, valid proposer authorization) but this node's own
+	// recomputed post-apply state root doesn't match the block's declared
+	// Header.StateRoot. It wraps ErrBadBlock (errors.Is against ErrBadBlock
+	// still matches), but callers that decide whether a rejection is real,
+	// provable proposer misbehavior -- e.g. node.Node.HandleProposal
+	// deciding whether to call SlashingTracker.RecordInvalidBlock, which
+	// debits real chain balance -- must check for this specific sentinel
+	// first and treat it differently. Every OTHER validateBlockLocked
+	// failure is a structural fact about the block itself, true for any
+	// validator regardless of their own state, so any honest validator
+	// would independently reach the same verdict. This one check is not:
+	// it also depends on this node's own State already agreeing with the
+	// proposer's, before the proposed block is even applied. A node whose
+	// own state has drifted from the network's for any reason (a
+	// transient race, a prior soft desync, still catching up on a roster
+	// change the proposer already knows about) will trip this exact check
+	// against a perfectly honest proposer -- and keep tripping it forever,
+	// for every future block too, since nothing about a later block
+	// changes an already-wrong starting point. Treating that as proof of
+	// misbehavior and slashing the proposer for it turns one node's own
+	// benign, transient disagreement into a permanent, self-inflicted
+	// state divergence -- see HandleProposal's use of this sentinel for
+	// the live incident that motivated it.
+	ErrStateRootMismatch = fmt.Errorf("%w: state root mismatch", ErrBadBlock)
 )
 
 func NewChain(genesis Genesis) (*Chain, error) {
@@ -399,7 +427,7 @@ func (c *Chain) validateBlockLocked(b *Block, requireQuorum bool) error {
 		return err
 	}
 	if enforceStateRoot && tmp.Root() != b.Header.StateRoot {
-		return ErrBadBlock
+		return ErrStateRootMismatch
 	}
 	return nil
 }
