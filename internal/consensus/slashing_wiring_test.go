@@ -75,3 +75,55 @@ func TestEngineDetectsRealEquivocation(t *testing.T) {
 		t.Fatalf("expected v2 to be slashed once for equivocation, got %d slash events", got)
 	}
 }
+
+// TestDowntimeSlashingNeverExecutesRealBalancePenalty guards the fourth
+// instance of this session's false-self-slashing bug class -- found by
+// audit, not yet tripped live, but real and currently armed:
+// RecordMissedBlock's only production caller (node.Node.NoteMissedSlot, fed
+// by cmd/synthosd's block-producer loop) decides a slot was "missed" from
+// this node's own local, unsynchronized clock racing a round-robin
+// schedule -- not from anything every honest validator is guaranteed to
+// derive identically. SYNTHOS_PRODUCER_ROTATION is on in live production
+// right now, so this fires continuously, not just on some rare edge case.
+// If it were still wired to a real balance debit, two honest validators
+// disagreeing (via ordinary clock skew or network jitter) about exactly
+// when a round timed out would silently apply that debit asymmetrically --
+// the identical mechanism already fixed three other ways this session
+// (b2376d3, 8843ac9, chain.ErrStateRootMismatch).
+//
+// This does not assert RecordMissedBlock is inert: the event, the internal
+// stake ledger, and jailing -- all local-only, informational, and safe
+// regardless of asymmetric observation -- must still update exactly as
+// before. Only the real chain-state balance effect must never fire for a
+// Downtime event.
+func TestDowntimeSlashingNeverExecutesRealBalancePenalty(t *testing.T) {
+	tracker := NewSlashingTracker(SlashingParams{DowntimePenalty: 50})
+	var executed []string
+	tracker.SetExecuteSlash(func(validatorID string, penalty uint64) {
+		executed = append(executed, validatorID)
+	})
+
+	// Threshold is missedBlocks > 10, so the 11th call is the one that
+	// crosses it -- exactly what node.Node.NoteMissedSlot would trigger
+	// after 11 ticks where this node's own clock decided validator-12's
+	// slot had passed.
+	for i := 0; i < 11; i++ {
+		_ = tracker.RecordMissedBlock("validator-12")
+	}
+
+	if len(executed) != 0 {
+		t.Fatalf("downtime crossing threshold must never execute a real balance penalty, but executeSlash was called for: %v", executed)
+	}
+	// The rest of the tracker's bookkeeping -- useful, local-only signals
+	// -- must still work exactly as before.
+	if got := tracker.SlashCount("validator-12"); got != 1 {
+		t.Fatalf("expected 1 recorded downtime event, got %d", got)
+	}
+	if !tracker.IsJailed("validator-12") {
+		t.Fatal("expected validator-12 to still be (locally, informationally) jailed after crossing the downtime threshold")
+	}
+	history := tracker.HistoryFor("validator-12")
+	if len(history) != 1 || history[0].EventType != Downtime {
+		t.Fatalf("expected a Downtime event in history, got %+v", history)
+	}
+}

@@ -247,7 +247,32 @@ func (st *SlashingTracker) recordSlashingLocked(validatorID string, eventType Sl
 	// this tracker back, so calling it synchronously here cannot deadlock.
 	// Callers should still keep executeSlash fast and non-reentrant into
 	// the tracker.
-	if st.executeSlash != nil && penalty > 0 {
+	//
+	// Downtime is deliberately excluded from this real, unilateral balance
+	// effect, even though it still gets recorded, staked-down, and jailed
+	// above like any other event. RecordMissedBlock's only caller
+	// (node.Node.NoteMissedSlot, wired from cmd/synthosd's block-producer
+	// loop) is fed entirely by each node's own local, unsynchronized clock
+	// racing a round-robin schedule (see NoteMissedSlot's doc comment: "is
+	// the caller's job" to decide when a slot counts as missed) -- not a
+	// fact every honest validator is guaranteed to independently derive
+	// the same way from shared, agreed-upon data, the way a bad hash or a
+	// bad tx-merkle-root is. Ordinary network jitter and clock skew are
+	// enough for two honest validators to disagree about exactly when a
+	// round timed out, and unlike a single ambiguous proposal (chain.
+	// ErrStateRootMismatch's case), this signal re-fires on every producer
+	// tick for as long as a round stays open -- a real, live, currently-
+	// armed path (SYNTHOS_PRODUCER_ROTATION is on in production right now)
+	// to the exact same phantom-debit bug class fixed three times already
+	// this session for three other triggers (b2376d3, 8843ac9, and
+	// chain.ErrStateRootMismatch's commit), just not yet actually tripped
+	// live. A validator that's genuinely, persistently offline is real and
+	// worth knowing about -- that's exactly what the recorded event/
+	// missedBlocks count/jailing above already surface locally -- but
+	// turning one node's own clock-driven suspicion into an irreversible,
+	// asymmetric real balance debit is not a safe next step without first
+	// routing it through something every honest validator agrees on.
+	if st.executeSlash != nil && penalty > 0 && eventType != Downtime {
 		st.executeSlash(validatorID, penalty)
 	}
 
