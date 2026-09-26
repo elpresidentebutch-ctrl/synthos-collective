@@ -690,12 +690,13 @@ func (c *Chain) validateBlockLocked(b *Block, requireQuorum bool) error {
 	if err := applyBlockEconomics(tmp, b.Tx, c.resolveProposerAddressLocked(b.Header.ProposerID)); err != nil {
 		return err
 	}
+	// TEMPORARY diagnostic (see commit message): snapshot the state right
+	// before the currently-configured correction, so a mismatch can be
+	// brute-force re-examined against OTHER candidate corrections too --
+	// removed once the real cause is confirmed.
+	preCorrection := tmp.Clone()
 	c.applyIrregularStateCorrectionsLocked(tmp, b.Header.Height)
 	if enforceStateRoot && tmp.Root() != b.Header.StateRoot {
-		// TEMPORARY diagnostic (see commit message): a prior correction at
-		// this exact height didn't reproduce the declared root, so log
-		// what we actually computed to find out why, rather than guessing
-		// again -- removed once the real cause is confirmed.
 		var corrDetail string
 		for _, corr := range c.stateCorrections {
 			if corr.Height != b.Header.Height {
@@ -705,9 +706,86 @@ func (c *Chain) validateBlockLocked(b *Block, requireQuorum bool) error {
 			corrDetail += fmt.Sprintf(" correction{height=%d addr=%s configured_debit=%d resulting_balance=%d resulting_nonce=%d}", corr.Height, corr.Address, corr.Debit, acc.Balance, acc.Nonce)
 		}
 		log.Printf("DIAGNOSTIC state-root-mismatch at height=%d: computed_root=%s declared_root=%s account_count=%d proposer=%s tx_count=%d%s", b.Header.Height, tmp.Root(), b.Header.StateRoot, tmp.AccountCount(), b.Header.ProposerID, len(b.Tx), corrDetail)
+		diagnosticBruteForceCorrections(preCorrection, b.Header.Height, b.Header.StateRoot)
 		return ErrStateRootMismatch
 	}
 	return nil
+}
+
+// diagnosticBruteForceCorrections is TEMPORARY (see commit message): when
+// the currently-configured correction doesn't reproduce a block's declared
+// root, this tries every plausible single-account clamp-to-zero debit and
+// every plausible two-account transfer among a short list of known
+// addresses (the three live validators' own signing addresses plus the
+// treasury), across a few real penalty amounts from consensus.
+// SlashingParams (50/250/1000), and logs any combination that reproduces
+// the declared root exactly -- so the real fix can be confirmed from data
+// instead of another guess.
+func diagnosticBruteForceCorrections(base *State, height uint64, declaredRoot string) {
+	type candidate struct {
+		name string
+		addr Address
+	}
+	candidates := []candidate{
+		{"synthos-validator-12", Address("0xea486589b90b2d95316cff6c587f49c7206bfe35")},
+		{"synthos-validator-13", Address("0x9e4b383aaa035f796cd34a2837c8e6e2e081dcce")},
+		{"synthos-render-validator-1", Address("0xa6cc70355b1dc27d0d12c000aaad34dcd3d246c5")},
+		{"treasury", Address("0xa4aabbc7e5841259b61afb4b4fbfcd7dae7b0501")},
+	}
+	amounts := []uint64{50, 250, 1000}
+
+	clampDebit := func(st *State, addr Address, amount uint64) {
+		acc := st.Get(addr)
+		if acc.Balance > amount {
+			acc.Balance -= amount
+		} else {
+			acc.Balance = 0
+		}
+		st.Set(addr, acc)
+	}
+
+	found := 0
+	// Singles: one account clamp-debited (matches the real self-slash
+	// mechanism when its starting balance is at or below the penalty).
+	for _, c := range candidates {
+		for _, amt := range amounts {
+			trial := base.Clone()
+			clampDebit(trial, c.addr, amt)
+			if trial.Root() == declaredRoot {
+				log.Printf("DIAGNOSTIC MATCH height=%d: single debit addr=%s(%s) amount=%d reproduces the declared root exactly", height, c.name, c.addr, amt)
+				found++
+			}
+		}
+	}
+	// Transfers: one account debited, a DIFFERENT account credited the
+	// same amount (supply-neutral, covers a confiscated-penalty
+	// redistribution rather than a pure burn).
+	for _, from := range candidates {
+		for _, to := range candidates {
+			if from.addr == to.addr {
+				continue
+			}
+			for _, amt := range amounts {
+				trial := base.Clone()
+				fromAcc := trial.Get(from.addr)
+				if fromAcc.Balance < amt {
+					continue
+				}
+				fromAcc.Balance -= amt
+				trial.Set(from.addr, fromAcc)
+				toAcc := trial.Get(to.addr)
+				toAcc.Balance += amt
+				trial.Set(to.addr, toAcc)
+				if trial.Root() == declaredRoot {
+					log.Printf("DIAGNOSTIC MATCH height=%d: transfer from=%s(%s) to=%s(%s) amount=%d reproduces the declared root exactly", height, from.name, from.addr, to.name, to.addr, amt)
+					found++
+				}
+			}
+		}
+	}
+	if found == 0 {
+		log.Printf("DIAGNOSTIC height=%d: no single-debit or two-account-transfer candidate among the known validator/treasury addresses reproduced the declared root", height)
+	}
 }
 
 // FinalizeBlock commits exactly the state transition already validated.
