@@ -390,7 +390,7 @@ func TestChain_FinalizeBlock_FollowerMustTrustProducersKeyToCatchUp(t *testing.T
 // confirmed this chain has real, permanently unsigned production history:
 // every block from height 1 through 15264 has no ProposerSignature/
 // QuorumSignatures at all (block-signing was only turned on starting at
-// height 15265 -- the first signed block, confirmed live). A node that
+// height 15265, the first signed block, confirmed live). A node that
 // already has that old history loaded from its own persisted snapshot never
 // re-validates it (see chain.go's snapshot-load path), so this never
 // affected validator-13/rpc's boot. But a node replaying the ENTIRE chain
@@ -403,8 +403,22 @@ func TestChain_FinalizeBlock_FollowerMustTrustProducersKeyToCatchUp(t *testing.T
 // attack in TestChain_FinalizeBlock_RejectsUnsignedBlockOnceValidatorSetConfigured
 // above, permanently blocking replay past height 1. AuthEnforceFromHeight
 // exists for exactly this: grandfather in real pre-signing history below the
-// height signing actually started at (must match production: 15265), while
-// still requiring valid signatures on and after it.
+// height signing actually started at, while still requiring valid
+// signatures on and after it.
+//
+// A THIRD incident (synthos-rpc's own from-genesis resync, the same night)
+// showed AuthEnforceFromHeight needs to grandfather one block further than
+// "the first signed block": height 15265 -- the very first block produced
+// once signing was turned on -- only ever picked up its proposer's own
+// signature, one block before the real multi-party quorum flow was fully
+// live across all three validators. Every node that already had 15265 in
+// memory from before never re-checked it, so nobody noticed until a fresh
+// resync independently re-verified it and correctly refused it for real,
+// permanent under-quorum: "only 1 of 2 required validator approvals
+// verified." Production's AuthEnforceFromHeight was moved from 15265 to
+// 15266 to grandfather that one transitional block in too -- it's genuine
+// legitimate history, just never fully quorum-signed, exactly like
+// everything below it.
 func TestChain_FinalizeBlock_FreshNodeNeedsAuthEnforceFromHeightToReplayPreSigningHistory(t *testing.T) {
 	producerPub, producerPriv := mustGenerateKey(t)
 	const signingStartHeight = 3 // stands in for production's real height 15265

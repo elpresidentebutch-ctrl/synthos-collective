@@ -23,6 +23,6 @@
     "https://synthos-validator-12.onrender.com",
     "https://synthos-rpc.onrender.com"
   ],
-  "auth_enforce_from_height": 15265,
+  "auth_enforce_from_height": 15266,
   "state_root_enforce_from_height": 30000
 }
