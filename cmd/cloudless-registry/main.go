@@ -14,6 +14,7 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -851,13 +852,65 @@ func (s *server) handleAPIExplorerStatus(w http.ResponseWriter, r *http.Request)
 	})
 }
 
+// explorerBlocksDefaultLimit/MaxLimit bound how many blocks
+// handleAPIExplorerBlocks will ever proxy through in one response. The
+// underlying RPC's /blocks defaults to from=0 with no limit at all when
+// the caller doesn't specify one (see internal/rpc/server.go's
+// handleBlocks) -- fine for a small devnet, but at tens of thousands of
+// real blocks that's a multi-megabyte response that both risks a slow
+// request and can get silently truncated into invalid JSON by
+// proxyRPCJSON's own 4MB read cap (observed directly: an unbounded
+// request here returned truncated, unparseable JSON at exactly the 4MB
+// mark). The explorer page also has no use for the chain's first block
+// on every page load -- it wants the MOST RECENT blocks -- so this
+// bounds and defaults the query before proxying rather than forwarding
+// the caller's (usually empty) query string verbatim.
+const (
+	explorerBlocksDefaultLimit = 50
+	explorerBlocksMaxLimit     = 500
+)
+
 func (s *server) handleAPIExplorerBlocks(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if proxied := s.proxyRPCJSON(w, r, "/blocks"); proxied {
-		return
+	if strings.TrimSpace(os.Getenv("SYNTHOS_RPC_URL")) != "" {
+		limit := explorerBlocksDefaultLimit
+		if raw := r.URL.Query().Get("limit"); raw != "" {
+			if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+				limit = parsed
+			}
+		}
+		if limit > explorerBlocksMaxLimit {
+			limit = explorerBlocksMaxLimit
+		}
+		from := -1
+		if raw := r.URL.Query().Get("from"); raw != "" {
+			if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 {
+				from = parsed
+			}
+		}
+		if from < 0 {
+			// No explicit starting height: default to the most recent
+			// `limit` blocks instead of the RPC's own default of
+			// genesis-forward, which is what an explorer page actually
+			// wants to show.
+			from = 0
+			if realHeight, _, _, ok := fetchRealChainStatus(); ok {
+				if realHeight-int64(limit)+1 > 0 {
+					from = int(realHeight) - limit + 1
+				}
+			}
+		}
+		bounded := r.Clone(r.Context())
+		q := url.Values{}
+		q.Set("from", strconv.Itoa(from))
+		q.Set("limit", strconv.Itoa(limit))
+		bounded.URL.RawQuery = q.Encode()
+		if proxied := s.proxyRPCJSON(w, bounded, "/blocks"); proxied {
+			return
+		}
 	}
 	from := 0
 	if raw := r.URL.Query().Get("from"); raw != "" {
