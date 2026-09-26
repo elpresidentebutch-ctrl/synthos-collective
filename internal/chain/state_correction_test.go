@@ -10,9 +10,11 @@ import (
 // mutates chain.State directly, synchronously, outside the deterministic
 // block-apply path every other validator also runs (see
 // chain.ErrStateRootMismatch's doc comment and the "Live incident" note on
-// validateBlockLocked's state-root-mismatch handling). Before that was
-// fixed, this real-slashed synthos-validator-12's own balance-holding
-// account by the tracker's configured InvalidBlockPenalty (250 at the
+// validateBlockLocked's state-root-mismatch handling). Before the downtime
+// instance of that bug class was fixed, synthos-rpc (agent ID
+// synthos-render-validator-1) was genuinely falling behind in real time,
+// and both validator-12 and validator-13 independently real-slashed
+// synthos-rpc's OWN account by the tracker's DowntimePenalty (50 at the
 // time), clamped to zero since the account's balance was already zero --
 // a real, net-zero-supply, already-quorum-agreed change that both
 // validator-12 and validator-13 finalized every subsequent block on top
@@ -20,7 +22,14 @@ import (
 // this chain's real transaction history can ever reproduce that change on
 // its own, since it was never a transaction: a node doing a genuine
 // from-genesis resync (synthos-rpc's situation the night this was found)
-// permanently stalls at that exact height without this.
+// permanently stalls at that exact height without this. (A first attempt
+// at this fix targeted validator-12's own address instead -- a plausible
+// but wrong guess, since it's this chain's sole block producer; the real
+// target, synthos-rpc's own address, was confirmed by brute-forcing every
+// known validator/treasury address against the block's real declared
+// root. This test itself uses a generic placeholder address/amount, since
+// the state-transition logic being tested doesn't depend on which real
+// address or amount was involved.)
 func TestChain_FinalizeBlock_NeedsIrregularCorrectionToReplayRealSelfSlash(t *testing.T) {
 	const incidentHeight = 2
 	const debit = 250

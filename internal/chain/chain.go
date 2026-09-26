@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
 	"sort"
 	"sync"
 	"time"
@@ -690,102 +689,11 @@ func (c *Chain) validateBlockLocked(b *Block, requireQuorum bool) error {
 	if err := applyBlockEconomics(tmp, b.Tx, c.resolveProposerAddressLocked(b.Header.ProposerID)); err != nil {
 		return err
 	}
-	// TEMPORARY diagnostic (see commit message): snapshot the state right
-	// before the currently-configured correction, so a mismatch can be
-	// brute-force re-examined against OTHER candidate corrections too --
-	// removed once the real cause is confirmed.
-	preCorrection := tmp.Clone()
 	c.applyIrregularStateCorrectionsLocked(tmp, b.Header.Height)
 	if enforceStateRoot && tmp.Root() != b.Header.StateRoot {
-		var corrDetail string
-		for _, corr := range c.stateCorrections {
-			if corr.Height != b.Header.Height {
-				continue
-			}
-			acc := tmp.Get(corr.Address)
-			corrDetail += fmt.Sprintf(" correction{height=%d addr=%s configured_debit=%d resulting_balance=%d resulting_nonce=%d}", corr.Height, corr.Address, corr.Debit, acc.Balance, acc.Nonce)
-		}
-		log.Printf("DIAGNOSTIC state-root-mismatch at height=%d: computed_root=%s declared_root=%s account_count=%d proposer=%s tx_count=%d%s", b.Header.Height, tmp.Root(), b.Header.StateRoot, tmp.AccountCount(), b.Header.ProposerID, len(b.Tx), corrDetail)
-		diagnosticBruteForceCorrections(preCorrection, b.Header.Height, b.Header.StateRoot)
 		return ErrStateRootMismatch
 	}
 	return nil
-}
-
-// diagnosticBruteForceCorrections is TEMPORARY (see commit message): when
-// the currently-configured correction doesn't reproduce a block's declared
-// root, this tries every plausible single-account clamp-to-zero debit and
-// every plausible two-account transfer among a short list of known
-// addresses (the three live validators' own signing addresses plus the
-// treasury), across a few real penalty amounts from consensus.
-// SlashingParams (50/250/1000), and logs any combination that reproduces
-// the declared root exactly -- so the real fix can be confirmed from data
-// instead of another guess.
-func diagnosticBruteForceCorrections(base *State, height uint64, declaredRoot string) {
-	type candidate struct {
-		name string
-		addr Address
-	}
-	candidates := []candidate{
-		{"synthos-validator-12", Address("0xea486589b90b2d95316cff6c587f49c7206bfe35")},
-		{"synthos-validator-13", Address("0x9e4b383aaa035f796cd34a2837c8e6e2e081dcce")},
-		{"synthos-render-validator-1", Address("0xa6cc70355b1dc27d0d12c000aaad34dcd3d246c5")},
-		{"treasury", Address("0xa4aabbc7e5841259b61afb4b4fbfcd7dae7b0501")},
-	}
-	amounts := []uint64{50, 250, 1000}
-
-	clampDebit := func(st *State, addr Address, amount uint64) {
-		acc := st.Get(addr)
-		if acc.Balance > amount {
-			acc.Balance -= amount
-		} else {
-			acc.Balance = 0
-		}
-		st.Set(addr, acc)
-	}
-
-	found := 0
-	// Singles: one account clamp-debited (matches the real self-slash
-	// mechanism when its starting balance is at or below the penalty).
-	for _, c := range candidates {
-		for _, amt := range amounts {
-			trial := base.Clone()
-			clampDebit(trial, c.addr, amt)
-			if trial.Root() == declaredRoot {
-				log.Printf("DIAGNOSTIC MATCH height=%d: single debit addr=%s(%s) amount=%d reproduces the declared root exactly", height, c.name, c.addr, amt)
-				found++
-			}
-		}
-	}
-	// Transfers: one account debited, a DIFFERENT account credited the
-	// same amount (supply-neutral, covers a confiscated-penalty
-	// redistribution rather than a pure burn).
-	for _, from := range candidates {
-		for _, to := range candidates {
-			if from.addr == to.addr {
-				continue
-			}
-			for _, amt := range amounts {
-				trial := base.Clone()
-				fromAcc := trial.Get(from.addr)
-				if fromAcc.Balance < amt {
-					continue
-				}
-				fromAcc.Balance -= amt
-				trial.Set(from.addr, fromAcc)
-				toAcc := trial.Get(to.addr)
-				toAcc.Balance += amt
-				trial.Set(to.addr, toAcc)
-				if trial.Root() == declaredRoot {
-					log.Printf("DIAGNOSTIC MATCH height=%d: transfer from=%s(%s) to=%s(%s) amount=%d reproduces the declared root exactly", height, from.name, from.addr, to.name, to.addr, amt)
-					found++
-				}
-			}
-		}
-	}
-	if found == 0 {
-		log.Printf("DIAGNOSTIC height=%d: no single-debit or two-account-transfer candidate among the known validator/treasury addresses reproduced the declared root", height)
-	}
 }
 
 // FinalizeBlock commits exactly the state transition already validated.
@@ -1026,22 +934,47 @@ type StateCorrection struct {
 // synchronously, outside the deterministic block-apply path every other
 // validator also runs (see chain.ErrStateRootMismatch's doc comment and
 // the "Live incident" note on validateBlockLocked's state-root-mismatch
-// handling, a few lines above this call site). Before that bug was fixed,
-// this real-slashed synthos-validator-12's own balance-holding account by
-// the tracker's configured InvalidBlockPenalty (250 at the time),
-// clamped to zero since that account's balance was already zero, and
-// created that account's entry in State.Accounts for the first time in
-// the process -- a real, net-zero-supply, already-quorum-agreed change
-// (both validator-12 and validator-13 finalized every subsequent block
-// on top of it) that no amount of replaying this chain's real transaction
-// history can ever reproduce, since it was never a transaction. Confirmed
-// against the live chain by diffing account_count between a clean
-// from-genesis resync (synthos-rpc) and validator-12's own live state at
-// the same point, and by confirming zero real transactions exist anywhere
-// in the surrounding block range that could otherwise explain the
-// difference. A node doing a genuine from-genesis resync (rather than
-// loading an existing snapshot that already has this baked in) needs
-// this to converge at all -- see
+// handling, a few lines above this call site). Before the downtime
+// instance of that bug class was fixed (6062e21), synthos-rpc (agent ID
+// synthos-render-validator-1) was genuinely falling behind in real time
+// (the same OOM-driven catch-up problem patch #1 fixed), and each of
+// validator-12 and validator-13 independently observed it missing its
+// slot, crossed RecordMissedBlock's threshold, and executed a real local
+// slash against synthos-rpc's OWN account -- self-inflicted in the sense
+// that the *target* was the lagging node, not the two nodes doing the
+// recording. Both real-slashed the same address by the tracker's
+// DowntimePenalty (50 at the time), clamped to zero since that account's
+// balance was already zero, and created that account's entry in
+// State.Accounts for the first time in the process -- a real,
+// net-zero-supply, already-quorum-agreed change (both validator-12 and
+// validator-13 finalized every subsequent block on top of it) that no
+// amount of replaying this chain's real transaction history can ever
+// reproduce, since it was never a transaction.
+//
+// The first attempt at this fix (patch #5) misidentified the target as
+// synthos-validator-12's own address -- a plausible-looking but wrong
+// guess (validator-12 is this chain's sole block producer, so it was the
+// natural first suspect for "the account that got slashed"), reasoned
+// from real forensic evidence (account_count off by exactly 1 between a
+// clean resync and the live chain, circulating supply identical, zero
+// real transactions anywhere in the surrounding range) that was all
+// true but didn't by itself pin down WHICH address. It deployed cleanly
+// and even produced a bit-identical Account{Balance:0, Nonce:0} entry
+// (a clamp-to-zero debit from an already-zero balance is indistinguishable
+// from ANY penalty amount, which is also why the exact debit here can't
+// be confirmed as 50 vs. 250 vs. 1000 from hash-matching alone -- 50 is
+// used because downtime is the only one of the three slashing paths that
+// can ever target a pure follower like synthos-rpc, which never proposes
+// a block and so can never be the target of an invalid-block or
+// equivocation slash) -- but it still produced the wrong overall state
+// root, because it was the wrong account. The real target was confirmed
+// by brute-forcing every known validator/treasury address (plus
+// transfers between them) against the block's actual declared root and
+// finding the one exact match: see the state-root-mismatch diagnostic
+// commits this shipped alongside, which were reverted once this
+// confirmed fix replaced them. A node doing a genuine from-genesis
+// resync (rather than loading an existing snapshot that already has this
+// baked in) needs this to converge at all -- see
 // TestChain_FinalizeBlock_NeedsIrregularCorrectionToReplayRealSelfSlash.
 func (c *Chain) SetIrregularStateCorrections(corrections []StateCorrection) {
 	c.mu.Lock()
