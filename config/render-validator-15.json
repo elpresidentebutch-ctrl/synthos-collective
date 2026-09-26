@@ -16,6 +16,6 @@
   "peer_keys": {
     "synthos-validator-12": "0x5528a57c397d8539d88b3ef5dbecdec3ec8ca261afd2eb44e9992098c652c355"
   },
-  "auth_enforce_from_height": 15266,
+  "auth_enforce_from_height": 33908,
   "state_root_enforce_from_height": 30000
 }

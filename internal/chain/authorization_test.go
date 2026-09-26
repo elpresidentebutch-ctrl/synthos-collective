@@ -407,18 +407,24 @@ func TestChain_FinalizeBlock_FollowerMustTrustProducersKeyToCatchUp(t *testing.T
 // signatures on and after it.
 //
 // A THIRD incident (synthos-rpc's own from-genesis resync, the same night)
-// showed AuthEnforceFromHeight needs to grandfather one block further than
-// "the first signed block": height 15265 -- the very first block produced
-// once signing was turned on -- only ever picked up its proposer's own
-// signature, one block before the real multi-party quorum flow was fully
-// live across all three validators. Every node that already had 15265 in
-// memory from before never re-checked it, so nobody noticed until a fresh
-// resync independently re-verified it and correctly refused it for real,
-// permanent under-quorum: "only 1 of 2 required validator approvals
-// verified." Production's AuthEnforceFromHeight was moved from 15265 to
-// 15266 to grandfather that one transitional block in too -- it's genuine
-// legitimate history, just never fully quorum-signed, exactly like
-// everything below it.
+// showed AuthEnforceFromHeight needed to grandfather much more than "the
+// first signed block." The initial fix moved it from 15265 to 15266,
+// on the theory that height 15265 -- the very first block produced once
+// signing was turned on -- was a single transitional block that only ever
+// picked up its proposer's own signature before the real multi-party
+// quorum flow was fully live. That theory was wrong: once synthos-rpc's
+// resync got past 15265 it immediately hit the identical "only 1 of 2
+// required validator approvals verified" rejection at 15266, and live
+// chain data confirmed the real quorum flow (2+ genuine validator
+// signatures per block, not just the proposer's own) did not start
+// producing consistently until height 33908 -- every block from 15265
+// through 33907 (about 18,600 blocks) carries only the proposer's own
+// signature. Every node that already had that range in memory from
+// before never re-checked it, so nobody noticed until a fresh resync
+// independently re-verified it from genesis. Production's
+// AuthEnforceFromHeight was moved from 15266 to 33908 to grandfather
+// that entire range in -- it's genuine legitimate history, just never
+// fully quorum-signed, exactly like everything below it.
 func TestChain_FinalizeBlock_FreshNodeNeedsAuthEnforceFromHeightToReplayPreSigningHistory(t *testing.T) {
 	producerPub, producerPriv := mustGenerateKey(t)
 	const signingStartHeight = 3 // stands in for production's real height 15265
