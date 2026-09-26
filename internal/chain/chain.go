@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"sort"
 	"sync"
 	"time"
@@ -691,6 +692,19 @@ func (c *Chain) validateBlockLocked(b *Block, requireQuorum bool) error {
 	}
 	c.applyIrregularStateCorrectionsLocked(tmp, b.Header.Height)
 	if enforceStateRoot && tmp.Root() != b.Header.StateRoot {
+		// TEMPORARY diagnostic (see commit message): a prior correction at
+		// this exact height didn't reproduce the declared root, so log
+		// what we actually computed to find out why, rather than guessing
+		// again -- removed once the real cause is confirmed.
+		var corrDetail string
+		for _, corr := range c.stateCorrections {
+			if corr.Height != b.Header.Height {
+				continue
+			}
+			acc := tmp.Get(corr.Address)
+			corrDetail += fmt.Sprintf(" correction{height=%d addr=%s configured_debit=%d resulting_balance=%d resulting_nonce=%d}", corr.Height, corr.Address, corr.Debit, acc.Balance, acc.Nonce)
+		}
+		log.Printf("DIAGNOSTIC state-root-mismatch at height=%d: computed_root=%s declared_root=%s account_count=%d proposer=%s tx_count=%d%s", b.Header.Height, tmp.Root(), b.Header.StateRoot, tmp.AccountCount(), b.Header.ProposerID, len(b.Tx), corrDetail)
 		return ErrStateRootMismatch
 	}
 	return nil
