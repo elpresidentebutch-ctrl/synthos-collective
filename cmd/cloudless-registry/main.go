@@ -813,14 +813,32 @@ func (s *server) handleAPIExplorerStatus(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	snapshot := s.networkSnapshot(time.Now())
+	// Prefer the real chain's own /status over the self-reported heartbeat
+	// checkpoints below: most P-O-U-T candidates prove uptime from a
+	// browser tab that never runs a real chain, so snapshot.HighestHeight
+	// is frequently 0 or stale and has nothing to do with where the actual
+	// SYNTHOS chain is. This mirrors the same fetchRealChainStatus
+	// preference handleAPINodesStatus already uses -- see its doc comment.
+	height := snapshot.HighestHeight
+	tip := snapshot.Tip
+	stateRoot := snapshot.StateRoot
+	mode := "registry_checkpoint_explorer"
+	source := "signed_node_heartbeats"
+	if realHeight, realTip, realStateRoot, ok := fetchRealChainStatus(); ok {
+		height = realHeight
+		tip = realTip
+		stateRoot = realStateRoot
+		mode = "native_rpc_explorer"
+		source = "native_rpc_status"
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":                          true,
 		"chain_id":                    env("SYNTHOS_CHAIN_ID", "synthos-mainnet-1"),
-		"height":                      snapshot.HighestHeight,
-		"tip":                         snapshot.Tip,
-		"state_root":                  snapshot.StateRoot,
-		"mode":                        "registry_checkpoint_explorer",
-		"source":                      "signed_node_heartbeats",
+		"height":                      height,
+		"tip":                         tip,
+		"state_root":                  stateRoot,
+		"mode":                        mode,
+		"source":                      source,
 		"rpc_attached":                strings.TrimSpace(os.Getenv("SYNTHOS_RPC_URL")) != "",
 		"active_nodes":                snapshot.ActiveTotal,
 		"registered_nodes":            snapshot.RegisteredTotal,

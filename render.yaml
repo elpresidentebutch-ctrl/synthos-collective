@@ -210,6 +210,16 @@ services:
     envVars:
       - key: SYNTHOS_NATIVE_RPC_URL
         value: https://synthos-rpc.onrender.com
+      # Separate from SYNTHOS_NATIVE_RPC_URL above (used by
+      # fetchRealChainStatus/the early-access allocator): this is the var
+      # proxyRPCJSON checks (handleAPIExplorerBlocks/Mempool and the bridge
+      # status/events handlers) to proxy straight through to the real chain
+      # instead of falling back to the much weaker self-reported-heartbeat
+      # checkpoint data. It was never set here, so the public explorer's
+      # /blocks, /mempool, and bridge endpoints always used that fallback
+      # (usually empty/stale) even though the chain itself was healthy.
+      - key: SYNTHOS_RPC_URL
+        value: https://synthos-rpc.onrender.com
       - key: SYNTHOS_DISTRIBUTION_AGENT_ID
         value: synthos-early-adopter-distributor
       - key: SYNTHOS_EARLY_ACCESS_TREASURY_WALLET
