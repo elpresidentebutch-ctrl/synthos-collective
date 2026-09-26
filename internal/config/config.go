@@ -64,6 +64,18 @@ type NodeConfig struct {
 	// every node sharing this chain.
 	StateRootEnforceFromHeight uint64 `json:"state_root_enforce_from_height"`
 
+	// IrregularStateCorrections, when set, is passed to chain.Chain.
+	// SetIrregularStateCorrections: one-time, explicit, height-gated
+	// adjustments that reproduce a real, already-happened, already
+	// quorum-agreed state change that was never recorded as an ordinary
+	// transaction (see chain.StateCorrection's doc comment for the exact
+	// incident and safety contract). Must be identical on every node
+	// sharing this chain, exactly like AuthEnforceFromHeight/
+	// StateRootEnforceFromHeight above -- a node missing an entry here
+	// will permanently disagree with its peers about this chain's state
+	// from that block onward.
+	IrregularStateCorrections []chain.StateCorrection `json:"irregular_state_corrections"`
+
 	// Runtime configuration (can be set from environment variables)
 	ChainID            uint64
 	ConsensusTimeout   time.Duration

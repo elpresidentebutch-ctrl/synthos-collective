@@ -73,6 +73,12 @@ type Chain struct {
 	// resyncing node can ever get past it.
 	stateRootEnforceFromHeight uint64
 
+	// stateCorrections are one-time, explicit, height-gated adjustments to
+	// State applied deterministically during that height's validation and
+	// finalization, before the resulting state's Root() is checked or
+	// committed (see SetIrregularStateCorrections's doc comment).
+	stateCorrections []StateCorrection
+
 	// --- Bounded in-memory block retention (see SetHotWindow) ---
 	//
 	// Blocks holds every finalized block from genesis by default (index ==
@@ -683,6 +689,7 @@ func (c *Chain) validateBlockLocked(b *Block, requireQuorum bool) error {
 	if err := applyBlockEconomics(tmp, b.Tx, c.resolveProposerAddressLocked(b.Header.ProposerID)); err != nil {
 		return err
 	}
+	c.applyIrregularStateCorrectionsLocked(tmp, b.Header.Height)
 	if enforceStateRoot && tmp.Root() != b.Header.StateRoot {
 		return ErrStateRootMismatch
 	}
@@ -710,6 +717,7 @@ func (c *Chain) FinalizeBlock(b *Block) error {
 	if err := applyBlockEconomics(nextState, b.Tx, c.resolveProposerAddressLocked(b.Header.ProposerID)); err != nil {
 		return err
 	}
+	c.applyIrregularStateCorrectionsLocked(nextState, b.Header.Height)
 	if b.Header.Height >= c.stateRootEnforceFromHeight && nextState.Root() != b.Header.StateRoot {
 		return ErrBadBlock
 	}
@@ -875,6 +883,98 @@ func (c *Chain) SetStateRootEnforceFromHeight(height uint64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.stateRootEnforceFromHeight = height
+}
+
+// StateCorrection is a single, one-time, explicit adjustment to a specific
+// account's balance at a specific block height, applied deterministically
+// during that block's validation and finalization (see
+// applyIrregularStateCorrectionsLocked), before the resulting state's
+// Root() is compared against the block's declared StateRoot or committed
+// as the chain's live State.
+//
+// This exists for exactly one situation: a REAL, already-happened,
+// already-quorum-agreed state change that was never recorded as an
+// ordinary transaction, so no amount of replaying this chain's real
+// transaction history can ever reproduce it on its own -- see
+// SetIrregularStateCorrections's doc comment for the specific incident
+// this shipped for. It is deliberately narrow, not a general-purpose
+// "edit the ledger" escape hatch: every entry here must correspond to
+// something that genuinely, verifiably already happened and was already
+// agreed to by quorum on the live chain (the same way a legitimate
+// hard-fork state patch documents a specific, already-occurred
+// irregularity), never a means to alter history that didn't actually
+// happen this way.
+type StateCorrection struct {
+	// Height is the block height this correction is applied at, as part
+	// of validating/finalizing exactly that block -- matching the height
+	// at which the real, already-agreed state change actually took
+	// effect on the live chain.
+	Height uint64 `json:"height"`
+	// Address is the account whose balance is adjusted.
+	Address Address `json:"address"`
+	// Debit is subtracted from Address's balance, clamped at zero (never
+	// negative, never underflows) -- the same safe-clamp behavior
+	// consensus.SlashingTracker's real penalty execution already uses
+	// (see internal/node.NewNode's ExecuteSlash wiring), since the
+	// correction this shipped for exists specifically to reproduce that
+	// mechanism's already-executed effect.
+	Debit uint64 `json:"debit"`
+}
+
+// SetIrregularStateCorrections configures one-time, explicit, height-gated
+// state adjustments applied during block validation/finalization (see
+// StateCorrection's doc comment for the safety contract). Must be set
+// identically on every node sharing this chain, exactly like
+// SetAuthEnforceFromHeight/SetStateRootEnforceFromHeight -- a node missing
+// an entry here will permanently disagree with its peers about this
+// chain's state from that block onward.
+//
+// Shipped for one specific, real incident: internal/node.NewNode's
+// SlashingTracker.SetExecuteSlash callback mutates chain.State directly,
+// synchronously, outside the deterministic block-apply path every other
+// validator also runs (see chain.ErrStateRootMismatch's doc comment and
+// the "Live incident" note on validateBlockLocked's state-root-mismatch
+// handling, a few lines above this call site). Before that bug was fixed,
+// this real-slashed synthos-validator-12's own balance-holding account by
+// the tracker's configured InvalidBlockPenalty (250 at the time),
+// clamped to zero since that account's balance was already zero, and
+// created that account's entry in State.Accounts for the first time in
+// the process -- a real, net-zero-supply, already-quorum-agreed change
+// (both validator-12 and validator-13 finalized every subsequent block
+// on top of it) that no amount of replaying this chain's real transaction
+// history can ever reproduce, since it was never a transaction. Confirmed
+// against the live chain by diffing account_count between a clean
+// from-genesis resync (synthos-rpc) and validator-12's own live state at
+// the same point, and by confirming zero real transactions exist anywhere
+// in the surrounding block range that could otherwise explain the
+// difference. A node doing a genuine from-genesis resync (rather than
+// loading an existing snapshot that already has this baked in) needs
+// this to converge at all -- see
+// TestChain_FinalizeBlock_NeedsIrregularCorrectionToReplayRealSelfSlash.
+func (c *Chain) SetIrregularStateCorrections(corrections []StateCorrection) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.stateCorrections = append([]StateCorrection(nil), corrections...)
+}
+
+// applyIrregularStateCorrectionsLocked applies every configured
+// StateCorrection whose Height matches height to st, using the same safe
+// clamp-to-zero debit consensus.SlashingTracker's real penalty execution
+// uses. Caller must already hold c.mu (read or write) -- reads
+// c.stateCorrections only, never mutates Chain itself.
+func (c *Chain) applyIrregularStateCorrectionsLocked(st *State, height uint64) {
+	for _, corr := range c.stateCorrections {
+		if corr.Height != height {
+			continue
+		}
+		acc := st.Get(corr.Address)
+		if acc.Balance > corr.Debit {
+			acc.Balance -= corr.Debit
+		} else {
+			acc.Balance = 0
+		}
+		st.Set(corr.Address, acc)
+	}
 }
 
 // SeedGenesisState records the chain's state at height 0, needed to safely

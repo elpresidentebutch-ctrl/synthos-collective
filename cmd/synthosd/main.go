@@ -228,6 +228,13 @@ func main() {
 	if cfg.StateRootEnforceFromHeight > 0 {
 		ch.SetStateRootEnforceFromHeight(cfg.StateRootEnforceFromHeight)
 	}
+	// Unconditional for the same reason as StateRootEnforceFromHeight above:
+	// these reproduce a real, already-agreed state change every node needs
+	// to apply identically regardless of whether a validator set is
+	// configured.
+	if len(cfg.IrregularStateCorrections) > 0 {
+		ch.SetIrregularStateCorrections(cfg.IrregularStateCorrections)
+	}
 	if err := n.Start(); err != nil {
 		panic(err)
 	}

@@ -24,5 +24,8 @@
     "https://synthos-rpc.onrender.com"
   ],
   "auth_enforce_from_height": 33908,
-  "state_root_enforce_from_height": 30000
+  "state_root_enforce_from_height": 30000,
+  "irregular_state_corrections": [
+    {"height": 41950, "address": "0xea486589b90b2d95316cff6c587f49c7206bfe35", "debit": 250}
+  ]
 }
