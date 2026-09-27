@@ -3415,6 +3415,27 @@ func normalizeCapabilities(values []string) []string {
 		"persistent_block_storage": true,
 		"persistent_vote_storage":  true,
 		"persistent_state_storage": true,
+
+		// mobile_candidate tags a peer as a phone-based P-O-U-T candidate
+		// (see internal/mobile package and cmd/cloudless-registry's own
+		// heartbeat handler) rather than a downloaded validator binary.
+		// Deliberately NOT included in coreNodeCapabilities(): that list is
+		// the set a real validator must prove (quorum, persistent_storage,
+		// validator_registry, ...), and a phone is never going to hold
+		// those -- it's a candidate, not a block producer (see
+		// docs/MOBILE_ANDROID_CANDIDATES.md). Tagging it this way, instead
+		// of adding a new top-level field, keeps every place that already
+		// reads Capabilities (nodeStatus, the website's node list, the
+		// admin pending-validators filter) working without changes: an
+		// operator who explicitly sends this tag is simply excluded from
+		// ever being silently upgraded to the full core-capability set the
+		// heartbeat handler auto-assigns to callers who send none (see the
+		// len(entry.Capabilities)==0 branch in handleAPINodeHeartbeat) --
+		// which matters because that auto-assignment was written assuming
+		// only real validator binaries call this endpoint, and a mobile
+		// candidate must never be silently credited with capabilities
+		// (quorum, persistent_storage) it doesn't actually have.
+		"mobile_candidate": true,
 	}
 	out := make([]string, 0, len(values))
 	seen := map[string]bool{}
