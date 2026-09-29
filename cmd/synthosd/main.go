@@ -97,6 +97,12 @@ func main() {
 		// Load for why this keeps RAM use bounded regardless of how large
 		// the chain's full history has grown.
 		ch.RestoreHotWindow(snap.HotWindowStart, snap.HotWindowBaseState, snap.HotWindowBaseBlock, maxHotBlocks, st)
+		// A restored State carries whatever Citizen reward config was
+		// persisted with it, which on long-running nodes is zero (see
+		// ReapplyGenesisCitizenRewardConfig) -- restore genesis's values so
+		// this node agrees with any node that synced from genesis.
+		ch.ReapplyGenesisCitizenRewardConfig(genesisChain.State)
+		_ = st.Save(ch)
 	} else {
 		ch, err = chain.NewChain(gen)
 		if err != nil {
