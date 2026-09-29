@@ -241,6 +241,12 @@ func main() {
 	if len(cfg.IrregularStateCorrections) > 0 {
 		ch.SetIrregularStateCorrections(cfg.IrregularStateCorrections)
 	}
+	// Validator staking is off unless validator_staking.enabled_from_height
+	// is set; like the settings above it must match on every node.
+	if err := cfg.ValidatorStaking.Validate(); err != nil {
+		panic(err)
+	}
+	ch.SetValidatorStakingParams(cfg.ValidatorStaking)
 	if err := n.Start(); err != nil {
 		panic(err)
 	}

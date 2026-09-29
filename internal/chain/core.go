@@ -306,6 +306,12 @@ type State struct {
 	// this struct.
 	GovernanceProposals map[string]*Proposal
 	GovernanceFounder   Address
+
+	// Validators is the on-chain validator registry (see
+	// validator_staking.go), keyed by operator address. Only ever changed
+	// by validator_* transactions inside blocks, and included in Root()
+	// whenever it's non-empty.
+	Validators map[Address]ValidatorRecord
 }
 
 func NewState() *State {
@@ -318,6 +324,7 @@ func NewState() *State {
 		BridgeValidators:      make(map[string]string),
 		CitizenStakes:         make(map[Address]CitizenStake),
 		GovernanceProposals:   make(map[string]*Proposal),
+		Validators:            make(map[Address]ValidatorRecord),
 		TotalSupply:           MAX_SUPPLY,
 	}
 }
@@ -947,6 +954,18 @@ func (s *State) Root() string {
 	immuneHash := sha256.Sum256(immuneData)
 	leaves = append(leaves, immuneHash[:])
 
+	// The validator registry is consensus state, so it's committed to the
+	// root -- but only once it's non-empty. It can only become non-empty
+	// through validator_* transactions after ValidatorStakingParams.
+	// EnabledFromHeight, so every root computed before activation (the
+	// entire existing chain) is byte-for-byte unchanged. encoding/json
+	// sorts map keys, so this encoding is deterministic.
+	if len(s.Validators) > 0 {
+		validatorData, _ := json.Marshal(s.Validators)
+		validatorHash := sha256.Sum256(append([]byte("synthos/validators/v1:"), validatorData...))
+		leaves = append(leaves, validatorHash[:])
+	}
+
 	return "0x" + hex.EncodeToString(buildMerkleRoot(leaves))
 }
 
@@ -1051,6 +1070,7 @@ func (s *State) Clone() *State {
 		out.GovernanceProposals[k] = &cloned
 	}
 	out.GovernanceFounder = s.GovernanceFounder
+	out.Validators = cloneValidatorRecords(s.Validators)
 	return out
 }
 

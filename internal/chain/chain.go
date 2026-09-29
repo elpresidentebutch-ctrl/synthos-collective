@@ -79,6 +79,10 @@ type Chain struct {
 	// committed (see SetIrregularStateCorrections's doc comment).
 	stateCorrections []StateCorrection
 
+	// validatorStaking are the chain-wide validator staking rules (see
+	// validator_staking.go). Zero value = disabled.
+	validatorStaking ValidatorStakingParams
+
 	// --- Bounded in-memory block retention (see SetHotWindow) ---
 	//
 	// Blocks holds every finalized block from genesis by default (index ==
@@ -371,7 +375,7 @@ func (c *Chain) trimHotWindowLocked() {
 func (c *Chain) advanceCheckpointStateLocked(st *State, b *Block) (*State, error) {
 	next := st.Clone()
 	for _, tx := range b.Tx {
-		if err := next.ApplyTx(tx); err != nil {
+		if err := c.applyTxLocked(next, tx, b.Header.Height); err != nil {
 			return nil, fmt.Errorf("replay transaction %s: %w", tx.ID, err)
 		}
 	}
@@ -531,7 +535,11 @@ func (c *Chain) SimulateTx(tx Tx) (SimulationResult, error) {
 	fromBefore := tmp.Get(tx.From)
 	toBefore := tmp.Get(tx.To)
 
-	if err := tmp.ApplyTx(tx); err != nil {
+	simHeight := uint64(1)
+	if tip := c.tipLocked(); tip != nil {
+		simHeight = tip.Header.Height + 1
+	}
+	if err := c.applyTxLocked(tmp, tx, simHeight); err != nil {
 		result.Error = err.Error()
 		return result, err
 	}
@@ -577,11 +585,12 @@ func (c *Chain) BuildBlock(proposerID string, proposerPoCRoot string, maxTx int)
 		}
 		return candidates[i].ID < candidates[j].ID
 	})
+	buildHeight := c.tipLocked().Header.Height + 1
 	for _, tx := range candidates {
 		if len(txs) >= maxTx {
 			break
 		}
-		if err := tmp.ApplyTx(tx); err != nil {
+		if err := c.applyTxLocked(tmp, tx, buildHeight); err != nil {
 			continue
 		}
 		txs = append(txs, tx)
@@ -682,7 +691,7 @@ func (c *Chain) validateBlockLocked(b *Block, requireQuorum bool) error {
 
 	tmp := c.State.Clone()
 	for _, tx := range b.Tx {
-		if err := tmp.ApplyTx(tx); err != nil {
+		if err := c.applyTxLocked(tmp, tx, b.Header.Height); err != nil {
 			return err
 		}
 	}
@@ -710,7 +719,7 @@ func (c *Chain) FinalizeBlock(b *Block) error {
 
 	nextState := c.State.Clone()
 	for _, tx := range b.Tx {
-		if err := nextState.ApplyTx(tx); err != nil {
+		if err := c.applyTxLocked(nextState, tx, b.Header.Height); err != nil {
 			return fmt.Errorf("apply finalized transaction %s: %w", tx.ID, err)
 		}
 	}
@@ -1017,6 +1026,51 @@ func (c *Chain) SeedGenesisState(genesisState *State) {
 	}
 }
 
+// SetValidatorStakingParams configures validator staking (see
+// validator_staking.go). Must be called identically on every node sharing
+// this chain, at startup, like SetAuthEnforceFromHeight: a node with
+// different params would apply validator_* transactions differently from
+// its peers from EnabledFromHeight onward and fork away from them.
+func (c *Chain) SetValidatorStakingParams(p ValidatorStakingParams) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.validatorStaking = p
+}
+
+// ValidatorStakingParams returns the configured validator staking rules.
+func (c *Chain) ValidatorStakingParams() ValidatorStakingParams {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.validatorStaking
+}
+
+// ActiveValidatorSet returns the stake-based validator set implied by the
+// current chain state (see State.ActiveValidatorSet). In step 1 this is
+// informational only: block authorization still uses SetValidatorSet's
+// configured roster.
+func (c *Chain) ActiveValidatorSet() []ActiveValidator {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.State.ActiveValidatorSet(c.validatorStaking)
+}
+
+// applyTxLocked applies tx to st as part of a block at height. It is the
+// single entry point every block-building, validation, finalization,
+// replay and simulation path uses, so they can never disagree about how a
+// transaction applies at a given height. Validator staking transactions
+// take the staking path only once staking is enabled at that height;
+// before that they fall through to State.ApplyTx exactly as they always
+// have. Caller must hold c.mu (read or write).
+func (c *Chain) applyTxLocked(st *State, tx Tx, height uint64) error {
+	if txType := metadataValue(tx.Metadata, "type"); validatorTxTypes[txType] && c.validatorStaking.EnabledAt(height) {
+		if err := tx.Verify(); err != nil {
+			return err
+		}
+		return st.applyValidatorTx(tx, txType, height, c.validatorStaking)
+	}
+	return st.ApplyTx(tx)
+}
+
 // ReapplyGenesisCitizenRewardConfig copies genesis's Citizen reward
 // configuration (TreasuryAddress, CitizenRewardRateBpsPerYear) onto this
 // chain's live State and its hot-window replay base state. Call once, on a
@@ -1230,6 +1284,7 @@ func (c *Chain) TryReorg(forkHeight uint64, candidate []*Block) (bool, error) {
 	copy(currentTail, c.Blocks[prefixEndIdx:])
 	validatorKeys := c.validatorKeys
 	requiredQuorum := c.requiredQuorum
+	validatorStaking := c.validatorStaking
 	// baseState/baseBlock anchor the replay at the hot window's own
 	// boundary instead of always genesis. For a chain that has never
 	// trimmed anything (hotStart == 0) these are exactly
@@ -1284,6 +1339,9 @@ func (c *Chain) TryReorg(forkHeight uint64, candidate []*Block) (bool, error) {
 		Mempool:        make(map[string]Tx),
 		validatorKeys:  validatorKeys,
 		requiredQuorum: requiredQuorum,
+		// Replay must apply validator_* transactions under the same rules
+		// the real chain used, or the replayed state would differ.
+		validatorStaking: validatorStaking,
 	}
 	for _, blk := range prefix {
 		cp := *blk

@@ -267,6 +267,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/citizen/claim-rewards", s.handleCitizenClaimRewards)
 	mux.HandleFunc("/citizen/status", s.handleCitizenStatus)
 	mux.HandleFunc("/enforcer/status", s.handleEnforcerStatus)
+	mux.HandleFunc("/validators/staking", s.handleValidatorStaking)
 
 	// Wrap with rate limiting and input size limit middleware
 	handler := s.RateLimiter.Middleware(mux)

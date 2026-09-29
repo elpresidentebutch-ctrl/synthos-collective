@@ -76,6 +76,13 @@ type NodeConfig struct {
 	// from that block onward.
 	IrregularStateCorrections []chain.StateCorrection `json:"irregular_state_corrections"`
 
+	// ValidatorStaking, when enabled_from_height is set, is passed to
+	// chain.Chain.SetValidatorStakingParams: permissionless validator
+	// registration by bonding SYN (see internal/chain/validator_staking.go).
+	// Must be identical on every node sharing this chain. Omitted or
+	// enabled_from_height 0 = disabled, the existing behavior.
+	ValidatorStaking chain.ValidatorStakingParams `json:"validator_staking"`
+
 	// Runtime configuration (can be set from environment variables)
 	ChainID            uint64
 	ConsensusTimeout   time.Duration
