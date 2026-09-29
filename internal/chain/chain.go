@@ -1017,6 +1017,50 @@ func (c *Chain) SeedGenesisState(genesisState *State) {
 	}
 }
 
+// ReapplyGenesisCitizenRewardConfig copies genesis's Citizen reward
+// configuration (TreasuryAddress, CitizenRewardRateBpsPerYear) onto this
+// chain's live State and its hot-window replay base state. Call once, on a
+// chain restored from a storage snapshot, after SeedGenesisState and
+// RestoreHotWindow and before the chain accepts new blocks.
+//
+// Why this is needed: both fields are set only by Genesis.ToState, at
+// height 0. Nothing in any transaction or block ever changes them
+// afterward, and neither is part of Root(). A chain that has been running
+// since before these fields reliably survived block finalization -- see
+// the State.Clone comment about them being wiped to zero at every block --
+// persisted zero values into its storage snapshot, and a restart restores
+// those zeros verbatim instead of recomputing them from genesis. The live
+// validators showed exactly this: /citizen/status reporting
+// rewards_configured=false and reward_rate_bps_per_year=0 while the
+// genesis file they were deployed with sets 650.
+//
+// That is more than a display problem. A node that syncs the same chain
+// from genesis (any new follower) gets the genesis values, while
+// snapshot-restored nodes keep the zeros, so the two disagree on whether a
+// citizen_claim_rewards transaction succeeds or fails with
+// ErrCitizenRewardsNotConfigured -- and a claim that succeeds moves real
+// balances, which ARE in Root(). Re-applying the genesis values on restore
+// makes every node hold exactly what a from-genesis replay computes.
+//
+// genesisState is the state produced by the chain's genesis file (the same
+// one passed to SeedGenesisState). Operator env-var overrides applied later
+// at startup (cmd/synthosd's initGovernance) still take precedence, same
+// as before this function existed.
+func (c *Chain) ReapplyGenesisCitizenRewardConfig(genesisState *State) {
+	if genesisState == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, s := range []*State{c.State, c.hotWindowBaseState} {
+		if s == nil {
+			continue
+		}
+		s.TreasuryAddress = genesisState.TreasuryAddress
+		s.CitizenRewardRateBpsPerYear = genesisState.CitizenRewardRateBpsPerYear
+	}
+}
+
 // BlockAt returns the finalized block at the given height, or nil if the
 // chain hasn't reached that height or the block simply isn't available.
 // Blocks are stored contiguously by height starting at hotWindowStart
