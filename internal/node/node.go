@@ -145,6 +145,14 @@ func NewNode(a *agent.Agent, c *chain.Chain, eng *consensus.Engine, t network.Tr
 		DowntimePenalty:     50,
 	})
 	tracker.SetExecuteSlash(func(validatorID string, penalty uint64) {
+		// In stake mode, penalties happen only through validator_evidence
+		// transactions inside blocks (internal/chain/validator_staking.go),
+		// applied identically on every node. This callback edits one
+		// node's state directly, outside any block -- the cause of the
+		// height-41950 state-root split -- so it must not run there.
+		if c != nil && c.StakeConsensusActiveAt(c.Height()+1) {
+			return
+		}
 		addr, ok := n.addressForAgentID(validatorID)
 		if !ok || c == nil {
 			return

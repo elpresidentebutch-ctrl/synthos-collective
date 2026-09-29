@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -374,14 +375,16 @@ func (c *Chain) trimHotWindowLocked() {
 // behavior of the one function every validator's real finality depends on.
 func (c *Chain) advanceCheckpointStateLocked(st *State, b *Block) (*State, error) {
 	next := st.Clone()
+	proposerAddr := c.proposerAddressLocked(st, b.Header.Height, b.Header.ProposerID)
 	for _, tx := range b.Tx {
 		if err := c.applyTxLocked(next, tx, b.Header.Height); err != nil {
 			return nil, fmt.Errorf("replay transaction %s: %w", tx.ID, err)
 		}
 	}
-	if err := applyBlockEconomics(next, b.Tx, c.resolveProposerAddressLocked(b.Header.ProposerID)); err != nil {
+	if err := applyBlockEconomics(next, b.Tx, proposerAddr); err != nil {
 		return nil, err
 	}
+	c.finishBlockStateLocked(next, b.Header.Height)
 	return next, nil
 }
 
@@ -595,9 +598,10 @@ func (c *Chain) BuildBlock(proposerID string, proposerPoCRoot string, maxTx int)
 		}
 		txs = append(txs, tx)
 	}
-	if err := applyBlockEconomics(tmp, txs, c.resolveProposerAddressLocked(proposerID)); err != nil {
+	if err := applyBlockEconomics(tmp, txs, c.proposerAddressLocked(c.State, buildHeight, proposerID)); err != nil {
 		return nil, err
 	}
+	c.finishBlockStateLocked(tmp, buildHeight)
 	txRoot, err := TxMerkleRoot(txs)
 	if err != nil {
 		return nil, err
@@ -664,7 +668,12 @@ func (c *Chain) validateBlockLocked(b *Block, requireQuorum bool) error {
 	if b.Header.Height > 0 && !b.Header.Timestamp.IsZero() {
 		return ErrBadBlock
 	}
-	if b.Header.Height > 0 && len(c.validatorKeys) > 0 && b.Header.Height >= c.authEnforceFromHeight {
+	if set := c.stakeAuthoritySetLocked(b.Header.Height); len(set) > 0 {
+		// Stake mode: the configured roster no longer decides anything.
+		if err := c.verifyStakeAuthorizationLocked(b, set, requireQuorum); err != nil {
+			return err
+		}
+	} else if b.Header.Height > 0 && len(c.validatorKeys) > 0 && b.Header.Height >= c.authEnforceFromHeight {
 		if err := c.verifyBlockAuthorizationLocked(b, requireQuorum); err != nil {
 			return err
 		}
@@ -695,10 +704,10 @@ func (c *Chain) validateBlockLocked(b *Block, requireQuorum bool) error {
 			return err
 		}
 	}
-	if err := applyBlockEconomics(tmp, b.Tx, c.resolveProposerAddressLocked(b.Header.ProposerID)); err != nil {
+	if err := applyBlockEconomics(tmp, b.Tx, c.proposerAddressLocked(c.State, b.Header.Height, b.Header.ProposerID)); err != nil {
 		return err
 	}
-	c.applyIrregularStateCorrectionsLocked(tmp, b.Header.Height)
+	c.finishBlockStateLocked(tmp, b.Header.Height)
 	if enforceStateRoot && tmp.Root() != b.Header.StateRoot {
 		return ErrStateRootMismatch
 	}
@@ -723,10 +732,10 @@ func (c *Chain) FinalizeBlock(b *Block) error {
 			return fmt.Errorf("apply finalized transaction %s: %w", tx.ID, err)
 		}
 	}
-	if err := applyBlockEconomics(nextState, b.Tx, c.resolveProposerAddressLocked(b.Header.ProposerID)); err != nil {
+	if err := applyBlockEconomics(nextState, b.Tx, c.proposerAddressLocked(c.State, b.Header.Height, b.Header.ProposerID)); err != nil {
 		return err
 	}
-	c.applyIrregularStateCorrectionsLocked(nextState, b.Header.Height)
+	c.finishBlockStateLocked(nextState, b.Header.Height)
 	if b.Header.Height >= c.stateRootEnforceFromHeight && nextState.Root() != b.Header.StateRoot {
 		return ErrBadBlock
 	}
@@ -762,6 +771,115 @@ func (c *Chain) resolveProposerAddressLocked(proposerID string) Address {
 		return ""
 	}
 	return AddressFromPublicKey(pub)
+}
+
+// proposerAddressLocked returns the account credited with a block's fee
+// reward. In stake mode the proposer is identified by its consensus key
+// and paid at its operator address, looked up in the authorizing set held
+// by pre (the state before the block); otherwise it's the legacy roster
+// lookup above. Caller must hold c.mu.
+func (c *Chain) proposerAddressLocked(pre *State, height uint64, proposerID string) Address {
+	if c.validatorStaking.ConsensusActiveAt(height) && pre != nil {
+		if set := pre.AuthorizingValidatorSet(); len(set) > 0 {
+			key := strings.ToLower(proposerID)
+			for _, v := range set {
+				if v.ConsensusPubKey == key {
+					return v.Operator
+				}
+			}
+			return ""
+		}
+	}
+	return c.resolveProposerAddressLocked(proposerID)
+}
+
+// finishBlockStateLocked applies the end-of-block steps every path that
+// computes a block's resulting state must share (building, validating,
+// finalizing, and advancing the hot-window checkpoint): the configured
+// irregular state corrections, then, at an epoch boundary, a fresh
+// snapshot of the stake-based authorizing set. Keeping them in one place
+// is what stops a producer and its validators from computing different
+// state roots for the same block. Caller must hold c.mu.
+func (c *Chain) finishBlockStateLocked(st *State, height uint64) {
+	c.applyIrregularStateCorrectionsLocked(st, height)
+	if c.validatorStaking.isSnapshotHeight(height) {
+		st.setValidatorSetSnapshot(st.ActiveValidatorSet(c.validatorStaking))
+	}
+}
+
+// StakeConsensusActiveAt reports whether a block at height is authorized
+// by the stake-based validator set rather than the configured roster:
+// stake consensus is configured for that height AND the current
+// authorizing set is non-empty. (With an empty set -- nobody bonded, or
+// everyone slashed or unbonded -- the configured roster keeps the chain
+// running instead of halting it.)
+func (c *Chain) StakeConsensusActiveAt(height uint64) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return len(c.stakeAuthoritySetLocked(height)) > 0
+}
+
+// stakeAuthoritySetLocked returns the stake-based set that authorizes a
+// block at height, or nil if that block is governed by the configured
+// roster instead. It reads c.State, which is the state just before that
+// block. Caller must hold c.mu.
+func (c *Chain) stakeAuthoritySetLocked(height uint64) []ActiveValidator {
+	if height == 0 || !c.validatorStaking.ConsensusActiveAt(height) || c.State == nil {
+		return nil
+	}
+	return c.State.AuthorizingValidatorSet()
+}
+
+// verifyStakeAuthorizationLocked is the stake-mode counterpart of
+// verifyBlockAuthorizationLocked. The proposer (Header.ProposerID = its
+// consensus public key, 0x hex) must be in set and must have signed
+// StakeProposalMessage; with requireQuorum, QuorumSignatures (keyed by
+// consensus public key) must include valid StakeApprovalMessage
+// signatures from validators holding MORE than 2/3 of the set's total
+// stake. Unknown keys and bad signatures are ignored rather than failing
+// the block, same as the legacy check. Caller must hold c.mu.
+func (c *Chain) verifyStakeAuthorizationLocked(b *Block, set []ActiveValidator, requireQuorum bool) error {
+	byKey := make(map[string]ActiveValidator, len(set))
+	var total uint64
+	for _, v := range set {
+		byKey[v.ConsensusPubKey] = v
+		total += v.Power
+	}
+	height := b.Header.Height
+	proposer, ok := byKey[strings.ToLower(b.Header.ProposerID)]
+	if !ok {
+		return fmt.Errorf("%w: proposer %q is not in the active staked validator set", ErrBadBlock, b.Header.ProposerID)
+	}
+	if !verifyHexSig(proposer.ConsensusPubKey, StakeProposalMessage(c.ChainID, height, b.Hash), b.ProposerSignature) {
+		return fmt.Errorf("%w: invalid or missing stake-mode proposer signature", ErrBadBlock)
+	}
+	if !requireQuorum {
+		return nil
+	}
+	approvalMsg := StakeApprovalMessage(c.ChainID, height, b.Hash)
+	counted := make(map[string]struct{}, len(b.QuorumSignatures))
+	var approved uint64
+	for signer, sigHex := range b.QuorumSignatures {
+		key := strings.ToLower(signer)
+		v, ok := byKey[key]
+		if !ok {
+			continue
+		}
+		if _, dup := counted[key]; dup {
+			continue
+		}
+		if !verifyHexSig(v.ConsensusPubKey, approvalMsg, sigHex) {
+			continue
+		}
+		counted[key] = struct{}{}
+		approved += v.Power
+	}
+	// Strictly more than 2/3: approved*3 > total*2. Powers are bounded by
+	// total supply (1e11), so neither product can overflow uint64.
+	if approved*3 <= total*2 {
+		return fmt.Errorf("%w: approvals cover %d of %d staked power; more than 2/3 is required", ErrBadBlock, approved, total)
+	}
+	return nil
 }
 
 func applyBlockEconomics(st *State, txs []Tx, proposerAddr Address) error {
@@ -1066,7 +1184,7 @@ func (c *Chain) applyTxLocked(st *State, tx Tx, height uint64) error {
 		if err := tx.Verify(); err != nil {
 			return err
 		}
-		return st.applyValidatorTx(tx, txType, height, c.validatorStaking)
+		return st.applyValidatorTxCtx(tx, txType, validatorTxContext{height: height, params: c.validatorStaking, chainID: c.ChainID})
 	}
 	return st.ApplyTx(tx)
 }

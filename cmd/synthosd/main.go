@@ -246,6 +246,13 @@ func main() {
 	if err := cfg.ValidatorStaking.Validate(); err != nil {
 		panic(err)
 	}
+	// The chain can already verify stake-authorized blocks, but this
+	// binary's block producer and voters still sign and collect votes the
+	// legacy way. Switching stake consensus on before they can would stop
+	// every node from producing a valid block, so refuse it outright.
+	if cfg.ValidatorStaking.ConsensusFromHeight != 0 {
+		panic("validator_staking.consensus_from_height is not supported yet: stake-mode block production and vote collection (step 2b) are not implemented in this build; leave it at 0")
+	}
 	ch.SetValidatorStakingParams(cfg.ValidatorStaking)
 	if err := n.Start(); err != nil {
 		panic(err)

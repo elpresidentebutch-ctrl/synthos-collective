@@ -312,6 +312,13 @@ type State struct {
 	// by validator_* transactions inside blocks, and included in Root()
 	// whenever it's non-empty.
 	Validators map[Address]ValidatorRecord
+
+	// ValidatorSetSnapshot is the stake-based set authorizing blocks in
+	// the current epoch (see ValidatorStakingParams.ConsensusFromHeight).
+	// Taken from Validators at each epoch boundary inside block
+	// processing, so every node holds the same one; empty before stake
+	// consensus starts. Included in Root() whenever non-empty.
+	ValidatorSetSnapshot []ActiveValidator
 }
 
 func NewState() *State {
@@ -965,6 +972,14 @@ func (s *State) Root() string {
 		validatorHash := sha256.Sum256(append([]byte("synthos/validators/v1:"), validatorData...))
 		leaves = append(leaves, validatorHash[:])
 	}
+	// Same treatment for the authorizing snapshot: committed once it
+	// exists, absent (so every earlier root is unchanged) before then.
+	// It's a sorted slice, so its encoding is deterministic.
+	if len(s.ValidatorSetSnapshot) > 0 {
+		snapshotData, _ := json.Marshal(s.ValidatorSetSnapshot)
+		snapshotHash := sha256.Sum256(append([]byte("synthos/validator-set-snapshot/v1:"), snapshotData...))
+		leaves = append(leaves, snapshotHash[:])
+	}
 
 	return "0x" + hex.EncodeToString(buildMerkleRoot(leaves))
 }
@@ -1071,6 +1086,9 @@ func (s *State) Clone() *State {
 	}
 	out.GovernanceFounder = s.GovernanceFounder
 	out.Validators = cloneValidatorRecords(s.Validators)
+	if s.ValidatorSetSnapshot != nil {
+		out.ValidatorSetSnapshot = append([]ActiveValidator(nil), s.ValidatorSetSnapshot...)
+	}
 	return out
 }
 

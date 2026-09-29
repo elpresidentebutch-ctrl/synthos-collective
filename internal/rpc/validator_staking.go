@@ -17,7 +17,8 @@ import (
 // write endpoint here: nothing about joining as a validator goes through
 // an operator-controlled API.
 //
-// GET /validators/staking                 params, active set, all records
+// GET /validators/staking                 params, active and authorizing
+//                                         sets, all records
 // GET /validators/staking?operator=0x...  one validator's record
 // -----------------------------------------------------------------------
 
@@ -44,9 +45,10 @@ func (s *Server) handleValidatorStaking(w http.ResponseWriter, r *http.Request) 
 		"enabled":            params.EnabledAt(nextHeight),
 		"next_block_height":  nextHeight,
 		"active_set":         s.Chain.ActiveValidatorSet(),
+		"authorizing_set":    s.Chain.State.AuthorizingValidatorSet(),
 		"validators":         records,
 		"total_locked":       s.Chain.State.TotalValidatorLocked(),
-		"consensus_uses_set": false,
-		"note":               "Step 1: the stake-based set is computed and published but does not yet authorize blocks; consensus still uses the configured validator roster.",
+		"consensus_uses_set": s.Chain.StakeConsensusActiveAt(nextHeight),
+		"note":               "active_set is what stake implies right now; authorizing_set is the snapshot taken at the last epoch boundary, which is what actually authorizes blocks once consensus_from_height is reached.",
 	})
 }
