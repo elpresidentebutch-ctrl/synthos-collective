@@ -53,6 +53,37 @@ render-deploy:
     - curl --fail --request POST "$RENDER_DEPLOY_HOOK_URL"
 
 # ---------------------------------------------------------------------------
+# CometBFT migration: dependency bundle
+#
+# The migration lives in cometapp/, a separate Go module, so nothing it
+# depends on can affect the live synthosd build. The sandbox this work is
+# developed in can't reach Go module servers, so this job resolves CometBFT
+# and its dependencies here and publishes them as one artifact (go.mod,
+# go.sum, vendor/) to copy into that sandbox. Runs only on feat/cometbft*
+# branches.
+# ---------------------------------------------------------------------------
+cometapp-deps:
+  stage: build
+  image: golang:1.25
+  rules:
+    - if: '$CI_COMMIT_BRANCH =~ /^feat\/cometbft/'
+  script:
+    - cd cometapp
+    - go get github.com/cometbft/cometbft@v0.38
+    - go mod tidy
+    - go mod vendor
+    - go build ./...
+    - go list -m all > modules.txt
+    - go version > go-version.txt
+    - cd ..
+    - tar czf cometapp-deps.tgz cometapp/go.mod cometapp/go.sum cometapp/vendor cometapp/modules.txt cometapp/go-version.txt
+    - ls -la cometapp-deps.tgz
+  artifacts:
+    paths:
+      - cometapp-deps.tgz
+    expire_in: 14 days
+
+# ---------------------------------------------------------------------------
 # Node binary releases
 #
 # Builds real, auditable cross-platform binaries straight from this repo's
