@@ -83,6 +83,23 @@ cometapp-deps:
       - cometapp-deps.tgz
     expire_in: 14 days
 
+# Tests for the CometBFT-based node (cometapp/): the application against
+# ABCI calls, plus real in-process CometBFT networks (a single node with a
+# restart, and a 5-node network where a newcomer bonds into the validator
+# set and a validator goes offline). Runs when cometapp/ or the chain
+# rules it executes change.
+cometapp-test:
+  stage: test
+  image: golang:1.25
+  rules:
+    - changes:
+        - cometapp/**/*
+        - internal/chain/**/*
+  script:
+    - cd cometapp
+    - go vet ./...
+    - go test -race -count=1 -timeout 600s ./...
+
 # ---------------------------------------------------------------------------
 # Node binary releases
 #

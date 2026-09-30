@@ -646,16 +646,7 @@ func (s *State) applyValidatorEvidence(tx Tx, ctx validatorTxContext) error {
 	if offender.Tombstoned {
 		return ErrValidatorTombstoned
 	}
-	offender.Unbonding = append([]UnbondingEntry(nil), offender.Unbonding...)
-
-	slashed := offender.SelfBond * p.SlashFractionBps / 10_000
-	offender.SelfBond -= slashed
-	for i := range offender.Unbonding {
-		cut := offender.Unbonding[i].Amount * p.SlashFractionBps / 10_000
-		offender.Unbonding[i].Amount -= cut
-		slashed += cut
-	}
-	offender.Tombstoned = true
+	offender, slashed := slashAndTombstone(offender, p.SlashFractionBps)
 	reward := slashed * p.ReporterRewardBps / 10_000
 
 	// Re-read the reporter in case it is the offender's own operator
@@ -701,4 +692,22 @@ func (s *State) setValidatorSetSnapshot(set []ActiveValidator) {
 		return
 	}
 	s.ValidatorSetSnapshot = set
+}
+
+// slashAndTombstone removes bps basis points of rec's self-bond and of
+// every pending unbonding entry, marks it tombstoned, and returns the
+// updated record and the total removed. It works on a copy; the caller
+// stores the result. Shared by double-sign evidence transactions and by
+// consensus-engine misbehavior reports (see SlashForDoubleSign).
+func slashAndTombstone(rec ValidatorRecord, bps uint64) (ValidatorRecord, uint64) {
+	rec.Unbonding = append([]UnbondingEntry(nil), rec.Unbonding...)
+	slashed := rec.SelfBond * bps / 10_000
+	rec.SelfBond -= slashed
+	for i := range rec.Unbonding {
+		cut := rec.Unbonding[i].Amount * bps / 10_000
+		rec.Unbonding[i].Amount -= cut
+		slashed += cut
+	}
+	rec.Tombstoned = true
+	return rec, slashed
 }
