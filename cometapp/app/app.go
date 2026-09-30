@@ -49,6 +49,25 @@ type Genesis struct {
 	Staking chain.ValidatorStakingParams `json:"staking"`
 	// Validators are the first validators; more join by bonding.
 	Validators []GenesisValidator `json:"validators"`
+
+	// InitialState, when set, is the chain's complete starting state --
+	// every account (balance, nonce, assets), citizen stake, governance
+	// proposal and bridge record -- carried over from an existing chain
+	// (see cometapp/export). It replaces building the state from
+	// Chain.Alloc and Chain.Metadata, which must then be empty.
+	// InitialStateRoot must equal InitialState.Root(), so a damaged or
+	// hand-edited copy is refused instead of silently starting a
+	// different chain.
+	InitialState     *chain.State `json:"initial_state,omitempty"`
+	InitialStateRoot string       `json:"initial_state_root,omitempty"`
+}
+
+// startState builds the state before the genesis validators bond.
+func (g Genesis) startState() (*chain.State, error) {
+	if g.InitialState == nil {
+		return g.Chain.ToState()
+	}
+	return g.InitialState.Clone(), nil
 }
 
 // Validate checks rules that only make sense under CometBFT: staking must
@@ -56,8 +75,26 @@ type Genesis struct {
 // and the legacy stake-consensus switch must stay off (CometBFT decides
 // block authorization).
 func (g Genesis) Validate() error {
-	if err := g.Chain.Validate(); err != nil {
-		return err
+	if g.InitialState == nil {
+		if g.InitialStateRoot != "" {
+			return errors.New("initial_state_root is set but initial_state is missing")
+		}
+		if err := g.Chain.Validate(); err != nil {
+			return err
+		}
+	} else {
+		if g.Chain.ChainID == "" {
+			return errors.New("chain.chain_id is required")
+		}
+		if len(g.Chain.Alloc) != 0 || len(g.Chain.Metadata) != 0 {
+			return errors.New("chain.alloc and chain.metadata must be empty when initial_state is given (the state already holds balances and settings)")
+		}
+		if got := g.InitialState.Root(); got != g.InitialStateRoot {
+			return fmt.Errorf("initial_state hashes to %s but initial_state_root says %s: the genesis file is damaged or was edited", got, g.InitialStateRoot)
+		}
+		if len(g.InitialState.Validators) != 0 || len(g.InitialState.ValidatorSetSnapshot) != 0 {
+			return errors.New("initial_state must not carry validators; list them in validators instead")
+		}
 	}
 	if g.Staking.EnabledFromHeight != 1 {
 		return errors.New("staking.enabled_from_height must be 1: under CometBFT, bonding is how validators join")
@@ -200,7 +237,7 @@ func (a *App) InitChain(_ context.Context, req *abcitypes.RequestInitChain) (*ab
 	if err := g.Validate(); err != nil {
 		return nil, err
 	}
-	st, err := g.Chain.ToState()
+	st, err := g.startState()
 	if err != nil {
 		return nil, err
 	}
