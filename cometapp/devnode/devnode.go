@@ -107,6 +107,14 @@ func Start(home string, opts Options) (*nm.Node, *app.App, error) {
 		c.Consensus.TimeoutPropose = 4 * opts.BlockInterval
 		c.Consensus.TimeoutPrevote = opts.BlockInterval
 		c.Consensus.TimeoutPrecommit = opts.BlockInterval
+		// CometBFT v0.38 has a shutdown race: a per-peer goroutine wakes
+		// every PeerQueryMaj23SleepDuration and reads the block store,
+		// and it can wake after Stop has closed that store and panic.
+		// A real node process exits on stop, so it never matters there,
+		// but tests stop nodes inside one process. Keeping the goroutine
+		// asleep for the life of a test avoids that crash; the query is
+		// only a rarely needed liveness aid.
+		c.Consensus.PeerQueryMaj23SleepDuration = time.Hour
 	}
 	logger := opts.Logger
 	if logger == nil {
