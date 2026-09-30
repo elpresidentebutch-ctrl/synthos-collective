@@ -488,7 +488,39 @@ func (c *Chain) SubmitTx(tx Tx) error {
 	if tx.Nonce != expectedNonce {
 		return fmt.Errorf("nonce mismatch: got %d, expected %d for address %s", tx.Nonce, expectedNonce, tx.From)
 	}
+	if err := checkCitizenClock(tx, time.Now().Unix()); err != nil {
+		return err
+	}
 	c.Mempool[tx.ID] = tx
+	return nil
+}
+
+// MaxCitizenClockSkew is how far a citizen_stake or citizen_claim_rewards
+// transaction's Timestamp may be from this node's clock when it is
+// submitted.
+const MaxCitizenClockSkew = 5 * 60
+
+// checkCitizenClock rejects citizen staking transactions whose timestamp
+// isn't close to the real current time. On the legacy chain the citizen
+// reward clock is the transaction's Timestamp, which the signature does
+// not cover: without this check a staker could backdate a stake (or
+// post-date a claim) and be paid decades of rewards out of the treasury
+// in one transaction. Blocks are only built from this mempool, so this
+// keeps forged times out of blocks. (Chains running under CometBFT use the
+// agreed block time instead; see TxContext.BlockTime.)
+func checkCitizenClock(tx Tx, now int64) error {
+	switch metadataValue(tx.Metadata, "type") {
+	case "citizen_stake", "citizen_claim_rewards":
+	default:
+		return nil
+	}
+	skew := tx.Timestamp - now
+	if skew < 0 {
+		skew = -skew
+	}
+	if skew > MaxCitizenClockSkew {
+		return fmt.Errorf("citizen transaction timestamp %d is more than %d seconds from the current time %d; set timestamp to the current unix time", tx.Timestamp, MaxCitizenClockSkew, now)
+	}
 	return nil
 }
 
