@@ -91,6 +91,8 @@ cometapp-deps:
 cometapp-test:
   stage: test
   image: golang:1.25
+  variables:
+    CGO_ENABLED: "1" # the race detector needs cgo; the pipeline default is 0
   rules:
     - changes:
         - cometapp/**/*
