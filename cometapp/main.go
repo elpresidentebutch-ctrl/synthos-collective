@@ -14,6 +14,12 @@
 //	                                         run the node; --api also serves the
 //	                                         original synthosd HTTP API
 //	                                         (/status, /account, /submitTx, ...)
+//	synthos-comet export-genesis --legacy PATH --chain-id ID --tx-chain-id N
+//	                    --validators FILE --out FILE [--staking FILE]
+//	                    [--legacy-genesis FILE] [--mainnet-switch]
+//	                                         build a new chain's genesis from a
+//	                                         legacy synthosd node's saved state,
+//	                                         keeping every account and balance
 package main
 
 import (
@@ -32,7 +38,9 @@ import (
 
 	"synthos-collective/cometapp/app"
 	"synthos-collective/cometapp/devnode"
+	"synthos-collective/cometapp/export"
 	"synthos-collective/cometapp/legacyapi"
+	"synthos-collective/internal/chain"
 )
 
 func main() {
@@ -40,6 +48,10 @@ func main() {
 		usage()
 	}
 	cmd, args := os.Args[1], os.Args[2:]
+	if cmd == "export-genesis" {
+		exportGenesis(args)
+		return
+	}
 	fs := flag.NewFlagSet(cmd, flag.ExitOnError)
 	home := fs.String("home", "", "node home directory (required)")
 	genesisFile := fs.String("genesis", "", "SYNTHOS app genesis JSON (init)")
@@ -103,8 +115,102 @@ func main() {
 	}
 }
 
+// DefaultStaking are the validator rules export-genesis uses when no
+// --staking file is given. Amounts are whole SYN; heights assume
+// CometBFT's roughly one-second blocks.
+var DefaultStaking = chain.ValidatorStakingParams{
+	EnabledFromHeight: 1,
+	MinSelfBond:       10_000,
+	UnbondingBlocks:   86_400, // about a day
+	EpochBlocks:       100,
+	SlashFractionBps:  500,   // 5% for double-signing
+	ReporterRewardBps: 1_000, // 10% of a slash to whoever proves it
+}
+
+func exportGenesis(args []string) {
+	fs := flag.NewFlagSet("export-genesis", flag.ExitOnError)
+	legacy := fs.String("legacy", "", "legacy node data directory (state.json + blocks/) or a state.json file (required)")
+	chainID := fs.String("chain-id", "", "the new chain's ID, e.g. synthos-testnet-1 (required)")
+	txChainID := fs.Uint64("tx-chain-id", 0, "transaction chain ID wallets sign with on the new chain (required)")
+	validatorsFile := fs.String("validators", "", "JSON list of genesis validators: operator, consensus_pub_key, self_bond, moniker (required)")
+	stakingFile := fs.String("staking", "", "JSON validator staking rules (default: built-in rules, printed below)")
+	legacyGenesisFile := fs.String("legacy-genesis", "", "the legacy chain's genesis.json, to restore treasury/founder/reward settings a saved state lost")
+	mainnetSwitch := fs.Bool("mainnet-switch", false, "keep the legacy transaction chain ID (only for replacing the old mainnet)")
+	out := fs.String("out", "", "where to write the new app genesis JSON (required)")
+	_ = fs.Parse(args)
+	if *legacy == "" || *chainID == "" || *txChainID == 0 || *validatorsFile == "" || *out == "" {
+		fail("export-genesis needs --legacy, --chain-id, --tx-chain-id, --validators and --out")
+	}
+
+	l, err := export.Load(*legacy)
+	check(err)
+	before, err := export.Summarize(l.State)
+	check(err)
+
+	o := export.Options{ChainID: *chainID, TxChainID: *txChainID, AllowSameTxChainID: *mainnetSwitch, Staking: DefaultStaking}
+	readJSON(*validatorsFile, &o.Validators)
+	if *stakingFile != "" {
+		readJSON(*stakingFile, &o.Staking)
+	}
+	if *legacyGenesisFile != "" {
+		var lg chain.Genesis
+		readJSON(*legacyGenesisFile, &lg)
+		o.LegacyGenesis = &lg
+	}
+	g, err := export.Genesis(l, o)
+	check(err)
+	appHash, err := export.Check(g)
+	check(err)
+	after, err := export.Summarize(g.InitialState)
+	check(err)
+	if after.Held != before.Held || after.Accounts != before.Accounts {
+		fail(fmt.Sprintf("totals changed during export (before %+v, after %+v)", before, after))
+	}
+	raw, err := json.MarshalIndent(g, "", "  ")
+	check(err)
+	check(os.WriteFile(*out, raw, 0o644))
+
+	verified := "NOT VERIFIED: no saved blocks next to the state to compare against"
+	if l.TipStateRoot != "" {
+		verified = fmt.Sprintf("NOT VERIFIED: hashes to %s but the newest saved block (height %d) says %s", before.StateRoot, l.Height, l.TipStateRoot)
+	}
+	if l.Verified {
+		verified = fmt.Sprintf("verified: matches the chain's state root at height %d", l.Height)
+	}
+	stakingJSON, _ := json.Marshal(o.Staking)
+	fmt.Printf(`Legacy chain   %s (tx chain ID %d), height %d
+  state        %s
+  accounts     %d
+  balances     %d SYN
+  citizen stake %d SYN
+  total held   %d SYN of %d max (%d burned or never issued)
+  treasury     %s = %d SYN
+  founder      %s
+  citizen rate %d bps/year
+New chain      %s (tx chain ID %d)
+  validators   %d
+  staking      %s
+  app hash     %s
+Wrote %s
+`, l.ChainID, l.TxChainID, l.Height, verified, before.Accounts, before.Balances, before.CitizenStaked,
+		before.Held, before.MaxSupply, before.Burned, after.Treasury, after.TreasuryBalance, after.Founder,
+		after.CitizenRateBps, g.Chain.ChainID, g.Chain.TxChainID, len(g.Validators), stakingJSON, appHash, *out)
+	if after.Treasury == "" || after.Founder == "" || after.CitizenRateBps == 0 {
+		fmt.Fprintln(os.Stderr, "WARNING: treasury, founder or citizen rate is empty; pass --legacy-genesis to restore them")
+	}
+}
+
+func readJSON(path string, v any) {
+	raw, err := os.ReadFile(path)
+	check(err)
+	if err := json.Unmarshal(raw, v); err != nil {
+		fail(fmt.Sprintf("%s: %v", path, err))
+	}
+}
+
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: synthos-comet validator-key|node-id|init|start --home DIR [flags]")
+	fmt.Fprintln(os.Stderr, "       synthos-comet export-genesis --legacy PATH --chain-id ID --tx-chain-id N --validators FILE --out FILE")
 	os.Exit(2)
 }
 
