@@ -1,0 +1,8 @@
+{
+  "cloudflare-1": "https://synthos-validator-cloudflare-1.<workers-subdomain>.workers.dev",
+  "deno-1": "https://synthos-validator-deno-1.<deno-org>.deno.net",
+  "deno-2": "https://synthos-validator-deno-2.<deno-org>.deno.net",
+  "deno-3": "https://synthos-validator-deno-3.<deno-org>.deno.net",
+  "deno-4": "https://synthos-validator-deno-4.<deno-org>.deno.net",
+  "deno-5": "https://synthos-validator-deno-5.<deno-org>.deno.net"
+}

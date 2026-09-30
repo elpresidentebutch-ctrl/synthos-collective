@@ -1,0 +1,96 @@
+name: Deploy SYNTHOS Serverless Testnet
+
+on:
+  workflow_dispatch:
+    inputs:
+      deno_org:
+        description: Deno Deploy organization slug
+        required: true
+        type: string
+      cloudflare_url:
+        description: Full HTTPS workers.dev URL for synthos-validator-cloudflare-1
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: synthos-testnet
+    env:
+      DENO_DEPLOY_TOKEN: ${{ secrets.DENO_DEPLOY_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build endpoint registry
+        working-directory: serverless-testnet
+        env:
+          DENO_ORG: ${{ inputs.deno_org }}
+          CLOUDFLARE_URL: ${{ inputs.cloudflare_url }}
+        run: |
+          cat > endpoints.json <<EOF
+          {
+            "cloudflare-1": "${CLOUDFLARE_URL}",
+            "deno-1": "https://synthos-validator-deno-1.${DENO_ORG}.deno.net",
+            "deno-2": "https://synthos-validator-deno-2.${DENO_ORG}.deno.net",
+            "deno-3": "https://synthos-validator-deno-3.${DENO_ORG}.deno.net",
+            "deno-4": "https://synthos-validator-deno-4.${DENO_ORG}.deno.net",
+            "deno-5": "https://synthos-validator-deno-5.${DENO_ORG}.deno.net"
+          }
+          EOF
+          deno run -A scripts/generate-network.ts endpoints.json
+
+      - name: Deploy Cloudflare validator
+        working-directory: serverless-testnet/cloudflare
+        run: |
+          npm install
+          npx wrangler deploy
+          npx wrangler secret bulk ../generated/cloudflare-1.env
+          npx wrangler deploy
+
+      - name: Provision and deploy five Deno validators
+        working-directory: serverless-testnet
+        env:
+          DENO_ORG: ${{ inputs.deno_org }}
+        run: |
+          for i in 1 2 3 4 5; do
+            app="synthos-validator-deno-${i}"
+            db="synthos-validator-kv-${i}"
+            deno deploy create . --org "$DENO_ORG" --app "$app" --source local --runtime-mode dynamic --entrypoint deno/main.ts --working-directory . --build-timeout 5 --build-memory-limit 1024 --region global --no-wait || true
+            deno deploy database provision "$db" --kind denokv --org "$DENO_ORG" || true
+            deno deploy database assign "$db" --org "$DENO_ORG" --app "$app"
+            deno deploy env load "generated/deno-${i}.env" --org "$DENO_ORG" --app "$app"
+            deno deploy . --org "$DENO_ORG" --app "$app" --prod
+          done
+
+      - name: Verify finality and convergence
+        working-directory: serverless-testnet
+        run: deno run -A scripts/verify-network.ts
+
+      - name: Encrypt validator recovery bundle
+        working-directory: serverless-testnet
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.NETWORK_BACKUP_PASSPHRASE }}
+        run: |
+          test -n "$BACKUP_PASSPHRASE"
+          tar -czf - generated | openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:BACKUP_PASSPHRASE -out synthos-testnet-validator-recovery.tar.gz.enc
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: synthos-testnet-public-genesis-and-encrypted-recovery
+          path: |
+            serverless-testnet/generated/genesis.json
+            serverless-testnet/generated/public-registry.json
+            serverless-testnet/synthos-testnet-validator-recovery.tar.gz.enc
+          retention-days: 30
+          if-no-files-found: error

@@ -1,0 +1,12 @@
+{
+  "tasks": {
+    "dev": "deno run --allow-net --allow-env --unstable-kv main.ts",
+    "check": "deno check main.ts ../core.ts"
+  },
+  "imports": {
+    "tweetnacl": "npm:tweetnacl@1.0.3"
+  },
+  "compilerOptions": {
+    "strict": true
+  }
+}
