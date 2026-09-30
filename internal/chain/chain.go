@@ -1180,13 +1180,7 @@ func (c *Chain) ActiveValidatorSet() []ActiveValidator {
 // before that they fall through to State.ApplyTx exactly as they always
 // have. Caller must hold c.mu (read or write).
 func (c *Chain) applyTxLocked(st *State, tx Tx, height uint64) error {
-	if txType := metadataValue(tx.Metadata, "type"); validatorTxTypes[txType] && c.validatorStaking.EnabledAt(height) {
-		if err := tx.Verify(); err != nil {
-			return err
-		}
-		return st.applyValidatorTxCtx(tx, txType, validatorTxContext{height: height, params: c.validatorStaking, chainID: c.ChainID})
-	}
-	return st.ApplyTx(tx)
+	return ApplyTransaction(st, tx, TxContext{Height: height, ChainID: c.ChainID, Staking: c.validatorStaking})
 }
 
 // ReapplyGenesisCitizenRewardConfig copies genesis's Citizen reward

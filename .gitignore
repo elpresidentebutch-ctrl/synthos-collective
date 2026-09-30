@@ -99,3 +99,4 @@ scratch/
 scratch/*.local.txt
 scratch/*.local.json
 
+cometapp/vendor/
