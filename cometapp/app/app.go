@@ -481,3 +481,60 @@ func update(keyHex string, power uint64) (abcitypes.ValidatorUpdate, error) {
 	}
 	return abcitypes.Ed25519ValidatorUpdate(pub, int64(power)), nil
 }
+
+// Committed is a read-only view of the state after the last committed
+// block, for serving queries.
+type Committed struct {
+	ChainID   string
+	TxChainID uint64
+	Staking   chain.ValidatorStakingParams
+	Height    int64
+	AppHash   string // 0x hex
+	// State must not be modified or kept after the Read callback returns.
+	State *chain.State
+}
+
+// Read calls fn with the committed state while holding the app's lock, so
+// the view can't change underneath it. fn must be quick and must not call
+// back into the app. It returns false (without calling fn) before the
+// chain is initialized.
+func (a *App) Read(fn func(Committed)) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.committed == nil {
+		return false
+	}
+	fn(Committed{
+		ChainID: a.chainID, TxChainID: a.txChainID, Staking: a.staking,
+		Height: a.height, AppHash: "0x" + hex.EncodeToString(a.appHash), State: a.committed,
+	})
+	return true
+}
+
+// Simulate dry-runs tx against the committed state as if it were in the
+// next block, without changing anything, and reports what it would do.
+func (a *App) Simulate(tx chain.Tx) (chain.SimulationResult, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	res := chain.SimulationResult{TxID: tx.ID}
+	fail := func(err error) (chain.SimulationResult, error) {
+		res.Error = err.Error()
+		return res, err
+	}
+	if a.committed == nil {
+		return fail(errors.New("chain not initialized"))
+	}
+	if tx.ChainID != a.txChainID {
+		return fail(fmt.Errorf("wrong transaction chain ID: got %d, want %d", tx.ChainID, a.txChainID))
+	}
+	tmp := a.committed.Clone()
+	fromBefore, toBefore := tmp.Get(tx.From), tmp.Get(tx.To)
+	if err := chain.ApplyTransaction(tmp, tx, a.txContext(a.height+1, time.Now())); err != nil {
+		return fail(err)
+	}
+	res.Applied = true
+	res.FromBalanceBefore, res.FromBalanceAfter = fromBefore.Balance, tmp.Get(tx.From).Balance
+	res.ToBalanceBefore, res.ToBalanceAfter = toBefore.Balance, tmp.Get(tx.To).Balance
+	res.ResultingStateRoot = tmp.Root()
+	return res, nil
+}
