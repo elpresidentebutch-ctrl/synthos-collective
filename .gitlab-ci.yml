@@ -86,17 +86,21 @@ cometapp-deps:
 # Tests for the CometBFT-based node (cometapp/): the application against
 # ABCI calls, plus real in-process CometBFT networks (a single node with a
 # restart, and a 5-node network where a newcomer bonds into the validator
-# set and a validator goes offline). Runs when cometapp/ or the chain
-# rules it executes change.
+# set and a validator goes offline). Runs on every push to feat/cometbft*
+# branches, and elsewhere when cometapp/ or the chain rules change.
 cometapp-test:
   stage: test
   image: golang:1.25
   variables:
     CGO_ENABLED: "1" # the race detector needs cgo; the pipeline default is 0
   rules:
+    # Always on the migration branches; elsewhere only when the node or
+    # the chain rules it runs change.
+    - if: '$CI_COMMIT_BRANCH =~ /^feat\/cometbft/'
     - changes:
         - cometapp/**/*
         - internal/chain/**/*
+        - .gitlab-ci.yml
   script:
     - cd cometapp
     - go vet ./...
