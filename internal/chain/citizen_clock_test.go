@@ -21,6 +21,37 @@ func signedCitizenTx(t *testing.T, priv ed25519.PrivateKey, nonce, amount uint64
 	return tx
 }
 
+// TestCitizenClaimIgnoresUnsignedTimestamp: the reward clock must not be
+// something the sender (or anyone relaying the transaction -- Timestamp is
+// not covered by the signature) can set. A stake backdated to 1970 and
+// claimed "now" must not pay 56 years of rewards.
+func TestCitizenClaimIgnoresUnsignedTimestamp(t *testing.T) {
+	_, priv, _ := ed25519.GenerateKey(rand.Reader)
+	staker := AddressFromPublicKey(priv.Public().(ed25519.PublicKey))
+	treasury := Address("0xtreasury0000000000000000000000000000000")
+	s := NewState()
+	s.Set(staker, Account{Balance: 1_000_000_000})
+	s.Set(treasury, Account{Balance: 1_000_000_000_000})
+	s.TreasuryAddress = treasury
+	s.CitizenRewardRateBpsPerYear = 650
+
+	const blockTime = int64(1_790_000_000)
+	ctx := TxContext{Height: 10, BlockTime: blockTime}
+	if err := ApplyTransaction(s, signedCitizenTx(t, priv, 0, 100_000_000, "citizen_stake", 1), ctx); err != nil {
+		t.Fatal(err)
+	}
+	// Claimed in the very next block (10 seconds later) with a forged
+	// far-future timestamp.
+	ctx = TxContext{Height: 11, BlockTime: blockTime + 10}
+	if err := ApplyTransaction(s, signedCitizenTx(t, priv, 1, 1, "citizen_claim_rewards", blockTime+50*365*86400), ctx); err != nil {
+		t.Fatal(err)
+	}
+	// 10 seconds of 6.5%/year on 100,000,000 is about 2 units.
+	if paid := 1_000_000_000_000 - s.Get(treasury).Balance; paid > 10 {
+		t.Fatalf("treasury paid %d for a 10-second stake", paid)
+	}
+}
+
 // TestSubmitTxRejectsForgedCitizenTimestamps covers the legacy chain,
 // where the reward clock is still the transaction's timestamp: the
 // mempool refuses citizen transactions whose timestamp is far from now.

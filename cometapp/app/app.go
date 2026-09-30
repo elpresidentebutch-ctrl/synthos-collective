@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	abcitypes "github.com/cometbft/cometbft/abci/types"
 	cmted25519 "github.com/cometbft/cometbft/crypto/ed25519"
@@ -160,8 +161,16 @@ func decodeRoot(root string) ([]byte, error) {
 	return b, nil
 }
 
-func (a *App) txContext(height int64) chain.TxContext {
-	return chain.TxContext{Height: uint64(height), ChainID: a.chainID, Staking: a.staking}
+// txContext is what transactions in the block at height see. blockTime is
+// the block's consensus time: CometBFT's BFT time for a decided block
+// (every validator computes the same one), or the node's clock for a
+// mempool check. It replaces each transaction's own, unsigned timestamp.
+func (a *App) txContext(height int64, blockTime time.Time) chain.TxContext {
+	ctx := chain.TxContext{Height: uint64(height), ChainID: a.chainID, Staking: a.staking}
+	if !blockTime.IsZero() {
+		ctx.BlockTime = blockTime.Unix()
+	}
+	return ctx
 }
 
 // Info tells CometBFT how far this app has committed, so after a restart
@@ -249,7 +258,7 @@ func (a *App) CheckTx(_ context.Context, req *abcitypes.RequestCheckTx) (*abcity
 		return &abcitypes.ResponseCheckTx{Code: 1, Log: err.Error()}, nil
 	}
 	next := a.check.Clone()
-	if err := chain.ApplyTransaction(next, tx, a.txContext(a.height+1)); err != nil {
+	if err := chain.ApplyTransaction(next, tx, a.txContext(a.height+1, time.Now())); err != nil {
 		return &abcitypes.ResponseCheckTx{Code: 1, Log: err.Error()}, nil
 	}
 	a.check = next
@@ -266,7 +275,7 @@ func (a *App) FinalizeBlock(_ context.Context, req *abcitypes.RequestFinalizeBlo
 		return nil, errors.New("FinalizeBlock before InitChain")
 	}
 	st := a.committed.Clone()
-	ctx := a.txContext(req.Height)
+	ctx := a.txContext(req.Height, req.Time)
 
 	// Resolve the proposer against the state before this block's
 	// transactions, so a bond or slash inside the block can't change who

@@ -12,11 +12,18 @@ import "errors"
 
 // TxContext is what a transaction's effect depends on besides the state:
 // the height of the block it's in, the chain ID (part of what validators
-// sign), and the chain-wide staking rules.
+// sign), the chain-wide staking rules, and the block's time.
 type TxContext struct {
 	Height  uint64
 	ChainID string
 	Staking ValidatorStakingParams
+	// BlockTime is the consensus time of the block (unix seconds), which
+	// every validator agreed on. When set it replaces tx.Timestamp for
+	// the transaction's effect: Timestamp is not covered by the signature,
+	// so the sender -- or anyone relaying the transaction -- can put any
+	// value there, and time-based rules (citizen reward accrual) must not
+	// depend on it. Zero keeps the legacy behavior.
+	BlockTime int64
 }
 
 // ApplyTransaction applies tx to st exactly as a block at ctx.Height does
@@ -25,6 +32,9 @@ type TxContext struct {
 // after a failed transaction should apply it to a Clone and keep the clone
 // only on success.
 func ApplyTransaction(st *State, tx Tx, ctx TxContext) error {
+	if ctx.BlockTime != 0 {
+		tx.Timestamp = ctx.BlockTime // tx is a copy; the caller's is untouched
+	}
 	if txType := metadataValue(tx.Metadata, "type"); validatorTxTypes[txType] && ctx.Staking.EnabledAt(ctx.Height) {
 		if err := tx.Verify(); err != nil {
 			return err

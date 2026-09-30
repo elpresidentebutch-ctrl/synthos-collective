@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	abcitypes "github.com/cometbft/cometbft/abci/types"
 
@@ -456,5 +457,60 @@ func TestQueryAccountAndValidators(t *testing.T) {
 	res, _ = a.Query(context.Background(), &abcitypes.RequestQuery{Path: "validators"})
 	if res.Code != 0 || !strings.Contains(string(res.Value), f.vals[0].keyHex) {
 		t.Fatalf("validators query: %s", res.Value)
+	}
+}
+
+// TestCitizenRewardsUseConsensusBlockTime: a citizen claim is timed by the
+// block's BFT time, never by the timestamp inside the transaction (which
+// the signature does not cover). Staking and then claiming one 10-second
+// block later with a forged timestamp 50 years in the future pays about
+// 10 seconds of rewards, not 50 years' worth.
+func TestCitizenRewardsUseConsensusBlockTime(t *testing.T) {
+	f := newFixture(t, 10_000)
+	treasury := newAccount(t)
+	f.gen.Chain.Alloc[treasury.addr] = 1_000_000_000_000
+	f.gen.Chain.Alloc[f.user.addr] = 1_000_000_000
+	f.gen.Chain.Metadata = map[string]any{
+		"treasury_address":                 string(treasury.addr),
+		"citizen_reward_rate_bps_per_year": float64(650),
+	}
+	a, _ := f.newApp("")
+	prop := f.vals[0].consensusAddr(t)
+
+	forged := func(nonce, amount uint64, txType string, ts int64) []byte {
+		tx := chain.Tx{ChainID: testTxChainID, From: f.user.addr, To: f.user.addr, Amount: amount, Fee: 1, Nonce: nonce,
+			PublicKey: "0x" + hex.EncodeToString(f.user.pub),
+			Metadata:  []chain.KeyValuePair{{Key: "type", Value: txType}}, Timestamp: ts}
+		if err := tx.Sign(f.user.priv); err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := json.Marshal(tx)
+		return raw
+	}
+	t0 := time.Unix(1_790_000_000, 0).UTC()
+	finalize := func(h int64, at time.Time, txs ...[]byte) {
+		res, err := a.FinalizeBlock(context.Background(), &abcitypes.RequestFinalizeBlock{
+			Height: h, Time: at, Txs: txs, ProposerAddress: prop,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, r := range res.TxResults {
+			if r.Code != 0 {
+				t.Fatalf("block %d tx %d failed: %s", h, i, r.Log)
+			}
+		}
+		if _, err := a.Commit(context.Background(), &abcitypes.RequestCommit{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	finalize(1, t0, forged(0, 100_000_000, "citizen_stake", 1)) // stake "in 1970"
+	finalize(2, t0.Add(10*time.Second), forged(1, 1, "citizen_claim_rewards", t0.Unix()+50*365*86400))
+
+	if paid := 1_000_000_000_000 - balance(a, treasury.addr); paid > 10 {
+		t.Fatalf("treasury paid %d for a 10-second stake", paid)
+	}
+	if st := a.committed.GetCitizenStake(f.user.addr); st.LastClaimAt != t0.Unix()+10 {
+		t.Fatalf("reward clock = %d, want the block time %d", st.LastClaimAt, t0.Unix()+10)
 	}
 }
