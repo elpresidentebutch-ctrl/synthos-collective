@@ -1,0 +1,22 @@
+name: B12 Backend Smoke
+
+on:
+  push:
+    branches: [codex/wire-b12-live-backend]
+    paths:
+      - "website/b12-live-widget.js"
+      - ".github/workflows/b12-backend-smoke.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate widget syntax
+        run: node --check website/b12-live-widget.js
+      - name: Check deployed backend health
+        run: curl --fail --show-error --silent --max-time 15 https://synthos-site-backend.jamesishamwilliams.workers.dev/api/health
+      - name: Check network status contract
+        run: |
+          curl --fail --show-error --silent --max-time 30 https://synthos-site-backend.jamesishamwilliams.workers.dev/api/network/status > status.json
+          node -e "const s=require('./status.json'); for(const k of ['reachable','total','highest_height','validators']) if(!(k in s)) throw new Error('missing '+k); console.log(JSON.stringify({reachable:s.reachable,total:s.total,height:s.highest_height}))"
