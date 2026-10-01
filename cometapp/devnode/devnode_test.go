@@ -102,7 +102,7 @@ func newNetwork(t *testing.T, n, validators int, bond uint64) ([]*member, wallet
 	members := make([]*member, n)
 	var gvals []app.GenesisValidator
 	for i := range members {
-		m := &member{home: filepath.Join(t.TempDir(), fmt.Sprintf("node%d", i)), p2pPort: freePort(t), operator: newWallet(t)}
+		m := &member{home: filepath.Join(lenientTempDir(t), fmt.Sprintf("node%d", i)), p2pPort: freePort(t), operator: newWallet(t)}
 		key, err := ValidatorKey(m.home)
 		if err != nil {
 			t.Fatal(err)
@@ -244,7 +244,7 @@ func TestSingleNodeDevnet(t *testing.T) {
 	// of the stopped node's home directory -- exactly what a new process
 	// would find on disk.
 	m.stop()
-	restarted := filepath.Join(t.TempDir(), "node0-restarted")
+	restarted := filepath.Join(lenientTempDir(t), "node0-restarted")
 	if err := copyDir(m.home, restarted); err != nil {
 		t.Fatal(err)
 	}
@@ -367,7 +367,7 @@ func TestJoinFromGenesisFile(t *testing.T) {
 	v.submit(t, user.sign(t, newWallet(t).addr, 0, 77, 1, nil))
 
 	src := filepath.Join(v.home, "config", "genesis.json")
-	joiner := &member{home: filepath.Join(t.TempDir(), "joiner"), p2pPort: freePort(t), operator: newWallet(t)}
+	joiner := &member{home: filepath.Join(lenientTempDir(t), "joiner"), p2pPort: freePort(t), operator: newWallet(t)}
 	if _, err := InstallGenesis(joiner.home, src); err != nil {
 		t.Fatal(err)
 	}
@@ -378,8 +378,15 @@ func TestJoinFromGenesisFile(t *testing.T) {
 	}
 	joiner.start(t, []*member{v})
 	joiner.waitHeight(t, v.height(t), 30*time.Second)
-	if got, want := joiner.balance(t, user.addr), v.balance(t, user.addr); got != want {
-		t.Fatalf("joiner sees balance %d, validator %d", got, want)
+	// While catching up, a node stores a block just before executing it,
+	// so its reported height can run one block ahead of its state.
+	want := v.balance(t, user.addr)
+	deadline := time.Now().Add(20 * time.Second)
+	for joiner.balance(t, user.addr) != want {
+		if time.Now().After(deadline) {
+			t.Fatalf("joiner sees balance %d, validator %d", joiner.balance(t, user.addr), want)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 
 	// A home that already runs another chain is refused.
@@ -387,4 +394,16 @@ func TestJoinFromGenesisFile(t *testing.T) {
 	if _, err := InstallGenesis(v.home, filepath.Join(other[0].home, "config", "genesis.json")); err == nil {
 		t.Fatal("installed a different chain's genesis over a running node")
 	}
+}
+
+// lenientTempDir is t.TempDir without failing the test when cleanup finds
+// a file CometBFT is still flushing (its address book) as nodes stop.
+func lenientTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "devnode-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
 }
