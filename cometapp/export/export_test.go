@@ -245,3 +245,45 @@ func TestLoadRejectsNonState(t *testing.T) {
 		t.Fatal("file without a state accepted")
 	}
 }
+
+func TestFaucetFundingMovesCoinsWithoutCreatingAny(t *testing.T) {
+	f := savedLegacyNode(t)
+	l, err := Load(f.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, _ := Summarize(l.State)
+	faucet := chain.Address("0xfa0cefa0cefa0cefa0cefa0cefa0cefa0cefa0ce")
+	o := f.options()
+	o.Faucet = &FaucetFunding{Address: faucet, Amount: 1_000_000, From: f.treasury}
+	g, err := Genesis(l, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Check(g); err != nil {
+		t.Fatal(err)
+	}
+	if got := g.InitialState.Get(faucet).Balance; got != 1_000_000 {
+		t.Fatalf("faucet balance %d", got)
+	}
+	if got := g.InitialState.Get(f.treasury).Balance; got != 13_000_000_000-1_000_000 {
+		t.Fatalf("source balance %d", got)
+	}
+	after, _ := Summarize(g.InitialState)
+	if after.Held != before.Held {
+		t.Fatalf("total changed: %d -> %d", before.Held, after.Held)
+	}
+	if l.State.Get(f.treasury).Balance != 13_000_000_000 {
+		t.Fatal("export changed the loaded legacy state")
+	}
+
+	o.Faucet = &FaucetFunding{Address: faucet, Amount: 20_000_000_000, From: f.treasury}
+	if _, err := Genesis(l, o); err == nil {
+		t.Fatal("funded a faucet beyond the source balance")
+	}
+	o.Faucet = &FaucetFunding{Address: faucet, Amount: 1, From: f.treasury}
+	o.TxChainID, o.AllowSameTxChainID = legacyTxChainID, true
+	if _, err := Genesis(l, o); err == nil {
+		t.Fatal("faucet allowed on the mainnet switch")
+	}
+}

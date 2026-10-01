@@ -20,6 +20,7 @@
 //	                                         run the node; --api also serves the
 //	                                         original synthosd HTTP API
 //	                                         (/status, /account, /submitTx, ...)
+//	synthos-comet faucet-key --out FILE      make (or show) a test network faucet key
 //	synthos-comet export-genesis --legacy PATH --chain-id ID --tx-chain-id N
 //	                    --validators FILE --out FILE [--staking FILE]
 //	                    [--legacy-genesis FILE] [--mainnet-switch]
@@ -29,6 +30,8 @@
 package main
 
 import (
+	"crypto/ed25519"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -59,6 +62,10 @@ func main() {
 		exportGenesis(args)
 		return
 	}
+	if cmd == "faucet-key" {
+		faucetKey(args)
+		return
+	}
 	fs := flag.NewFlagSet(cmd, flag.ExitOnError)
 	home := fs.String("home", "", "node home directory (required)")
 	genesisFile := fs.String("genesis", "", "SYNTHOS app genesis JSON (init)")
@@ -76,6 +83,8 @@ func main() {
 	emptyEvery := fs.Duration("empty-block-interval", 10*time.Second, "make a block at least this often when idle; transactions are still included at once; 0 = every second (start)")
 	logLevel := fs.String("log-level", "main:info,*:error", "log detail, e.g. info, debug, or main:info,*:error (start)")
 	genesisPath := fs.String("genesis-file", "", "the network's genesis.json to join (join)")
+	faucetKeyFile := fs.String("faucet-key", "", "test networks only: serve /faucet, paying from this key file (start)")
+	faucetAmount := fs.Uint64("faucet-amount", 10_000, "SYN per faucet request (start)")
 	_ = fs.Parse(args)
 	if *home == "" {
 		fail("--home is required")
@@ -122,7 +131,14 @@ func main() {
 		check(err)
 		var srv *http.Server
 		if *api != "" {
-			h := (&legacyapi.Server{App: a, Comet: local.New(n), TrustForwardedFor: *trustProxy}).Handler()
+			srvAPI := &legacyapi.Server{App: a, Comet: local.New(n), TrustForwardedFor: *trustProxy}
+			if *faucetKeyFile != "" {
+				key, addr, err := readFaucetKey(*faucetKeyFile)
+				check(err)
+				srvAPI.Faucet = &legacyapi.Faucet{Key: key, Amount: *faucetAmount}
+				mainLog.Info("faucet enabled", "address", addr, "amount", *faucetAmount)
+			}
+			h := srvAPI.Handler()
 			srv = &http.Server{Addr: *api, Handler: h, ReadHeaderTimeout: 10 * time.Second}
 			go func() {
 				if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -168,6 +184,9 @@ func exportGenesis(args []string) {
 	legacyGenesisFile := fs.String("legacy-genesis", "", "the legacy chain's genesis.json, to restore treasury/founder/reward settings a saved state lost")
 	mainnetSwitch := fs.Bool("mainnet-switch", false, "keep the legacy transaction chain ID (only for replacing the old mainnet)")
 	out := fs.String("out", "", "where to write the new app genesis JSON (required)")
+	faucetAddr := fs.String("faucet", "", "test networks: fund this faucet address at genesis")
+	faucetFund := fs.Uint64("faucet-amount", 0, "SYN to move to the faucet")
+	faucetFrom := fs.String("faucet-from", "", "account the faucet's SYN are moved from")
 	_ = fs.Parse(args)
 	if *legacy == "" || *chainID == "" || *txChainID == 0 || *validatorsFile == "" || *out == "" {
 		fail("export-genesis needs --legacy, --chain-id, --tx-chain-id, --validators and --out")
@@ -188,13 +207,20 @@ func exportGenesis(args []string) {
 		readJSON(*legacyGenesisFile, &lg)
 		o.LegacyGenesis = &lg
 	}
+	if *faucetAddr != "" {
+		o.Faucet = &export.FaucetFunding{Address: chain.Address(*faucetAddr), Amount: *faucetFund, From: chain.Address(*faucetFrom)}
+	}
 	g, err := export.Genesis(l, o)
 	check(err)
 	appHash, err := export.Check(g)
 	check(err)
 	after, err := export.Summarize(g.InitialState)
 	check(err)
-	if after.Held != before.Held || after.Accounts != before.Accounts {
+	newAccounts := 0
+	if o.Faucet != nil && l.State.Get(o.Faucet.Address).Balance == 0 {
+		newAccounts = 1 // the faucet's account is new
+	}
+	if after.Held != before.Held || after.Accounts != before.Accounts+newAccounts {
 		fail(fmt.Sprintf("totals changed during export (before %+v, after %+v)", before, after))
 	}
 	raw, err := json.MarshalIndent(g, "", "  ")
@@ -222,13 +248,73 @@ New chain      %s (tx chain ID %d)
   validators   %d
   staking      %s
   app hash     %s
+  faucet       %s
 Wrote %s
 `, l.ChainID, l.TxChainID, l.Height, verified, before.Accounts, before.Balances, before.CitizenStaked,
 		before.Held, before.MaxSupply, before.Burned, after.Treasury, after.TreasuryBalance, after.Founder,
-		after.CitizenRateBps, g.Chain.ChainID, g.Chain.TxChainID, len(g.Validators), stakingJSON, appHash, *out)
+		after.CitizenRateBps, g.Chain.ChainID, g.Chain.TxChainID, len(g.Validators), stakingJSON, appHash, faucetLine(o.Faucet), *out)
 	if after.Treasury == "" || after.Founder == "" || after.CitizenRateBps == 0 {
 		fmt.Fprintln(os.Stderr, "WARNING: treasury, founder or citizen rate is empty; pass --legacy-genesis to restore them")
 	}
+}
+
+type faucetKeyFileJSON struct {
+	Address    chain.Address `json:"address"`
+	PublicKey  string        `json:"public_key"`
+	PrivateKey string        `json:"private_key"`
+	Note       string        `json:"note"`
+}
+
+func faucetKey(args []string) {
+	fs := flag.NewFlagSet("faucet-key", flag.ExitOnError)
+	out := fs.String("out", "", "key file to create, or to read if it exists (required)")
+	_ = fs.Parse(args)
+	if *out == "" {
+		fail("--out is required")
+	}
+	if _, err := os.Stat(*out); err == nil {
+		_, addr, err := readFaucetKey(*out)
+		check(err)
+		fmt.Println(addr)
+		return
+	}
+	key, addr, err := legacyapi.NewFaucetKey()
+	check(err)
+	raw, err := json.MarshalIndent(faucetKeyFileJSON{
+		Address: addr, PublicKey: "0x" + hex.EncodeToString(key.Public().(ed25519.PublicKey)),
+		PrivateKey: hex.EncodeToString(key), Note: "Test network faucet key. Never send real SYN to this address.",
+	}, "", "  ")
+	check(err)
+	check(os.WriteFile(*out, raw, 0o600))
+	fmt.Println(addr)
+}
+
+func readFaucetKey(path string) (ed25519.PrivateKey, chain.Address, error) {
+	var f faucetKeyFileJSON
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, "", err
+	}
+	if err := json.Unmarshal(raw, &f); err != nil {
+		return nil, "", fmt.Errorf("%s: %w", path, err)
+	}
+	b, err := hex.DecodeString(f.PrivateKey)
+	if err != nil || len(b) != ed25519.PrivateKeySize {
+		return nil, "", fmt.Errorf("%s: bad private key", path)
+	}
+	key := ed25519.PrivateKey(b)
+	addr := chain.AddressFromPublicKey(key.Public().(ed25519.PublicKey))
+	if f.Address != "" && f.Address != addr {
+		return nil, "", fmt.Errorf("%s: address does not match the key", path)
+	}
+	return key, addr, nil
+}
+
+func faucetLine(f *export.FaucetFunding) string {
+	if f == nil {
+		return "none"
+	}
+	return fmt.Sprintf("%s gets %d SYN moved from %s", f.Address, f.Amount, f.From)
 }
 
 func readJSON(path string, v any) {
