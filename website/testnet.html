@@ -170,6 +170,7 @@
     del(k) { try { localStorage.removeItem(k); } catch {} },
   };
   let api = "", txChainId = 20261001, wallet = null;
+  let lookedUp = null; // address in the lookup box, kept up to date by refresh()
   const fmt = (n) => (n == null ? "—" : Number(n).toLocaleString("en-US"));
   const short = (h) => (h && h.length > 18 ? h.slice(0, 10) + "…" + h.slice(-6) : h || "—");
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -227,21 +228,35 @@
         : `<tr><td colspan="4" class="muted">none</td></tr>`;
       get("/economy/stats").then((e) => { $("treasury").textContent = fmt(e.treasury_balance); }).catch(() => {});
       if (wallet) refreshWallet();
+      refreshLookup();
     } catch (e) {
       setLive(false, "offline");
       $("blocks").innerHTML = `<tr><td colspan="5" class="muted">Can't reach the test network at this address right now (${esc(e.message)}). The node may be restarting, or its address changed.</td></tr>`;
     }
   }
 
+  // Re-reads the looked-up account on every refresh without hiding the
+  // panel or clearing messages, so it follows new blocks without flicker.
+  async function refreshLookup() {
+    if (!lookedUp) return;
+    try {
+      const q = encodeURIComponent(lookedUp);
+      const [acc, cit] = await Promise.all([get("/account?address=" + q), get("/citizen/status?address=" + q)]);
+      $("lBal").textContent = fmt(acc.balance) + " SYN"; $("lNonce").textContent = acc.nonce;
+      $("lStake").textContent = fmt(cit.stake && cit.stake.amount) + " SYN"; $("lPending").textContent = fmt(cit.pending_rewards) + " SYN";
+    } catch { /* keep the last values; the live badge already shows offline */ }
+  }
   async function lookup() {
     const a = $("lookupAddr").value.trim();
     $("lookupMsg").textContent = ""; $("lookupMsg").className = "msg"; $("lookupOut").hidden = true;
+    lookedUp = null;
     if (!/^0x[0-9a-fA-F]{40}$/.test(a)) { $("lookupMsg").textContent = "Enter a 0x address with 40 hex characters."; $("lookupMsg").className = "msg err"; return; }
     try {
       const [acc, cit] = await Promise.all([get("/account?address=" + encodeURIComponent(a)), get("/citizen/status?address=" + encodeURIComponent(a))]);
       $("lBal").textContent = fmt(acc.balance) + " SYN"; $("lNonce").textContent = acc.nonce;
       $("lStake").textContent = fmt(cit.stake && cit.stake.amount) + " SYN"; $("lPending").textContent = fmt(cit.pending_rewards) + " SYN";
       $("lookupOut").hidden = false;
+      lookedUp = a;
     } catch (e) { $("lookupMsg").textContent = e.message; $("lookupMsg").className = "msg err"; }
   }
 
