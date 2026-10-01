@@ -135,6 +135,11 @@
         <dt>Balance</dt><dd class="mono" id="wBal">—</dd>
         <dt>Next nonce</dt><dd class="mono" id="wNonce">—</dd>
       </dl>
+      <div class="form" id="faucetRow" hidden>
+        <button id="faucetBtn">Get test SYN</button>
+        <span class="muted" style="align-self:center;font-size:.85rem" id="faucetNote"></span>
+      </div>
+      <div class="msg" id="faucetMsg"></div>
       <div class="form">
         <input id="sendTo" placeholder="send to 0x…" />
         <input id="sendAmount" class="small" placeholder="amount" inputmode="numeric" />
@@ -250,6 +255,27 @@
     try { const a = await get("/account?address=" + wallet.address); $("wBal").textContent = fmt(a.balance) + " SYN"; $("wNonce").textContent = a.nonce; }
     catch { $("wBal").textContent = "—"; }
   }
+  async function checkFaucet() {
+    try {
+      const f = await get("/faucet");
+      $("faucetBtn").textContent = "Get " + fmt(f.amount) + " test SYN";
+      $("faucetNote").textContent = "free, once a day";
+      $("faucetRow").hidden = false;
+    } catch { $("faucetRow").hidden = true; }
+  }
+  async function useFaucet() {
+    const msg = $("faucetMsg"); msg.className = "msg"; msg.textContent = "";
+    $("faucetBtn").disabled = true;
+    try {
+      const r = await fetch(api + "/faucet", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ address: wallet.address }) });
+      const text = await r.text();
+      if (!r.ok) throw new Error(text.trim() || "HTTP " + r.status);
+      const res = JSON.parse(text);
+      msg.className = "msg ok"; msg.textContent = fmt(res.amount) + " test SYN are on the way. They arrive with the next block.";
+      setTimeout(refresh, 3000); setTimeout(refresh, 11000);
+    } catch (e) { msg.className = "msg err"; msg.textContent = e.message; }
+    finally { $("faucetBtn").disabled = false; }
+  }
   async function createWallet() {
     try { wallet = await SynthosTx.generateKey(); }
     catch { $("cryptoNote").textContent = "This browser can't make Ed25519 keys. Use a current Chrome, Edge, Firefox or Safari."; return; }
@@ -284,13 +310,14 @@
   async function useApi(u) {
     api = cleanApi(u); $("apiInput").value = api; $("apiShown").textContent = api || "none";
     await refresh();
+    checkFaucet();
   }
 
   $("apiUse").onclick = () => useApi($("apiInput").value);
   $("apiInput").addEventListener("keydown", (e) => { if (e.key === "Enter") useApi($("apiInput").value); });
   $("lookupBtn").onclick = lookup;
   $("lookupAddr").addEventListener("keydown", (e) => { if (e.key === "Enter") lookup(); });
-  $("createWallet").onclick = createWallet; $("sendBtn").onclick = send;
+  $("createWallet").onclick = createWallet; $("sendBtn").onclick = send; $("faucetBtn").onclick = useFaucet;
   $("backupWallet").onclick = backup; $("forgetWallet").onclick = forget;
 
   loadWallet();

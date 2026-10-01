@@ -1,6 +1,6 @@
 {
-  "network": "synthos-testnet-1",
-  "tx_chain_id": 20261001,
+  "network": "synthos-testnet-2",
+  "tx_chain_id": 20261002,
   "api_url": "https://modeling-simpsons-stephanie-managed.trycloudflare.com",
   "note": "api_url is the test network node's public address (Documents\\synthos-testnet\\public-url.txt on the node's PC). Update it here when the tunnel address changes."
 }
