@@ -184,6 +184,18 @@ type Options struct {
 	// address and citizen reward rate if the saved state lost them (the
 	// legacy node re-applies them from its genesis file at every start).
 	LegacyGenesis *chain.Genesis
+	// Faucet, when set, moves Faucet.Amount SYN from Faucet.From to
+	// Faucet.Address in the new chain's starting state, so a test network
+	// faucet has coins without anyone's real key. Nothing is created: the
+	// total is unchanged. Only allowed with a new transaction chain ID.
+	Faucet *FaucetFunding
+}
+
+// FaucetFunding funds a test network faucet at genesis.
+type FaucetFunding struct {
+	Address chain.Address
+	Amount  uint64
+	From    chain.Address
 }
 
 // Genesis builds the new chain's genesis from a legacy state.
@@ -220,6 +232,26 @@ func Genesis(l *Legacy, o Options) (app.Genesis, error) {
 		if st.GovernanceFounder == "" {
 			st.GovernanceFounder = ref.GovernanceFounder
 		}
+	}
+	if f := o.Faucet; f != nil {
+		if o.AllowSameTxChainID {
+			return app.Genesis{}, errors.New("a faucet is for test networks only, not the mainnet switch")
+		}
+		if f.Amount == 0 || f.Address == "" || f.From == "" || f.Address == f.From {
+			return app.Genesis{}, errors.New("faucet needs an address, an amount and a different account to fund it from")
+		}
+		src := st.Get(f.From)
+		if src.Balance < f.Amount {
+			return app.Genesis{}, fmt.Errorf("faucet source %s holds %d SYN, less than %d", f.From, src.Balance, f.Amount)
+		}
+		dst := st.Get(f.Address)
+		if dst.Balance+f.Amount < dst.Balance {
+			return app.Genesis{}, errors.New("faucet balance overflows")
+		}
+		src.Balance -= f.Amount
+		dst.Balance += f.Amount
+		st.Set(f.From, src)
+		st.Set(f.Address, dst)
 	}
 	vals := append([]app.GenesisValidator(nil), o.Validators...)
 	sort.Slice(vals, func(i, j int) bool { return vals[i].Operator < vals[j].Operator })

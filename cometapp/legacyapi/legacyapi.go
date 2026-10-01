@@ -57,6 +57,8 @@ type Server struct {
 	// address. Only set it behind a proxy that overwrites that header
 	// (Render, a load balancer), or clients can pick their own key.
 	TrustForwardedFor bool
+	// Faucet, when set, serves GET/POST /faucet (test networks only).
+	Faucet *Faucet
 
 	limiter *limiter
 }
@@ -98,6 +100,7 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc(path, h)
 	}
 	mux.HandleFunc("/submitTx", s.submit(""))
+	mux.HandleFunc("/faucet", s.faucet)
 	mux.HandleFunc("/simulate/tx", s.simulateTx)
 	for path, txType := range map[string]string{
 		"/citizen/stake":         "citizen_stake",
@@ -758,6 +761,11 @@ func (s *Server) rateLimit(next http.Handler) http.Handler {
 
 func (s *Server) clientKey(r *http.Request) string {
 	if s.TrustForwardedFor {
+		// Cloudflare sets this to the real client and overwrites any copy
+		// the client sent; X-Forwarded-For is for other proxies.
+		if cf := strings.TrimSpace(r.Header.Get("Cf-Connecting-Ip")); cf != "" {
+			return cf
+		}
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 			return strings.TrimSpace(strings.Split(xff, ",")[0])
 		}

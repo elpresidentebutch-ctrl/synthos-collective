@@ -69,7 +69,9 @@ type env struct {
 	founder  wallet
 }
 
-func start(t *testing.T, governance bool) *env {
+func start(t *testing.T, governance bool) *env { t.Helper(); return startWith(t, governance, nil) }
+
+func startWith(t *testing.T, governance bool, faucet *Faucet) *env {
 	t.Helper()
 	// Not t.TempDir: CometBFT can still be flushing a file into the home
 	// directory as the test ends, which makes t.TempDir's cleanup fail.
@@ -92,6 +94,9 @@ func start(t *testing.T, governance bool) *env {
 			EpochBlocks: 3, SlashFractionBps: 500, ReporterRewardBps: 1_000},
 		Validators: []app.GenesisValidator{{Operator: e.operator.addr, ConsensusPubKey: key, SelfBond: 10_000, Moniker: "entry-1"}},
 	}
+	if faucet != nil {
+		g.Chain.Alloc[faucet.address()] = 1_000_000
+	}
 	if governance {
 		g.Chain.Metadata = map[string]any{
 			"treasury_address":                 string(e.treasury.addr),
@@ -113,7 +118,7 @@ func start(t *testing.T, governance bool) *env {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = n.Stop(); n.Wait() })
-	srv := httptest.NewServer((&Server{App: a, Comet: local.New(n), RequestsPerSecond: -1}).Handler())
+	srv := httptest.NewServer((&Server{App: a, Comet: local.New(n), RequestsPerSecond: -1, Faucet: faucet, TrustForwardedFor: faucet != nil}).Handler())
 	t.Cleanup(srv.Close)
 	e.url = srv.URL
 	e.waitHeight(2)
@@ -397,5 +402,70 @@ func TestLimiterRefills(t *testing.T) {
 	}
 	if !l.allow("a", now.Add(600*time.Millisecond)) {
 		t.Fatal("bucket did not refill")
+	}
+}
+
+func TestFaucet(t *testing.T) {
+	key, addr, err := NewFaucetKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := startWith(t, false, &Faucet{Key: key, Amount: 5_000, MinInterval: time.Millisecond})
+
+	var info struct {
+		Address chain.Address `json:"address"`
+		Balance uint64        `json:"balance"`
+		Amount  uint64        `json:"amount"`
+	}
+	e.get("/faucet", &info)
+	if info.Address != addr || info.Balance != 1_000_000 || info.Amount != 5_000 {
+		t.Fatalf("GET /faucet = %+v", info)
+	}
+
+	drip := func(to chain.Address, client string) (int, string) {
+		raw, _ := json.Marshal(map[string]string{"address": string(to)})
+		req, _ := http.NewRequest(http.MethodPost, e.url+"/faucet", bytes.NewReader(raw))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Cf-Connecting-Ip", client)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		body, _ := io.ReadAll(res.Body)
+		return res.StatusCode, string(body)
+	}
+
+	// Two different people, back to back: both paid, consecutive nonces.
+	a, b := newWallet(t).addr, newWallet(t).addr
+	if code, body := drip(a, "1.1.1.1"); code != 200 {
+		t.Fatalf("first drip: %d %s", code, body)
+	}
+	time.Sleep(5 * time.Millisecond)
+	if code, body := drip(b, "2.2.2.2"); code != 200 {
+		t.Fatalf("second drip: %d %s", code, body)
+	}
+	e.waitBalance(a, 5_000)
+	e.waitBalance(b, 5_000)
+
+	// Same address again, or same person with a new address: refused.
+	if code, _ := drip(a, "3.3.3.3"); code != http.StatusTooManyRequests {
+		t.Fatalf("repeat address: HTTP %d", code)
+	}
+	if code, _ := drip(newWallet(t).addr, "1.1.1.1"); code != http.StatusTooManyRequests {
+		t.Fatalf("repeat client: HTTP %d", code)
+	}
+	if code, _ := drip("0xnot-an-address", "4.4.4.4"); code != http.StatusBadRequest {
+		t.Fatalf("bad address: HTTP %d", code)
+	}
+	if got := e.balance(addr); got != 1_000_000-2*(5_000+1) {
+		t.Fatalf("faucet balance %d", got)
+	}
+}
+
+func TestNoFaucetByDefault(t *testing.T) {
+	e := start(t, false)
+	if code := e.get("/faucet", nil); code != http.StatusNotFound {
+		t.Fatalf("GET /faucet without a faucet: HTTP %d", code)
 	}
 }
