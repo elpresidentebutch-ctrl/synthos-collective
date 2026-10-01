@@ -9,7 +9,13 @@
 //	synthos-comet init --home DIR --genesis FILE
 //	                                         write CometBFT genesis from a SYNTHOS
 //	                                         app genesis (see app.Genesis)
+//	synthos-comet join --home DIR --genesis-file FILE
+//	                                         set up a node for an existing network
+//	                                         from its genesis.json
 //	synthos-comet start --home DIR [--p2p ADDR] [--rpc ADDR] [--peers LIST]
+//	                    [--external-address HOST:PORT] [--seeds LIST]
+//	                    [--private-peer-ids IDS] [--no-pex] [--moniker NAME]
+//	                    [--empty-block-interval DUR] [--log-level LEVEL]
 //	                    [--api ADDR] [--trust-proxy]
 //	                                         run the node; --api also serves the
 //	                                         original synthosd HTTP API
@@ -33,6 +39,7 @@ import (
 	"syscall"
 	"time"
 
+	cmtflags "github.com/cometbft/cometbft/libs/cli/flags"
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/rpc/client/local"
 
@@ -60,6 +67,15 @@ func main() {
 	peers := fs.String("peers", "", "persistent peers id@host:port,... (start)")
 	api := fs.String("api", "", "listen address for the synthosd-compatible HTTP API, e.g. 0.0.0.0:8080; empty disables it (start)")
 	trustProxy := fs.Bool("trust-proxy", false, "rate-limit API clients by X-Forwarded-For; only behind a proxy that sets it (start)")
+	external := fs.String("external-address", "", "public host:port other nodes dial to reach this one (start)")
+	seeds := fs.String("seeds", "", "seed nodes id@host:port,... to discover peers from (start)")
+	privateIDs := fs.String("private-peer-ids", "", "node IDs never gossiped to other peers, e.g. validators behind this entry node (start)")
+	noPex := fs.Bool("no-pex", false, "no peer discovery: talk only to --peers (validators behind an entry node) (start)")
+	moniker := fs.String("moniker", "", "this node's name shown to peers (start)")
+	localNet := fs.Bool("local", false, "allow several nodes on one machine / private addresses (start)")
+	emptyEvery := fs.Duration("empty-block-interval", 10*time.Second, "make a block at least this often when idle; transactions are still included at once; 0 = every second (start)")
+	logLevel := fs.String("log-level", "main:info,*:error", "log detail, e.g. info, debug, or main:info,*:error (start)")
+	genesisPath := fs.String("genesis-file", "", "the network's genesis.json to join (join)")
 	_ = fs.Parse(args)
 	if *home == "" {
 		fail("--home is required")
@@ -84,10 +100,24 @@ func main() {
 		check(json.Unmarshal(raw, &g))
 		check(devnode.WriteGenesis(*home, g, time.Now().UTC()))
 		fmt.Println("wrote", *home+"/config/genesis.json")
+	case "join":
+		if *genesisPath == "" {
+			fail("--genesis-file is required")
+		}
+		doc, err := devnode.InstallGenesis(*home, *genesisPath)
+		check(err)
+		id, err := devnode.NodeID(*home)
+		check(err)
+		fmt.Printf("joined %s\nnode id %s\n", doc.ChainID, id)
 	case "start":
-		logger := log.NewTMLogger(log.NewSyncWriter(os.Stdout))
+		logger, err := cmtflags.ParseLogLevel(*logLevel, log.NewTMLogger(log.NewSyncWriter(os.Stdout)), "info")
+		check(err)
+		mainLog := logger.With("module", "main")
 		n, a, err := devnode.Start(*home, devnode.Options{
 			P2PAddr: *p2p, RPCAddr: *rpc, PersistentPeers: *peers, Logger: logger,
+			ExternalAddress: *external, Seeds: *seeds, PrivatePeerIDs: *privateIDs,
+			NoPeerExchange: *noPex, Moniker: *moniker, LocalNetwork: *localNet,
+			EmptyBlockInterval: *emptyEvery,
 		})
 		check(err)
 		var srv *http.Server
@@ -100,7 +130,7 @@ func main() {
 					os.Exit(1)
 				}
 			}()
-			logger.Info("synthosd-compatible API listening", "addr", *api)
+			mainLog.Info("synthosd-compatible API listening", "addr", *api)
 		}
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
@@ -116,12 +146,13 @@ func main() {
 }
 
 // DefaultStaking are the validator rules export-genesis uses when no
-// --staking file is given. Amounts are whole SYN; heights assume
-// CometBFT's roughly one-second blocks.
+// --staking file is given. Amounts are whole SYN. Heights are in blocks:
+// one a second while transactions flow, one per --empty-block-interval
+// when idle, so 86,400 blocks is between one and about ten days.
 var DefaultStaking = chain.ValidatorStakingParams{
 	EnabledFromHeight: 1,
 	MinSelfBond:       10_000,
-	UnbondingBlocks:   86_400, // about a day
+	UnbondingBlocks:   86_400,
 	EpochBlocks:       100,
 	SlashFractionBps:  500,   // 5% for double-signing
 	ReporterRewardBps: 1_000, // 10% of a slash to whoever proves it
