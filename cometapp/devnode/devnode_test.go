@@ -145,6 +145,7 @@ func (m *member) start(t *testing.T, peers []*member) {
 		P2PAddr:         fmt.Sprintf("tcp://127.0.0.1:%d", m.p2pPort),
 		PersistentPeers: strings.Join(list, ","),
 		BlockInterval:   blockEvery,
+		LocalNetwork:    true,
 	})
 	if err != nil {
 		t.Fatalf("start %s: %v", m.home, err)
@@ -354,4 +355,36 @@ func copyDir(src, dst string) error {
 		}
 		return out.Close()
 	})
+}
+
+// TestJoinFromGenesisFile: a new node joins an existing network by
+// copying its genesis.json byte for byte, then syncs from a peer.
+func TestJoinFromGenesisFile(t *testing.T) {
+	members, user := newNetwork(t, 1, 1, 10_000)
+	v := members[0]
+	v.start(t, nil)
+	v.waitHeight(t, 2, 20*time.Second)
+	v.submit(t, user.sign(t, newWallet(t).addr, 0, 77, 1, nil))
+
+	src := filepath.Join(v.home, "config", "genesis.json")
+	joiner := &member{home: filepath.Join(t.TempDir(), "joiner"), p2pPort: freePort(t), operator: newWallet(t)}
+	if _, err := InstallGenesis(joiner.home, src); err != nil {
+		t.Fatal(err)
+	}
+	a, _ := os.ReadFile(src)
+	b, _ := os.ReadFile(filepath.Join(joiner.home, "config", "genesis.json"))
+	if string(a) != string(b) {
+		t.Fatal("joined genesis is not byte-identical")
+	}
+	joiner.start(t, []*member{v})
+	joiner.waitHeight(t, v.height(t), 30*time.Second)
+	if got, want := joiner.balance(t, user.addr), v.balance(t, user.addr); got != want {
+		t.Fatalf("joiner sees balance %d, validator %d", got, want)
+	}
+
+	// A home that already runs another chain is refused.
+	other, _ := newNetwork(t, 1, 1, 10_000)
+	if _, err := InstallGenesis(v.home, filepath.Join(other[0].home, "config", "genesis.json")); err == nil {
+		t.Fatal("installed a different chain's genesis over a running node")
+	}
 }

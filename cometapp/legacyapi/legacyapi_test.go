@@ -108,7 +108,7 @@ func start(t *testing.T, governance bool) *env {
 	}
 	p2p := l.Addr().String()
 	l.Close()
-	n, a, err := devnode.Start(home, devnode.Options{P2PAddr: "tcp://" + p2p, BlockInterval: 150 * time.Millisecond})
+	n, a, err := devnode.Start(home, devnode.Options{P2PAddr: "tcp://" + p2p, BlockInterval: 150 * time.Millisecond, LocalNetwork: true})
 	if err != nil {
 		t.Fatal(err)
 	}
