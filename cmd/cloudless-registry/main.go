@@ -245,6 +245,8 @@ func main() {
 	mux.HandleFunc("/chain.html", s.handleWebsitePage)
 	mux.HandleFunc("/explorer", s.handleWebsitePage)
 	mux.HandleFunc("/explorer.html", s.handleWebsitePage)
+	mux.HandleFunc("/testnet", s.handleWebsitePage)
+	mux.HandleFunc("/testnet.html", s.handleWebsitePage)
 	mux.HandleFunc("/bridge", s.handleWebsitePage)
 	mux.HandleFunc("/bridge.html", s.handleWebsitePage)
 	mux.HandleFunc("/dex", s.handleWebsitePage)
@@ -1739,6 +1741,9 @@ func (s *server) handleWebsitePage(w http.ResponseWriter, r *http.Request) {
 	if name == "api" {
 		name = "api.html"
 	}
+	if name == "testnet" {
+		name = "testnet.html"
+	}
 	if name == "" || strings.Contains(name, "/") || !strings.HasSuffix(name, ".html") {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
@@ -1774,6 +1779,7 @@ func (s *server) handleSitemapXML(w http.ResponseWriter, r *http.Request) {
 		"/bridge",
 		"/dex",
 		"/api",
+		"/testnet",
 	}
 	now := time.Now().UTC().Format("2006-01-02")
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")

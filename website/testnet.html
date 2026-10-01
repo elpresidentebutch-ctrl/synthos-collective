@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SYNTHOS Test Network</title>
+<meta name="description" content="Live view of the SYNTHOS test network running on CometBFT: blocks, accounts, validators, and a test wallet." />
+<style>
+  :root{
+    --bg:#07090d; --panel:rgba(12,17,26,.72); --line:rgba(255,255,255,.12);
+    --text:#f5f8ff; --muted:#9aa9bd; --green:#31d39f; --cyan:#73d7ff; --warn:#f2c45d; --red:#ff7b7b;
+    font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+    color-scheme:dark;
+  }
+  *{box-sizing:border-box}
+  [hidden]{display:none !important}
+  body{margin:0;min-height:100vh;background:
+    radial-gradient(1200px 480px at 50% -120px,rgba(242,196,93,.08),transparent 70%),var(--bg);
+    color:var(--text)}
+  a{color:var(--cyan)}
+  header{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;
+    gap:12px;padding:14px clamp(16px,4vw,40px);border-bottom:1px solid var(--line);
+    background:rgba(7,9,13,.9);backdrop-filter:blur(12px)}
+  .brand{display:inline-flex;align-items:center;gap:11px;font-weight:850;letter-spacing:.02em;color:var(--text);text-decoration:none}
+  .brand-mark{width:20px;height:20px;border:2px solid var(--warn);border-radius:50%;
+    box-shadow:inset 0 0 0 5px rgba(242,196,93,.16),0 0 18px rgba(242,196,93,.25)}
+  .pill{display:inline-flex;align-items:center;gap:8px;font-size:.8rem;font-weight:800;
+    padding:6px 12px;border:1px solid var(--line);border-radius:999px;color:var(--muted)}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--red);box-shadow:0 0 10px var(--red)}
+  .dot.live{background:var(--green);box-shadow:0 0 10px var(--green)}
+  main{width:min(1120px,calc(100% - 32px));margin:0 auto;padding:26px 0 60px}
+  h1{margin:0 0 4px;font-size:clamp(1.8rem,4vw,2.6rem);letter-spacing:-.01em}
+  .sub{margin:0 0 18px;color:var(--muted)}
+  .banner{border:1px solid rgba(242,196,93,.35);background:rgba(242,196,93,.08);color:#f7dfa6;
+    border-radius:12px;padding:12px 14px;margin-bottom:20px;font-size:.9rem}
+  .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:22px}
+  .stat{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:16px;min-width:0}
+  .stat dt{margin:0;color:var(--cyan);font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em}
+  .stat dd{margin:8px 0 0;font-size:1.35rem;font-weight:800;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere}
+  .stat small{display:block;color:var(--muted);font-weight:600;font-size:.72rem;margin-top:4px}
+  section{border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:18px;margin-bottom:20px}
+  section h2{margin:0 0 4px;font-size:1.05rem}
+  .sec-sub{margin:0 0 12px;color:var(--muted);font-size:.82rem}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  .two > section{margin-bottom:0}
+  table{width:100%;border-collapse:collapse;font-size:.85rem}
+  th{color:var(--muted);font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;text-align:left;
+    padding:8px;border-bottom:1px solid var(--line)}
+  td{padding:9px 8px;border-bottom:1px solid rgba(255,255,255,.06);vertical-align:top}
+  tr:last-child td{border-bottom:0}
+  .mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere}
+  .muted{color:var(--muted)}
+  .tag{display:inline-block;font-size:.68rem;font-weight:800;padding:3px 8px;border-radius:6px;
+    background:rgba(49,211,159,.12);color:var(--green);border:1px solid rgba(49,211,159,.3)}
+  .tag.bad{background:rgba(255,123,123,.12);color:var(--red);border-color:rgba(255,123,123,.3)}
+  .form{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+  input{flex:1;min-width:180px;min-height:42px;border:1px solid var(--line);border-radius:9px;
+    padding:9px 12px;color:var(--text);background:#07090d;font:inherit;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+  input.small{flex:0 1 140px;min-width:110px}
+  button{min-height:42px;border:0;border-radius:9px;padding:9px 16px;font:inherit;font-weight:850;cursor:pointer;
+    color:#04110c;background:var(--green)}
+  button.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
+  button:disabled{opacity:.5;cursor:default}
+  .kv{display:grid;grid-template-columns:150px 1fr;gap:6px 12px;font-size:.88rem}
+  .kv dt{color:var(--muted)} .kv dd{margin:0}
+  .msg{font-size:.88rem;margin:8px 0 4px;min-height:1.2em}
+  .msg.err{color:var(--red)} .msg.ok{color:var(--green)}
+  .api-box{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .api-box input{min-width:260px;min-height:34px;padding:6px 10px;font-size:.8rem}
+  .api-box button{min-height:34px;padding:6px 12px;font-size:.8rem}
+  @media (max-width:600px){ .hide-sm{display:none} td.mono{white-space:nowrap} .stat dd{font-size:1.1rem} }
+  @media (max-width:820px){ .grid{grid-template-columns:repeat(2,minmax(0,1fr))} .two{grid-template-columns:1fr} .kv{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<header>
+  <a class="brand" href="/"><span class="brand-mark"></span>SYNTHOS <span class="muted" style="font-weight:700">Test Network</span></a>
+  <div class="api-box">
+    <span class="pill"><span class="dot" id="dot"></span><span id="liveText">connecting…</span></span>
+    <input id="apiInput" placeholder="https://…trycloudflare.com" aria-label="Test network API address" />
+    <button class="ghost" id="apiUse">Use</button>
+  </div>
+</header>
+<main>
+  <h1>SYNTHOS Test Network</h1>
+  <p class="sub">The CometBFT version of SYNTHOS: real validators, real finality, the same seven capabilities.</p>
+  <div class="banner">Test coins only. Balances were copied from the real chain at block 51,948 and nothing done here affects real SYN.
+    Transactions here are signed for test chain ID <b id="txChainLabel">20261001</b>, so they can never be replayed on the real network.</div>
+
+  <dl class="grid">
+    <div class="stat"><dt>Block height</dt><dd id="height">—</dd><small id="blockTime"></small></div>
+    <div class="stat"><dt>Network</dt><dd id="chain" style="font-size:1rem">—</dd><small id="engine"></small></div>
+    <div class="stat"><dt>Validators</dt><dd id="valCount">—</dd><small id="valPower"></small></div>
+    <div class="stat"><dt>Treasury</dt><dd id="treasury">—</dd><small>SYN (test copy)</small></div>
+  </dl>
+
+  <section>
+    <h2>Latest blocks</h2>
+    <p class="sec-sub">Every block here is final the moment it appears: more than two-thirds of validator stake signed it.</p>
+    <table><thead><tr><th>Height</th><th class="hide-sm">Hash</th><th>Proposer</th><th>Txs</th><th>Time</th></tr></thead>
+      <tbody id="blocks"><tr><td colspan="5" class="muted">loading…</td></tr></tbody></table>
+  </section>
+
+  <div class="two">
+    <section>
+      <h2>Look up an account</h2>
+      <p class="sec-sub">Any SYNTHOS address. Balances are the test copy.</p>
+      <div class="form"><input id="lookupAddr" placeholder="0x…" /><button id="lookupBtn">Look up</button></div>
+      <div class="msg" id="lookupMsg"></div>
+      <dl class="kv" id="lookupOut" hidden>
+        <dt>Balance</dt><dd class="mono" id="lBal"></dd>
+        <dt>Nonce</dt><dd class="mono" id="lNonce"></dd>
+        <dt>Citizen stake</dt><dd class="mono" id="lStake"></dd>
+        <dt>Pending rewards</dt><dd class="mono" id="lPending"></dd>
+      </dl>
+    </section>
+    <section>
+      <h2>Validators</h2>
+      <p class="sec-sub">Anyone becomes a validator by bonding SYN. Voting power equals bonded SYN.</p>
+      <table><thead><tr><th>Name</th><th class="hide-sm">Operator</th><th>Bonded</th><th></th></tr></thead>
+        <tbody id="vals"><tr><td colspan="4" class="muted">loading…</td></tr></tbody></table>
+    </section>
+  </div>
+
+  <section style="margin-top:20px">
+    <h2>Test wallet</h2>
+    <p class="sec-sub">A key made in this browser and kept only in this browser. <b>Never put a key that holds real SYN here.</b></p>
+    <div id="noWallet">
+      <p class="muted" id="cryptoNote" style="font-size:.88rem">No test wallet in this browser yet.</p>
+      <button id="createWallet">Create a test wallet</button>
+    </div>
+    <div id="hasWallet" hidden>
+      <dl class="kv" style="margin-bottom:12px">
+        <dt>Address</dt><dd class="mono" id="wAddr"></dd>
+        <dt>Balance</dt><dd class="mono" id="wBal">—</dd>
+        <dt>Next nonce</dt><dd class="mono" id="wNonce">—</dd>
+      </dl>
+      <div class="form">
+        <input id="sendTo" placeholder="send to 0x…" />
+        <input id="sendAmount" class="small" placeholder="amount" inputmode="numeric" />
+        <input id="sendFee" class="small" placeholder="fee" value="1" inputmode="numeric" />
+        <button id="sendBtn">Send</button>
+      </div>
+      <div class="msg" id="sendMsg"></div>
+      <div class="form" style="margin-top:8px">
+        <button class="ghost" id="backupWallet">Download key backup</button>
+        <button class="ghost" id="forgetWallet">Remove from this browser</button>
+      </div>
+    </div>
+  </section>
+
+  <p class="muted" style="font-size:.8rem">Data comes straight from a test network node through its public API
+    (<span class="mono" id="apiShown">—</span>). <a href="/explorer">Real network explorer →</a></p>
+</main>
+
+<script src="/assets/testnet-tx.js"></script>
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const WALLET_KEY = "synthos.testnet.wallet";
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+    del(k) { try { localStorage.removeItem(k); } catch {} },
+  };
+  let api = "", txChainId = 20261001, wallet = null;
+  const fmt = (n) => (n == null ? "—" : Number(n).toLocaleString("en-US"));
+  const short = (h) => (h && h.length > 18 ? h.slice(0, 10) + "…" + h.slice(-6) : h || "—");
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const ago = (iso) => {
+    const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000));
+    return s < 60 ? s + "s ago" : s < 3600 ? Math.round(s / 60) + "m ago" : Math.round(s / 3600) + "h ago";
+  };
+  const cleanApi = (u) => (u || "").trim().replace(/\/+$/, "");
+
+  async function get(path) {
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 10000);
+    try {
+      const r = await fetch(api + path, { signal: ctl.signal });
+      if (!r.ok) throw new Error((await r.text()).trim() || "HTTP " + r.status);
+      return await r.json();
+    } finally { clearTimeout(t); }
+  }
+
+  async function chooseApi() {
+    // The site's testnet.json names the current address; ?api=… in the
+    // page link or the box at the top overrides it for this visit only.
+    const fromUrl = new URLSearchParams(location.search).get("api");
+    if (fromUrl) return cleanApi(fromUrl);
+    try {
+      const cfg = await fetch("/assets/testnet.json", { cache: "no-store" }).then((r) => r.json());
+      if (cfg.tx_chain_id) txChainId = cfg.tx_chain_id;
+      return cleanApi(cfg.api_url);
+    } catch { return ""; }
+  }
+
+  function setLive(ok, text) { $("dot").classList.toggle("live", ok); $("liveText").textContent = text; }
+
+  async function refresh() {
+    if (!api) { setLive(false, "no address set"); return; }
+    try {
+      const [st, bl, vs] = await Promise.all([get("/status"), get("/blocks?limit=12"), get("/validators/staking")]);
+      setLive(!st.catching_up, st.catching_up ? "catching up" : "live");
+      if (st.tx_chain_id) { txChainId = st.tx_chain_id; $("txChainLabel").textContent = txChainId; }
+      $("height").textContent = fmt(st.height);
+      $("blockTime").textContent = st.latest_block_time ? "last block " + ago(st.latest_block_time) : "";
+      $("chain").textContent = st.chain_id;
+      $("engine").textContent = (st.engine || "") + (st.capabilities ? " · " + st.capabilities.length + " capabilities" : "");
+      const blocks = (bl.blocks || []).slice().reverse();
+      $("blocks").innerHTML = blocks.length ? blocks.map((b) =>
+        `<tr><td class="mono">#${fmt(b.header.height)}</td><td class="mono hide-sm">${esc(short(b.hash))}</td>` +
+        `<td>${esc(b.header.proposer_id)}</td><td class="mono">${(b.tx || []).length}</td>` +
+        `<td class="muted">${esc(ago(b.header.timestamp))}</td></tr>`).join("")
+        : `<tr><td colspan="5" class="muted">no blocks yet</td></tr>`;
+      const vals = vs.validators || [];
+      $("valCount").textContent = (vs.authorizing_set || vals).length;
+      $("valPower").textContent = fmt(vs.total_locked) + " SYN bonded";
+      $("vals").innerHTML = vals.length ? vals.map((v) =>
+        `<tr><td>${esc(v.moniker || "—")}</td><td class="mono hide-sm">${esc(short(v.operator))}</td>` +
+        `<td class="mono">${fmt(v.self_bond)}</td><td>${v.tombstoned ? '<span class="tag bad">slashed</span>' : '<span class="tag">active</span>'}</td></tr>`).join("")
+        : `<tr><td colspan="4" class="muted">none</td></tr>`;
+      get("/economy/stats").then((e) => { $("treasury").textContent = fmt(e.treasury_balance); }).catch(() => {});
+      if (wallet) refreshWallet();
+    } catch (e) {
+      setLive(false, "offline");
+      $("blocks").innerHTML = `<tr><td colspan="5" class="muted">Can't reach the test network at this address right now (${esc(e.message)}). The node may be restarting, or its address changed.</td></tr>`;
+    }
+  }
+
+  async function lookup() {
+    const a = $("lookupAddr").value.trim();
+    $("lookupMsg").textContent = ""; $("lookupMsg").className = "msg"; $("lookupOut").hidden = true;
+    if (!/^0x[0-9a-fA-F]{40}$/.test(a)) { $("lookupMsg").textContent = "Enter a 0x address with 40 hex characters."; $("lookupMsg").className = "msg err"; return; }
+    try {
+      const [acc, cit] = await Promise.all([get("/account?address=" + encodeURIComponent(a)), get("/citizen/status?address=" + encodeURIComponent(a))]);
+      $("lBal").textContent = fmt(acc.balance) + " SYN"; $("lNonce").textContent = acc.nonce;
+      $("lStake").textContent = fmt(cit.stake && cit.stake.amount) + " SYN"; $("lPending").textContent = fmt(cit.pending_rewards) + " SYN";
+      $("lookupOut").hidden = false;
+    } catch (e) { $("lookupMsg").textContent = e.message; $("lookupMsg").className = "msg err"; }
+  }
+
+  // ---- test wallet ----
+  function loadWallet() { try { wallet = JSON.parse(store.get(WALLET_KEY) || "null"); } catch { wallet = null; } showWallet(); }
+  function showWallet() {
+    $("noWallet").hidden = !!wallet; $("hasWallet").hidden = !wallet;
+    if (wallet) $("wAddr").textContent = wallet.address;
+  }
+  async function refreshWallet() {
+    try { const a = await get("/account?address=" + wallet.address); $("wBal").textContent = fmt(a.balance) + " SYN"; $("wNonce").textContent = a.nonce; }
+    catch { $("wBal").textContent = "—"; }
+  }
+  async function createWallet() {
+    try { wallet = await SynthosTx.generateKey(); }
+    catch { $("cryptoNote").textContent = "This browser can't make Ed25519 keys. Use a current Chrome, Edge, Firefox or Safari."; return; }
+    wallet.network = "synthos-testnet-1";
+    store.set(WALLET_KEY, JSON.stringify(wallet)); showWallet(); refreshWallet();
+  }
+  async function send() {
+    const msg = $("sendMsg"); msg.className = "msg"; msg.textContent = "";
+    const amount = Number($("sendAmount").value.replace(/[, _]/g, "")), fee = Number($("sendFee").value.replace(/[, _]/g, ""));
+    $("sendBtn").disabled = true;
+    try {
+      const acc = await get("/account?address=" + wallet.address);
+      const tx = await SynthosTx.signTransfer(wallet, { chainId: txChainId, to: $("sendTo").value.trim(), amount, fee, nonce: acc.nonce });
+      const r = await fetch(api + "/submitTx", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(tx) });
+      const text = await r.text();
+      if (!r.ok) throw new Error(text.trim() || "HTTP " + r.status);
+      msg.className = "msg ok"; msg.textContent = "Sent. Transaction " + short(tx.id) + " will be in the next block.";
+      setTimeout(refresh, 2500);
+    } catch (e) { msg.className = "msg err"; msg.textContent = e.message; }
+    finally { $("sendBtn").disabled = false; }
+  }
+  function backup() {
+    const blob = new Blob([JSON.stringify({ format: "synthos-testnet-wallet/v1", ...wallet }, null, 2)], { type: "application/json" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "synthos-testnet-wallet-" + wallet.address.slice(2, 10) + ".json"; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }
+  function forget() {
+    if (!confirm("Remove this test wallet from this browser? Without a backup, its test SYN are gone.")) return;
+    store.del(WALLET_KEY); wallet = null; showWallet();
+  }
+
+  async function useApi(u) {
+    api = cleanApi(u); $("apiInput").value = api; $("apiShown").textContent = api || "none";
+    await refresh();
+  }
+
+  $("apiUse").onclick = () => useApi($("apiInput").value);
+  $("apiInput").addEventListener("keydown", (e) => { if (e.key === "Enter") useApi($("apiInput").value); });
+  $("lookupBtn").onclick = lookup;
+  $("lookupAddr").addEventListener("keydown", (e) => { if (e.key === "Enter") lookup(); });
+  $("createWallet").onclick = createWallet; $("sendBtn").onclick = send;
+  $("backupWallet").onclick = backup; $("forgetWallet").onclick = forget;
+
+  loadWallet();
+  chooseApi().then(useApi);
+  setInterval(refresh, 6000);
+})();
+</script>
+</body>
+</html>
