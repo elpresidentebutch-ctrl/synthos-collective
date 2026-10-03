@@ -30,6 +30,7 @@
 package main
 
 import (
+	"context"
 	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
@@ -131,7 +132,7 @@ func main() {
 		check(err)
 		var srv *http.Server
 		if *api != "" {
-			srvAPI := &legacyapi.Server{App: a, Comet: local.New(n), TrustForwardedFor: *trustProxy}
+			srvAPI := &legacyapi.Server{App: a, Comet: local.New(n), TrustForwardedFor: *trustProxy, DataDir: *home}
 			if *faucetKeyFile != "" {
 				key, addr, err := readFaucetKey(*faucetKeyFile)
 				check(err)
@@ -139,6 +140,9 @@ func main() {
 				mainLog.Info("faucet enabled", "address", addr, "amount", *faucetAmount)
 			}
 			h := srvAPI.Handler()
+			warmCtx, stopWarm := context.WithCancel(context.Background())
+			defer stopWarm()
+			go srvAPI.WarmActivity(warmCtx)
 			srv = &http.Server{Addr: *api, Handler: h, ReadHeaderTimeout: 10 * time.Second}
 			go func() {
 				if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
