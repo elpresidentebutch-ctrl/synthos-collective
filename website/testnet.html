@@ -122,6 +122,19 @@
     </section>
   </div>
 
+  <section id="activitySec" style="margin-top:20px" hidden>
+    <h2>Activity</h2>
+    <p class="sec-sub">Everything people have done on the test network, counted straight from its blocks.</p>
+    <dl class="grid" style="margin-bottom:14px">
+      <div class="stat"><dt>Wallets</dt><dd id="aWallets">—</dd><small>sent coins or used the faucet</small></div>
+      <div class="stat"><dt>Transactions</dt><dd id="aTxs">—</dd><small>in finalized blocks</small></div>
+      <div class="stat"><dt>Faucet drips</dt><dd id="aDrips">—</dd><small>free test SYN handed out</small></div>
+      <div class="stat"><dt>Last activity</dt><dd id="aLast" style="font-size:1rem">—</dd><small id="aFirst"></small></div>
+    </dl>
+    <table><thead><tr><th>Block</th><th>What</th><th class="hide-sm">From</th><th>To</th><th>Amount</th><th>When</th></tr></thead>
+      <tbody id="aRecent"><tr><td colspan="6" class="muted">no activity yet</td></tr></tbody></table>
+  </section>
+
   <section style="margin-top:20px">
     <h2>Test wallet</h2>
     <p class="sec-sub">A key made in this browser and kept only in this browser. <b>Never put a key that holds real SYN here.</b></p>
@@ -176,7 +189,7 @@
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const ago = (iso) => {
     const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000));
-    return s < 60 ? s + "s ago" : s < 3600 ? Math.round(s / 60) + "m ago" : Math.round(s / 3600) + "h ago";
+    return s < 60 ? s + "s ago" : s < 3600 ? Math.round(s / 60) + "m ago" : s < 86400 ? Math.round(s / 3600) + "h ago" : Math.round(s / 86400) + "d ago";
   };
   const cleanApi = (u) => (u || "").trim().replace(/\/+$/, "");
 
@@ -229,6 +242,7 @@
       get("/economy/stats").then((e) => { $("treasury").textContent = fmt(e.treasury_balance); }).catch(() => {});
       if (wallet) refreshWallet();
       refreshLookup();
+      refreshActivity();
     } catch (e) {
       setLive(false, "offline");
       $("blocks").innerHTML = `<tr><td colspan="5" class="muted">Can't reach the test network at this address right now (${esc(e.message)}). The node may be restarting, or its address changed.</td></tr>`;
@@ -322,10 +336,37 @@
     store.del(WALLET_KEY); wallet = null; showWallet();
   }
 
+  async function refreshActivity() {
+    try {
+      const a = await get("/activity");
+      $("aWallets").textContent = fmt(a.wallets); $("aTxs").textContent = fmt(a.transactions); $("aDrips").textContent = fmt(a.faucet_drips);
+      $("aLast").textContent = a.last_activity ? ago(a.last_activity) : "none yet";
+      $("aFirst").textContent = a.first_activity ? "first: " + new Date(a.first_activity).toLocaleDateString() : "";
+      const kinds = { faucet: "Faucet drip", transfer: "Transfer" };
+      $("aRecent").innerHTML = (a.recent || []).length ? a.recent.map((r) =>
+        `<tr><td class="mono">#${fmt(r.height)}</td><td>${esc(kinds[r.kind] || r.kind)}</td>` +
+        `<td class="mono hide-sm">${esc(short(r.from))}</td><td class="mono">${esc(short(r.to))}</td>` +
+        `<td class="mono">${fmt(r.amount)}</td><td class="muted">${esc(ago(r.time))}</td></tr>`).join("")
+        : `<tr><td colspan="6" class="muted">no activity yet</td></tr>`;
+      $("activitySec").hidden = false;
+    } catch { /* older node without /activity: keep the section hidden */ }
+  }
+  // Counts this page view on the test node. The only thing sent is a
+  // random id kept in this browser, so repeat visits count once.
+  function countVisit() {
+    let id = store.get("synthos.testnet.visitor");
+    if (!id || !/^[0-9a-f]{32}$/.test(id)) {
+      const b = new Uint8Array(16); crypto.getRandomValues(b);
+      id = Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+      store.set("synthos.testnet.visitor", id);
+    }
+    fetch(api + "/visit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }).catch(() => {});
+  }
   async function useApi(u) {
     api = cleanApi(u); $("apiInput").value = api; $("apiShown").textContent = api || "none";
     await refresh();
     checkFaucet();
+    if (api && !countVisit.done) { countVisit.done = true; countVisit(); }
   }
 
   $("apiUse").onclick = () => useApi($("apiInput").value);
