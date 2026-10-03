@@ -203,6 +203,7 @@ func main() {
 	if err := s.load(); err != nil {
 		log.Printf("registry state load warning: %v", err)
 	}
+	testnet.path = testnetRelayPath(stateFile)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handleIndex)
@@ -257,6 +258,8 @@ func main() {
 	mux.HandleFunc("/early-access.html", s.handleEarlyAccessPage)
 	mux.HandleFunc("/early-adopters", s.handleEarlyAccessPage)
 	mux.HandleFunc("/assets/", s.handleWebsiteAsset)
+	mux.HandleFunc("/assets/testnet.json", s.handleTestnetConfig)
+	mux.HandleFunc("/api/testnet/announce", s.handleTestnetAnnounce)
 	mux.HandleFunc("/assets/early-access-sale.js", s.handleEarlyAccessWidget)
 	mux.HandleFunc("/api/node/windows-installer.ps1", s.handleWindowsInstaller)
 	mux.HandleFunc("/api/node/install.bat", s.handleWindowsInstallerBat)

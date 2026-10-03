@@ -2,5 +2,6 @@
   "network": "synthos-testnet-2",
   "tx_chain_id": 20261002,
   "api_url": "https://modeling-simpsons-stephanie-managed.trycloudflare.com",
-  "note": "api_url is the test network node's public address (Documents\\synthos-testnet\\public-url.txt on the node's PC). Update it here when the tunnel address changes."
+  "note": "api_url is the fallback address. The node's PC announces its current tunnel address to /api/testnet/announce, signed with the faucet key whose address is 'announcer', and the site serves that address instead.",
+  "announcer": "0x287eb844b64a4ae49613efbfdf6a2973ffb0cb8a"
 }

@@ -183,7 +183,8 @@
     del(k) { try { localStorage.removeItem(k); } catch {} },
   };
   let api = "", txChainId = 20261001, wallet = null;
-  let lookedUp = null; // address in the lookup box, kept up to date by refresh()
+  let lookedUp = null;
+  let apiPinned = false, lastConfigCheck = 0; // pinned: chosen by ?api= or the box, so don't follow the site // address in the lookup box, kept up to date by refresh()
   const fmt = (n) => (n == null ? "—" : Number(n).toLocaleString("en-US"));
   const short = (h) => (h && h.length > 18 ? h.slice(0, 10) + "…" + h.slice(-6) : h || "—");
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -206,7 +207,7 @@
     // The site's testnet.json names the current address; ?api=… in the
     // page link or the box at the top overrides it for this visit only.
     const fromUrl = new URLSearchParams(location.search).get("api");
-    if (fromUrl) return cleanApi(fromUrl);
+    if (fromUrl) { apiPinned = true; return cleanApi(fromUrl); }
     try {
       const cfg = await fetch("/assets/testnet.json", { cache: "no-store" }).then((r) => r.json());
       if (cfg.tx_chain_id) txChainId = cfg.tx_chain_id;
@@ -245,6 +246,7 @@
       refreshActivity();
     } catch (e) {
       setLive(false, "offline");
+      followNewAddress();
       $("blocks").innerHTML = `<tr><td colspan="5" class="muted">Can't reach the test network at this address right now (${esc(e.message)}). The node may be restarting, or its address changed.</td></tr>`;
     }
   }
@@ -362,6 +364,18 @@
     }
     fetch(api + "/visit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }).catch(() => {});
   }
+  // The test node's public address changes when its tunnel restarts, and
+  // the node announces the new one to this site. If the node stops
+  // answering, ask the site for its current address and switch to it.
+  async function followNewAddress() {
+    if (apiPinned || Date.now() - lastConfigCheck < 20000) return;
+    lastConfigCheck = Date.now();
+    try {
+      const cfg = await fetch("/assets/testnet.json", { cache: "no-store" }).then((r) => r.json());
+      const next = cleanApi(cfg.api_url);
+      if (next && next !== api) { await useApi(next); }
+    } catch {}
+  }
   async function useApi(u) {
     api = cleanApi(u); $("apiInput").value = api; $("apiShown").textContent = api || "none";
     await refresh();
@@ -369,8 +383,8 @@
     if (api && !countVisit.done) { countVisit.done = true; countVisit(); }
   }
 
-  $("apiUse").onclick = () => useApi($("apiInput").value);
-  $("apiInput").addEventListener("keydown", (e) => { if (e.key === "Enter") useApi($("apiInput").value); });
+  $("apiUse").onclick = () => { apiPinned = true; useApi($("apiInput").value); };
+  $("apiInput").addEventListener("keydown", (e) => { if (e.key === "Enter") { apiPinned = true; useApi($("apiInput").value); } });
   $("lookupBtn").onclick = lookup;
   $("lookupAddr").addEventListener("keydown", (e) => { if (e.key === "Enter") lookup(); });
   $("createWallet").onclick = createWallet; $("sendBtn").onclick = send; $("faucetBtn").onclick = useFaucet;
