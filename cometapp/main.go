@@ -21,6 +21,9 @@
 //	                                         original synthosd HTTP API
 //	                                         (/status, /account, /submitTx, ...)
 //	synthos-comet faucet-key --out FILE      make (or show) a test network faucet key
+//	synthos-comet announce --key FILE --network ID --url URL [--to ENDPOINT]
+//	                                         tell the website a test node's
+//	                                         current public address
 //	synthos-comet export-genesis --legacy PATH --chain-id ID --tx-chain-id N
 //	                    --validators FILE --out FILE [--staking FILE]
 //	                    [--legacy-genesis FILE] [--mainnet-switch]
@@ -65,6 +68,10 @@ func main() {
 	}
 	if cmd == "faucet-key" {
 		faucetKey(args)
+		return
+	}
+	if cmd == "announce" {
+		announce(args)
 		return
 	}
 	fs := flag.NewFlagSet(cmd, flag.ExitOnError)
@@ -291,6 +298,23 @@ func faucetKey(args []string) {
 	check(err)
 	check(os.WriteFile(*out, raw, 0o600))
 	fmt.Println(addr)
+}
+
+func announce(args []string) {
+	fs := flag.NewFlagSet("announce", flag.ExitOnError)
+	keyFile := fs.String("key", "", "key file whose address the website accepts as announcer (required)")
+	network := fs.String("network", "", "test network chain ID, e.g. synthos-testnet-2 (required)")
+	apiURL := fs.String("url", "", "the node's public https address (required)")
+	to := fs.String("to", "https://synthos-www.onrender.com/api/testnet/announce", "website endpoint")
+	_ = fs.Parse(args)
+	if *keyFile == "" || *network == "" || *apiURL == "" {
+		fail("announce needs --key, --network and --url")
+	}
+	key, _, err := readFaucetKey(*keyFile)
+	check(err)
+	status, err := legacyapi.Announce(context.Background(), *to, *network, *apiURL, key, time.Now())
+	check(err)
+	fmt.Println(status, *apiURL)
 }
 
 func readFaucetKey(path string) (ed25519.PrivateKey, chain.Address, error) {
