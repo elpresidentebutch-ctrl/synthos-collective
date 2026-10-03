@@ -59,8 +59,13 @@ type Server struct {
 	TrustForwardedFor bool
 	// Faucet, when set, serves GET/POST /faucet (test networks only).
 	Faucet *Faucet
+	// DataDir is where the node keeps API-side files (page visit counts).
+	// Empty keeps them in memory only.
+	DataDir string
 
 	limiter *limiter
+	act     activity
+	vis     visits
 }
 
 const (
@@ -95,12 +100,16 @@ func (s *Server) Handler() http.Handler {
 		"/dex/pools":            s.dexPools,
 		"/bridge/status":        s.bridgeStatus,
 		"/bridge/events":        s.bridgeEvents,
+		"/activity":             s.activity,
+		"/visits":               s.visitStats,
 	}
 	for path, h := range get {
 		mux.HandleFunc(path, h)
 	}
 	mux.HandleFunc("/submitTx", s.submit(""))
 	mux.HandleFunc("/faucet", s.faucet)
+	mux.HandleFunc("/visit", s.visit)
+	s.vis.path = visitsFile(s.DataDir)
 	mux.HandleFunc("/simulate/tx", s.simulateTx)
 	for path, txType := range map[string]string{
 		"/citizen/stake":         "citizen_stake",

@@ -118,7 +118,7 @@ func startWith(t *testing.T, governance bool, faucet *Faucet) *env {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = n.Stop(); n.Wait() })
-	srv := httptest.NewServer((&Server{App: a, Comet: local.New(n), RequestsPerSecond: -1, Faucet: faucet, TrustForwardedFor: faucet != nil}).Handler())
+	srv := httptest.NewServer((&Server{App: a, Comet: local.New(n), RequestsPerSecond: -1, Faucet: faucet, TrustForwardedFor: faucet != nil, DataDir: dir}).Handler())
 	t.Cleanup(srv.Close)
 	e.url = srv.URL
 	e.waitHeight(2)
@@ -467,5 +467,124 @@ func TestNoFaucetByDefault(t *testing.T) {
 	e := start(t, false)
 	if code := e.get("/faucet", nil); code != http.StatusNotFound {
 		t.Fatalf("GET /faucet without a faucet: HTTP %d", code)
+	}
+}
+
+func TestActivityAndVisits(t *testing.T) {
+	key, faucetAddr, err := NewFaucetKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := startWith(t, false, &Faucet{Key: key, Amount: 5_000, MinInterval: time.Millisecond})
+
+	var act struct {
+		Wallets      int            `json:"wallets"`
+		Transactions int            `json:"transactions"`
+		FaucetDrips  int            `json:"faucet_drips"`
+		Recent       []ActivityItem `json:"recent"`
+	}
+	e.get("/activity", &act)
+	if act.Wallets != 0 || act.Transactions != 0 {
+		t.Fatalf("fresh chain activity = %+v", act)
+	}
+
+	// A new wallet gets test SYN from the faucet, then sends some on.
+	w := newWallet(t)
+	raw, _ := json.Marshal(map[string]string{"address": string(w.addr)})
+	req, _ := http.NewRequest(http.MethodPost, e.url+"/faucet", bytes.NewReader(raw))
+	req.Header.Set("Cf-Connecting-Ip", "5.5.5.5")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil || res.StatusCode != 200 {
+		t.Fatalf("faucet: %v %v", err, res.Status)
+	}
+	res.Body.Close()
+	e.waitBalance(w.addr, 5_000)
+	if code, body := e.post("/submitTx", w.tx(t, newWallet(t).addr, 0, 700, 1, nil)); code != 200 {
+		t.Fatalf("transfer: %d %s", code, body)
+	}
+	// The user wallet from genesis sends too: a second active wallet.
+	if code, body := e.post("/submitTx", e.user.tx(t, w.addr, 0, 300, 1, nil)); code != 200 {
+		t.Fatalf("transfer: %d %s", code, body)
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		e.get("/activity", &act)
+		if act.Transactions == 3 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("activity never reached 3 transactions: %+v", act)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if act.Wallets != 2 || act.FaucetDrips != 1 || len(act.Recent) != 3 {
+		t.Fatalf("activity = %+v", act)
+	}
+	if last := act.Recent[len(act.Recent)-1]; last.Kind != "faucet" || last.From != string(faucetAddr) || last.To != string(w.addr) {
+		t.Fatalf("oldest recent item = %+v", last)
+	}
+
+	// Visits: two browsers, one of them twice.
+	for _, id := range []string{"aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb", "aaaaaaaaaaaaaaaa"} {
+		if code, body := e.post("/visit", map[string]string{"id": id}); code != 200 {
+			t.Fatalf("visit: %d %s", code, body)
+		}
+	}
+	if code, _ := e.post("/visit", map[string]string{"id": "not hex!"}); code != http.StatusBadRequest {
+		t.Fatalf("bad visit id: HTTP %d", code)
+	}
+	var vs struct {
+		Views    int `json:"views"`
+		Visitors int `json:"visitors"`
+		Days     []struct {
+			Views, Visitors int
+		} `json:"days"`
+	}
+	if code := e.get("/visits", &vs); code != 200 || vs.Views != 3 || vs.Visitors != 2 || len(vs.Days) != 1 || vs.Days[0].Visitors != 2 {
+		t.Fatalf("visits: HTTP %d %+v", code, vs)
+	}
+	// Through the tunnel (Cloudflare adds this header), the counts are private.
+	req, _ = http.NewRequest(http.MethodGet, e.url+"/visits", nil)
+	req.Header.Set("Cf-Connecting-Ip", "6.6.6.6")
+	res, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("visits through the tunnel: HTTP %d", res.StatusCode)
+	}
+	// A browser asking for the page gets a readable table.
+	req, _ = http.NewRequest(http.MethodGet, e.url+"/visits", nil)
+	req.Header.Set("Accept", "text/html")
+	res, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if !strings.Contains(string(page), "<b>2</b> different visitors") {
+		t.Fatalf("visits page: %s", page)
+	}
+}
+
+func TestVisitsSurviveRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "v.json")
+	a := visits{path: path}
+	now := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
+	a.record("0123456789abcdef", now)
+	a.record("0123456789abcdef", now)
+	b := visits{path: path}
+	b.record("fedcba9876543210", now.Add(time.Hour))
+	if b.data.Views != 3 || len(b.data.Visitors) != 2 {
+		t.Fatalf("after restart: %d views, %d visitors", b.data.Views, len(b.data.Visitors))
+	}
+	// Days older than keepDays are dropped when a new day starts.
+	b.record("fedcba9876543210", now.AddDate(0, 0, keepDays+2))
+	if _, ok := b.data.Days["2026-10-03"]; ok {
+		t.Fatal("old day kept")
+	}
+	if b.data.Views != 4 || len(b.data.Visitors) != 2 {
+		t.Fatal("totals changed when old days were dropped")
 	}
 }
