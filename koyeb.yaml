@@ -1,0 +1,32 @@
+# Koyeb Free Eco Tier deployment specification for SYNTHOS Global Node
+# Deployable in Frankfurt (fra), Washington DC (was), or Tokyo (tyo)
+app:
+  name: synthos-network
+services:
+  - name: synthos-global-node
+    type: web
+    regions:
+      - fra
+    ports:
+      - port: 8080
+        path: /
+    routes:
+      - path: /
+        port: 8080
+    docker:
+      dockerfile: Dockerfile
+      command:
+        - /usr/local/bin/synthosd
+    env:
+      - key: SYNTHOS_CONFIG
+        value: /config/global-node.json
+      - key: SYNTHOS_DATA_DIR
+        value: /data
+      - key: SYNTHOS_NODE_ID
+        value: synthos-koyeb-node-1
+      - key: SYNTHOS_REGISTRY_URL
+        value: https://synthos-www.onrender.com
+      - key: SYNTHOS_BOOTSTRAP_IMMUNE_NODE
+        value: "true"
+    instance_types:
+      - type: nano

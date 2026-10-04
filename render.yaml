@@ -248,3 +248,46 @@ services:
       name: synthos-www-data
       mountPath: /data
       sizeGB: 1
+
+  - type: web
+    name: synthos-node-europe
+    runtime: docker
+    region: frankfurt
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerCommand: /usr/local/bin/synthosd
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: SYNTHOS_CONFIG
+        value: /config/global-node.json
+      - key: SYNTHOS_DATA_DIR
+        value: /data
+      - key: SYNTHOS_NODE_ID
+        value: synthos-node-europe
+      - key: SYNTHOS_REGISTRY_URL
+        value: https://synthos-www.onrender.com
+      - key: SYNTHOS_BOOTSTRAP_IMMUNE_NODE
+        value: "true"
+
+  - type: web
+    name: synthos-node-asia
+    runtime: docker
+    region: singapore
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerCommand: /usr/local/bin/synthosd
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: SYNTHOS_CONFIG
+        value: /config/global-node.json
+      - key: SYNTHOS_DATA_DIR
+        value: /data
+      - key: SYNTHOS_NODE_ID
+        value: synthos-node-asia
+      - key: SYNTHOS_REGISTRY_URL
+        value: https://synthos-www.onrender.com
+      - key: SYNTHOS_BOOTSTRAP_IMMUNE_NODE
+        value: "true"
+

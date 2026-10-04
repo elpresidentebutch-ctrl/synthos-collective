@@ -1,0 +1,34 @@
+{
+  "node_id": "synthos-global-node",
+  "data_dir": "/data",
+  "is_validator": false,
+  "rpc_listen": ":8080",
+  "genesis_path": "/config/genesis.json",
+  "peers": [],
+  "http_peers": [
+    "https://synthos-validator-12.onrender.com",
+    "https://synthos-validator-13.onrender.com",
+    "https://synthos-rpc.onrender.com"
+  ],
+  "listen_addr": ":0",
+  "trusted_validators": [
+    "synthos-validator-11",
+    "synthos-validator-12",
+    "synthos-validator-13",
+    "synthos-render-validator-1"
+  ],
+  "peer_keys": {
+    "synthos-validator-12": "0x5528a57c397d8539d88b3ef5dbecdec3ec8ca261afd2eb44e9992098c652c355",
+    "synthos-validator-13": "0x6f90ff8a7a8cf680ba97f8c05adabef8784d008bb2542a1f496732386a978f68",
+    "synthos-render-validator-1": "0x14d371a7ed892a1fe5a16413f483c3730b3d52ef0ac8b6663e70389fae10e4f5"
+  },
+  "auth_enforce_from_height": 33908,
+  "state_root_enforce_from_height": 30000,
+  "irregular_state_corrections": [
+    {
+      "height": 41950,
+      "address": "0xa6cc70355b1dc27d0d12c000aaad34dcd3d246c5",
+      "debit": 50
+    }
+  ]
+}
