@@ -1,5 +1,3 @@
-$ErrorActionPreference = "Stop"
-
 param(
   [string]$InstallDir = "",
   [string]$RelayUrls = "",
@@ -7,6 +5,8 @@ param(
   [switch]$NoDesktopShortcut,
   [switch]$NoStart
 )
+
+$ErrorActionPreference = "Stop"
 
 $repo = Split-Path -Parent $PSScriptRoot
 Set-Location $repo
