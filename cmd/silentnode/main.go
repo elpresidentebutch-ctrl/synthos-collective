@@ -100,14 +100,15 @@ func main() {
 	relayURLs := relayURLSet()
 	node.RelayURLs = relayURLs
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	log.Printf("SYNTHOS background validator node started: %s", node.NodeID)
 	log.Printf("Mode: outbound-only Ed25519 signed heartbeats every %s", heartbeatEvery)
 	log.Printf("Relay set: %s", strings.Join(relayURLs, ", "))
 	log.Printf("Look this node up on the website's node lookup page with ID: %s", node.NodeID)
 
+	ctx := context.Background()
 	heartbeatAll(ctx, relayURLs, &node, privateKey)
 	pollMailboxAll(ctx, relayURLs, node.NodeID)
 	ticker := time.NewTicker(heartbeatEvery)
@@ -115,8 +116,8 @@ func main() {
 
 	for {
 		select {
-		case <-ctx.Done():
-			log.Printf("SYNTHOS background validator node stopped")
+		case sig := <-sigChan:
+			log.Printf("SYNTHOS background validator node received %v, stopping...", sig)
 			return
 		case <-ticker.C:
 			heartbeatAll(ctx, relayURLs, &node, privateKey)

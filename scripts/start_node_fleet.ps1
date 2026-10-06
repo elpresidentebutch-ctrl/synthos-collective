@@ -51,9 +51,10 @@ Write-Host "Starting fleet of $Count distinct SYNTHOS silent nodes..."
   if ($running) {
     Write-Host "Fleet node $idx ($nodeId) is already running (PID: $($running.ProcessId))"
   } else {
-    $args = "-id `"$nodeId`" -key `"$keyPath`" -status `"$statusPath`" -relay `"$RelayUrl`""
-    Start-Process -FilePath $exe -ArgumentList $args -WorkingDirectory $nodeDir -WindowStyle Hidden
-    Write-Host "Fleet node $idx ($nodeId) started in background."
+    $cmd = "`"$exe`" -id `"$nodeId`" -key `"$keyPath`" -status `"$statusPath`" -relay `"$RelayUrl`""
+    $wshell = New-Object -ComObject WScript.Shell
+    $wshell.Run($cmd, 0, $false)
+    Write-Host "Fleet node $idx ($nodeId) started in background (detached)."
   }
 }
 
