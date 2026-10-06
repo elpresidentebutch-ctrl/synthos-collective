@@ -38,6 +38,7 @@ var coreCapabilities = []string{
 var cliKeyPath string
 var cliRelayURLs string
 var cliStatusPath string
+var cliNodeID string
 var cliPrintKey bool
 
 type nodeKey struct {
@@ -71,6 +72,7 @@ func main() {
 	flag.StringVar(&cliKeyPath, "key", "", "path to persistent Ed25519 node key JSON")
 	flag.StringVar(&cliStatusPath, "status", "", "path to write node status JSON")
 	flag.StringVar(&cliRelayURLs, "relay", "", "comma-separated SYNTHOS registry/backend URLs")
+	flag.StringVar(&cliNodeID, "id", "", "explicit node ID override (or derives unique ID from key)")
 	flag.BoolVar(&cliPrintKey, "print-key", false, "print this node's identity (ID, public key, key file location) and exit, without starting the node")
 	flag.Parse()
 
@@ -87,7 +89,7 @@ func main() {
 	node := silentNode{
 		NodeID:              key.NodeID,
 		PublicKey:           key.PublicKey,
-		HardwareCommitment:  hardwareCommitment(),
+		HardwareCommitment:  hardwareCommitment(key.NodeID),
 		Mode:                "background_signed_validator_heartbeat",
 		StartedAt:           time.Now().UTC().Format(time.RFC3339),
 		StatusPath:          statusPath(),
@@ -159,8 +161,13 @@ func loadOrCreateNodeKey() (nodeKey, ed25519.PrivateKey, bool, error) {
 	if err != nil {
 		return nodeKey{}, nil, false, err
 	}
+	nodeID := cliNodeID
+	if nodeID == "" {
+		h := sha256.Sum256(publicKey)
+		nodeID = "syn-" + hex.EncodeToString(h[:6])
+	}
 	key := nodeKey{
-		NodeID:     "syn-" + hardwareCommitment()[:12],
+		NodeID:     nodeID,
 		PublicKey:  hex.EncodeToString(publicKey),
 		PrivateKey: hex.EncodeToString(privateKey),
 		CreatedAt:  time.Now().UTC().Format(time.RFC3339),
@@ -295,14 +302,14 @@ func canonicalHeartbeatMessage(nodeID string, height int64, tip string, stateRoo
 	)
 }
 
-func hardwareCommitment() string {
+func hardwareCommitment(nodeID string) string {
 	hostname, _ := os.Hostname()
 	currentUser, _ := user.Current()
 	username := ""
 	if currentUser != nil {
 		username = currentUser.Username
 	}
-	sum := sha256.Sum256([]byte(hostname + "|" + username + "|synthos-background-node-v1"))
+	sum := sha256.Sum256([]byte(hostname + "|" + username + "|" + nodeID + "|synthos-background-node-v1"))
 	return hex.EncodeToString(sum[:])
 }
 

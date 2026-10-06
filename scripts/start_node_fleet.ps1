@@ -1,6 +1,7 @@
 param(
-  [int]$Count = 4,
-  [string]$RelayUrl = "https://synthos-www.onrender.com"
+  [int]$Count = 5,
+  [string]$RelayUrl = "https://synthos-www.onrender.com",
+  [switch]$ResetKeys
 )
 
 $ErrorActionPreference = "Stop"
@@ -21,7 +22,7 @@ if (-not (Test-Path $exe)) {
 $fleetDir = Join-Path $env:LOCALAPPDATA "SynthosCollective\Fleet"
 New-Item -ItemType Directory -Force -Path $fleetDir | Out-Null
 
-Write-Host "Starting fleet of $Count additional SYNTHOS silent nodes..."
+Write-Host "Starting fleet of $Count distinct SYNTHOS silent nodes..."
 
 1..$Count | ForEach-Object {
   $idx = $_
@@ -30,6 +31,17 @@ Write-Host "Starting fleet of $Count additional SYNTHOS silent nodes..."
   
   $keyPath = Join-Path $nodeDir "silent-node-key.json"
   $statusPath = Join-Path $nodeDir "silent-node-status.json"
+  $nodeId = "syn-fleet-$idx"
+
+  # Reset key if requested or if it has duplicate legacy ID
+  if ($ResetKeys -or (Test-Path $keyPath)) {
+    if (Test-Path $keyPath) {
+      $content = Get-Content $keyPath -Raw -ErrorAction SilentlyContinue
+      if ($ResetKeys -or ($content -like "*syn-cc59c6b08899*")) {
+        Remove-Item $keyPath -Force -ErrorAction SilentlyContinue
+      }
+    }
+  }
   
   # Check if a process is already running for this node
   $running = Get-CimInstance Win32_Process | Where-Object { 
@@ -37,11 +49,11 @@ Write-Host "Starting fleet of $Count additional SYNTHOS silent nodes..."
   }
   
   if ($running) {
-    Write-Host "Fleet node $idx is already running (PID: $($running.ProcessId))"
+    Write-Host "Fleet node $idx ($nodeId) is already running (PID: $($running.ProcessId))"
   } else {
-    $args = "-key `"$keyPath`" -status `"$statusPath`" -relay `"$RelayUrl`""
+    $args = "-id `"$nodeId`" -key `"$keyPath`" -status `"$statusPath`" -relay `"$RelayUrl`""
     Start-Process -FilePath $exe -ArgumentList $args -WorkingDirectory $nodeDir -WindowStyle Hidden
-    Write-Host "Fleet node $idx started in background."
+    Write-Host "Fleet node $idx ($nodeId) started in background."
   }
 }
 
