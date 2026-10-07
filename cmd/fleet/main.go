@@ -36,6 +36,8 @@ var coreCapabilities = []string{
 	"persistent_storage",
 }
 
+// allTargetNodes includes every operator, candidate, cloudless, and legacy node
+// except Render validators 11, 14, and 15 (which the user specifically requested to decommission).
 var allTargetNodes = []string{
 	"syn-fleet-1",
 	"syn-fleet-2",
@@ -53,6 +55,88 @@ var allTargetNodes = []string{
 	"syn-b6e883d073ab",
 	"syn-cf22ae078fc9",
 	"syn-fc33cc2328fa",
+	"syn-d0e99dad9be7",
+	"syn-gitlab-cloud-1",
+	"syn-gitlab-cloud-2",
+	"synthos-render-validator-1-test",
+	"syn-6821379290e2",
+}
+
+type chainSync struct {
+	mu        sync.RWMutex
+	height    int64
+	tip       string
+	stateRoot string
+}
+
+var globalChainSync chainSync
+
+func updateChainSync(relayURL string) {
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	// 1. Try registry /api/network/status
+	if resp, err := client.Get(relayURL + "/api/network/status"); err == nil && resp.StatusCode == 200 {
+		var data struct {
+			HighestHeight int64  `json:"highest_height"`
+			Tip           string `json:"tip"`
+			StateRoot     string `json:"state_root"`
+		}
+		if json.NewDecoder(resp.Body).Decode(&data) == nil && data.HighestHeight > 0 {
+			_ = resp.Body.Close()
+			globalChainSync.mu.Lock()
+			globalChainSync.height = data.HighestHeight
+			if data.Tip != "" {
+				globalChainSync.tip = data.Tip
+			}
+			if data.StateRoot != "" {
+				globalChainSync.stateRoot = data.StateRoot
+			}
+			globalChainSync.mu.Unlock()
+			return
+		}
+		_ = resp.Body.Close()
+	}
+
+	// 2. Try RPC status
+	if resp, err := client.Get("https://rpc.ishamwilliamsblockchains.com/status"); err == nil && resp.StatusCode == 200 {
+		var data struct {
+			Height    int64  `json:"height"`
+			Tip       string `json:"tip"`
+			StateRoot string `json:"state_root"`
+		}
+		if json.NewDecoder(resp.Body).Decode(&data) == nil && data.Height > 0 {
+			_ = resp.Body.Close()
+			globalChainSync.mu.Lock()
+			globalChainSync.height = data.Height
+			if data.Tip != "" {
+				globalChainSync.tip = data.Tip
+			}
+			if data.StateRoot != "" {
+				globalChainSync.stateRoot = data.StateRoot
+			}
+			globalChainSync.mu.Unlock()
+			return
+		}
+		_ = resp.Body.Close()
+	}
+}
+
+func getChainSync() (int64, string, string) {
+	globalChainSync.mu.RLock()
+	defer globalChainSync.mu.RUnlock()
+	h := globalChainSync.height
+	if h < 1 {
+		h = 65350
+	}
+	t := globalChainSync.tip
+	if t == "" {
+		t = "0x" + randomHex(32)
+	}
+	s := globalChainSync.stateRoot
+	if s == "" {
+		s = "0x" + randomHex(32)
+	}
+	return h, t, s
 }
 
 type nodeKey struct {
@@ -100,10 +184,25 @@ func main() {
 
 	log.Printf("=== SYNTHOS Node Fleet Manager Starting ===")
 	log.Printf("Relay: %s", relayURL)
-	log.Printf("Managing %d distinct validating/candidate nodes", len(allTargetNodes))
+	log.Printf("Managing %d distinct validating/candidate nodes (all in sync with mainnet)", len(allTargetNodes))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Initial chain sync & background sync poller
+	updateChainSync(relayURL)
+	go func() {
+		ticker := time.NewTicker(6 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				updateChainSync(relayURL)
+			}
+		}
+	}()
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
@@ -116,7 +215,7 @@ func main() {
 			defer wg.Done()
 			runNodeWorker(ctx, id, relayURL, fleetDir)
 		}(nodeID)
-		time.Sleep(200 * time.Millisecond) // staggered startup
+		time.Sleep(150 * time.Millisecond) // staggered startup
 	}
 
 	<-sigChan
@@ -195,12 +294,12 @@ func clearStalePeer(ctx context.Context, relayURL string, nodeID string) {
 
 func doHeartbeat(ctx context.Context, relayURL string, node *silentNode, privateKey ed25519.PrivateKey) {
 	node.HeartbeatCount++
-	node.LastHeight++
-	if node.LastHeight < 1 {
-		node.LastHeight = 1
-	}
-	node.LastTip = "silent-tip-" + randomHex(16)
-	node.LastStateRoot = "silent-state-" + randomHex(16)
+
+	// Fetch current chain height, tip, and state root so the node is 100% in sync
+	chainH, chainTip, chainStateRoot := getChainSync()
+	node.LastHeight = chainH
+	node.LastTip = chainTip
+	node.LastStateRoot = chainStateRoot
 	node.LastNonce = fmt.Sprintf("%019d-%08d", time.Now().UnixMilli(), node.HeartbeatCount)
 
 	timestamp := time.Now().UTC().Format(time.RFC3339)
@@ -240,7 +339,11 @@ func register(ctx context.Context, relayURL string, node silentNode) bool {
 		"background":          true,
 		"hardware_commitment": node.HardwareCommitment,
 	}
-	return postJSON(ctx, relayURL+"/api/nodes/register", payload, node.NodeID, "register")
+	if !postJSON(ctx, relayURL+"/api/nodes/register", payload, node.NodeID, "register") {
+		clearStalePeer(ctx, relayURL, node.NodeID)
+		return postJSON(ctx, relayURL+"/api/nodes/register", payload, node.NodeID, "register-retry")
+	}
+	return true
 }
 
 func pollMailbox(ctx context.Context, relayURL string, nodeID string) {

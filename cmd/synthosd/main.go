@@ -293,7 +293,7 @@ func main() {
 	srv.RegistrySecret = registrySecret
 
 	srv.StartPeerSync(15 * time.Second)
-	startRegistryHeartbeat(cfg.NodeID, ch.ChainID, keys.Public)
+	startRegistryHeartbeat(cfg.NodeID, ch.ChainID, keys.Public, ch)
 	// Picks up validators approved through the registry's Phase-1 queue
 	// (cmd/cloudless-registry/main.go's handleAPIAdminValidatorByID)
 	// without requiring a redeploy. Reuses SYNTHOS_REGISTRY_URL -- already
@@ -862,7 +862,7 @@ func consensusRoundTimeout(interval time.Duration) time.Duration {
 	return t
 }
 
-func startRegistryHeartbeat(nodeID string, chainID string, publicKey ed25519.PublicKey) {
+func startRegistryHeartbeat(nodeID string, chainID string, publicKey ed25519.PublicKey, ch *chain.Chain) {
 	registryURL := strings.TrimRight(os.Getenv("SYNTHOS_REGISTRY_URL"), "/")
 	selfURL := strings.TrimRight(os.Getenv("SYNTHOS_SELF_URL"), "/")
 	if registryURL == "" || selfURL == "" {
@@ -882,6 +882,14 @@ func startRegistryHeartbeat(nodeID string, chainID string, publicKey ed25519.Pub
 		"inbound_ports": 1,
 	}
 	post := func() {
+		if ch != nil {
+			tip := ch.Tip()
+			payload["height"] = ch.Height()
+			if tip != nil {
+				payload["tip"] = tip.Hash
+				payload["state_root"] = tip.Header.StateRoot
+			}
+		}
 		body, _ := json.Marshal(payload)
 		req, err := http.NewRequest(http.MethodPost, registryURL+"/register", bytes.NewReader(body))
 		if err != nil {

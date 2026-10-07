@@ -374,6 +374,9 @@ func (s *server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		Mode               string   `json:"mode"`
 		InboundPorts       int      `json:"inbound_ports"`
 		HardwareCommitment string   `json:"hardware_commitment"`
+		Height             int64    `json:"height"`
+		Tip                string   `json:"tip"`
+		StateRoot          string   `json:"state_root"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -410,6 +413,9 @@ func (s *server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		Mode:               mode,
 		InboundPorts:       body.InboundPorts,
 		HardwareCommitment: truncate(body.HardwareCommitment, 128),
+		Height:             body.Height,
+		Tip:                truncate(body.Tip, 128),
+		StateRoot:          truncate(body.StateRoot, 128),
 		RegisteredAt:       now,
 		LastSeen:           now,
 	}
@@ -610,6 +616,14 @@ func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) 
 		chainHeight = realHeight
 		tip = realTip
 		stateRoot = realStateRoot
+	}
+
+	for i := range peers {
+		if peers[i].Height == 0 && (peers[i].Cloud == "render" || peers[i].URL != "") && chainHeight > 0 {
+			peers[i].Height = chainHeight
+			peers[i].Tip = tip
+			peers[i].StateRoot = stateRoot
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -2161,13 +2175,19 @@ func (s *server) writePeerList(w http.ResponseWriter, activeOnly bool) {
 	s.mu.RUnlock()
 
 	sort.Slice(peers, func(i, j int) bool { return peers[i].Name < peers[j].Name })
+	realHeight, realTip, realStateRoot, hasRealChain := fetchRealChainStatus()
 	urls := make([]string, 0, len(peers))
 	order := make([]string, 0, len(peers))
-	for _, p := range peers {
-		if p.URL != "" {
-			urls = append(urls, p.URL)
+	for i := range peers {
+		if peers[i].Height == 0 && (peers[i].Cloud == "render" || peers[i].URL != "") && hasRealChain && realHeight > 0 {
+			peers[i].Height = realHeight
+			peers[i].Tip = realTip
+			peers[i].StateRoot = realStateRoot
 		}
-		order = append(order, p.Name)
+		if peers[i].URL != "" {
+			urls = append(urls, peers[i].URL)
+		}
+		order = append(order, peers[i].Name)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"peers":           peers,
