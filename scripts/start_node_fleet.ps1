@@ -1,64 +1,57 @@
 param(
-  [int]$Count = 5,
-  [string]$RelayUrl = "https://synthos-www.onrender.com",
-  [switch]$ResetKeys
+  [string]$RelayUrl = "https://synthos-www.onrender.com"
 )
 
 $ErrorActionPreference = "Stop"
 
 $repo = Split-Path -Parent $PSScriptRoot
-$exe = Join-Path $env:LOCALAPPDATA "SynthosCollective\BackgroundNode\synthos-silent-node.exe"
+$exe = Join-Path $repo "synthos-fleet.exe"
 
 if (-not (Test-Path $exe)) {
-  $localExe = Join-Path $repo "synthos-silent-node.exe"
-  if (-not (Test-Path $localExe)) {
-    Write-Host "Building synthos-silent-node.exe..."
-    Set-Location $repo
-    go build -o synthos-silent-node.exe ./cmd/silentnode
-  }
-  $exe = Join-Path $repo "synthos-silent-node.exe"
+  Write-Host "Building synthos-fleet.exe..."
+  Set-Location $repo
+  go build -o synthos-fleet.exe ./cmd/fleet
 }
 
-$fleetDir = Join-Path $env:LOCALAPPDATA "SynthosCollective\Fleet"
-New-Item -ItemType Directory -Force -Path $fleetDir | Out-Null
+# Copy to LocalAppData for permanence
+$destDir = Join-Path $env:LOCALAPPDATA "SynthosCollective\Fleet"
+New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+$destExe = Join-Path $destDir "synthos-fleet.exe"
+Copy-Item $exe $destExe -Force
 
-Write-Host "Starting fleet of $Count distinct SYNTHOS silent nodes..."
+# Stop any older synthos node processes
+Get-Process synthos-fleet, synthos-silent-node -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Milliseconds 800
 
-1..$Count | ForEach-Object {
-  $idx = $_
-  $nodeDir = Join-Path $fleetDir "node-$idx"
-  New-Item -ItemType Directory -Force -Path $nodeDir | Out-Null
-  
-  $keyPath = Join-Path $nodeDir "silent-node-key.json"
-  $statusPath = Join-Path $nodeDir "silent-node-status.json"
-  $nodeId = "syn-fleet-$idx"
+Write-Host "Starting SYNTHOS Comprehensive Multi-Node Fleet..."
+Write-Host "Managing 16 distinct nodes (syn-fleet-1..5, syn-cc59..., desktop-..., synthos-home-1, and all legacy nodes)..."
 
-  # Reset key if requested or if it has duplicate legacy ID
-  if ($ResetKeys -or (Test-Path $keyPath)) {
-    if (Test-Path $keyPath) {
-      $content = Get-Content $keyPath -Raw -ErrorAction SilentlyContinue
-      if ($ResetKeys -or ($content -like "*syn-cc59c6b08899*")) {
-        Remove-Item $keyPath -Force -ErrorAction SilentlyContinue
-      }
-    }
-  }
-  
-  # Check if a process is already running for this node
-  $running = Get-CimInstance Win32_Process | Where-Object { 
-    $_.CommandLine -like "*node-$idx\silent-node-key.json*"
-  }
-  
-  if ($running) {
-    Write-Host "Fleet node $idx ($nodeId) is already running (PID: $($running.ProcessId))"
-  } else {
-    $cmd = "`"$exe`" -id `"$nodeId`" -key `"$keyPath`" -status `"$statusPath`" -relay `"$RelayUrl`""
-    $wshell = New-Object -ComObject WScript.Shell
-    $wshell.Run($cmd, 0, $false)
-    Write-Host "Fleet node $idx ($nodeId) started in background (detached)."
-  }
+# Launch detached in background outside any calling job objects
+$cmd = "`"$destExe`" -relay `"$RelayUrl`""
+$wshell = New-Object -ComObject WScript.Shell
+try {
+  Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine = $cmd} | Out-Null
+} catch {
+  $wshell.Run($cmd, 0, $false)
 }
 
 Start-Sleep -Seconds 3
-Write-Host ""
-Write-Host "Fleet startup complete. Checking active processes:"
-Get-Process synthos-silent-node | Select-Object Id, ProcessName, WorkingSet64
+
+# Update Desktop Shortcut
+$desktopPath = [System.Environment]::GetFolderPath("Desktop")
+$shortcutPath = Join-Path $desktopPath "Start Synthos Fleet.lnk"
+$shortcut = $wshell.CreateShortcut($shortcutPath)
+$shortcut.TargetPath = "powershell.exe"
+$shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$PSScriptRoot\start_node_fleet.ps1`""
+$shortcut.WindowStyle = 7 # Minimized
+$shortcut.IconLocation = "$destExe,0"
+$shortcut.Description = "Launch SYNTHOS Decentralized Node Fleet"
+$shortcut.Save()
+
+# Update Windows Startup Folder
+$startupPath = [System.Environment]::GetFolderPath("Startup")
+$startupShortcutPath = Join-Path $startupPath "Start Synthos Fleet.lnk"
+Copy-Item $shortcutPath $startupShortcutPath -Force
+
+Write-Host "Fleet startup complete. Process status:"
+Get-Process synthos-fleet -ErrorAction SilentlyContinue | Select-Object Id, ProcessName, WorkingSet64

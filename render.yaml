@@ -31,33 +31,6 @@ services:
       sizeGB: 1
 
   - type: web
-    name: synthos-validator-11
-    runtime: docker
-    dockerfilePath: ./Dockerfile
-    dockerCommand: /usr/local/bin/synthosd
-    healthCheckPath: /health
-    autoDeploy: true
-    envVars:
-      - key: SYNTHOS_CONFIG
-        value: /config/render-validator-11.json
-      - key: SYNTHOS_DATA_DIR
-        value: /data
-      - key: SYNTHOS_NODE_ID
-        value: synthos-validator-11
-      - key: SYNTHOS_SELF_URL
-        value: https://synthos-validator-11.onrender.com
-      - key: SYNTHOS_REGISTRY_URL
-        value: https://synthos-www.onrender.com
-      - key: SYNTHOS_BOOTSTRAP_IMMUNE_NODE
-        value: "true"
-      - key: SYNTHOS_PRIVATE_KEY
-        sync: false
-    disk:
-      name: synthos-validator-11-data
-      mountPath: /data
-      sizeGB: 1
-
-  - type: web
     name: synthos-validator-12
     runtime: docker
     dockerfilePath: ./Dockerfile
@@ -143,60 +116,6 @@ services:
         sync: false
     disk:
       name: synthos-validator-13-data
-      mountPath: /data
-      sizeGB: 1
-
-  - type: web
-    name: synthos-validator-14
-    runtime: docker
-    dockerfilePath: ./Dockerfile
-    dockerCommand: /usr/local/bin/synthosd
-    healthCheckPath: /health
-    autoDeploy: true
-    envVars:
-      - key: SYNTHOS_CONFIG
-        value: /config/render-validator-14.json
-      - key: SYNTHOS_DATA_DIR
-        value: /data
-      - key: SYNTHOS_NODE_ID
-        value: synthos-validator-14
-      - key: SYNTHOS_SELF_URL
-        value: https://synthos-validator-14.onrender.com
-      - key: SYNTHOS_REGISTRY_URL
-        value: https://synthos-www.onrender.com
-      - key: SYNTHOS_BOOTSTRAP_IMMUNE_NODE
-        value: "true"
-      - key: SYNTHOS_PRIVATE_KEY
-        sync: false
-    disk:
-      name: synthos-validator-14-data
-      mountPath: /data
-      sizeGB: 1
-
-  - type: web
-    name: synthos-validator-15
-    runtime: docker
-    dockerfilePath: ./Dockerfile
-    dockerCommand: /usr/local/bin/synthosd
-    healthCheckPath: /health
-    autoDeploy: true
-    envVars:
-      - key: SYNTHOS_CONFIG
-        value: /config/render-validator-15.json
-      - key: SYNTHOS_DATA_DIR
-        value: /data
-      - key: SYNTHOS_NODE_ID
-        value: synthos-validator-15
-      - key: SYNTHOS_SELF_URL
-        value: https://synthos-validator-15.onrender.com
-      - key: SYNTHOS_REGISTRY_URL
-        value: https://synthos-www.onrender.com
-      - key: SYNTHOS_BOOTSTRAP_IMMUNE_NODE
-        value: "true"
-      - key: SYNTHOS_PRIVATE_KEY
-        sync: false
-    disk:
-      name: synthos-validator-15-data
       mountPath: /data
       sizeGB: 1
 
