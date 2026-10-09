@@ -289,6 +289,12 @@ func (c *Chain) HotWindowInfo() HotWindowInfo {
 	return info
 }
 
+func (c *Chain) EarliestHeight() uint64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.hotWindowStart
+}
+
 // hotWindowBaseStateLocked returns the state exactly as of height
 // hotWindowStart-1. When nothing has been trimmed yet (hotWindowStart ==
 // 0) that's simply genesisState, so no separate bookkeeping is needed for

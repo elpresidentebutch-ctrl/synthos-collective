@@ -336,10 +336,11 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleSyncStatus(w http.ResponseWriter, r *http.Request) {
 	body := map[string]any{
-		"chain_id":   s.Chain.ChainID,
-		"height":     s.Chain.Height(),
-		"tip":        s.Chain.Tip().Hash,
-		"state_root": s.Chain.State.Root(),
+		"chain_id":        s.Chain.ChainID,
+		"height":          s.Chain.Height(),
+		"earliest_height": s.Chain.EarliestHeight(),
+		"tip":             s.Chain.Tip().Hash,
+		"state_root":      s.Chain.State.Root(),
 	}
 	if s.Node != nil && s.Node.Agent != nil {
 		body["capabilities"] = s.Node.Agent.CoreCapabilities()
@@ -521,8 +522,9 @@ func (s *Server) handleBlocks(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, map[string]any{
-		"blocks": blocks,
-		"count":  len(blocks),
+		"blocks":          blocks,
+		"count":           len(blocks),
+		"earliest_height": s.Chain.EarliestHeight(),
 	})
 }
 
@@ -1028,6 +1030,32 @@ func (s *Server) CatchUpOnce() error {
 		if status.Height <= myHeight {
 			continue
 		}
+		// If peer has trimmed older history but state root matches, fast-forward across empty blocks
+		earliestAvailable := status.EarliestHeight
+		if earliestAvailable == 0 && status.StateRoot == s.Chain.State.Root() {
+			earliestAvailable = s.probePeerEarliest(peer, myHeight+1, status.Height)
+		}
+		if earliestAvailable > 0 && myHeight < earliestAvailable && status.StateRoot == s.Chain.State.Root() {
+			log.Printf("http peer catch-up: fast-forwarding from %d across trimmed empty blocks to peer hot window start %d", myHeight, earliestAvailable)
+			blks, err := s.peerBlocks(peer, int(earliestAvailable), catchUpBatchSize)
+			if err == nil && len(blks) > 0 {
+				first := blks[0]
+				baseBlock := &chain.Block{
+					Header: chain.BlockHeader{
+						Height:    first.Header.Height - 1,
+						StateRoot: s.Chain.State.Root(),
+					},
+					Hash: first.Header.ParentHash,
+				}
+				s.Chain.RestoreHotWindow(earliestAvailable, s.Chain.State.Clone(), baseBlock, 2000, s.Store)
+				for _, b := range blks {
+					if ok, _ := s.applyPeerBlock(b); ok {
+						myHeight = s.Chain.Height()
+					}
+				}
+			}
+		}
+
 		anyApplied := false
 		for {
 			blocks, err := s.peerBlocks(peer, int(myHeight+1), catchUpBatchSize)
@@ -1091,12 +1119,13 @@ func (s *Server) pushBlockToPeers(block *chain.Block) {
 }
 
 type peerStatus struct {
-	Height        uint64   `json:"height"`
-	ChainID       string   `json:"chain_id"`
-	Tip           string   `json:"tip"`
-	StateRoot     string   `json:"state_root"`
-	ImmuneCapable bool     `json:"immune_capable"`
-	Capabilities  []string `json:"capabilities"`
+	Height         uint64   `json:"height"`
+	EarliestHeight uint64   `json:"earliest_height"`
+	ChainID        string   `json:"chain_id"`
+	Tip            string   `json:"tip"`
+	StateRoot      string   `json:"state_root"`
+	ImmuneCapable  bool     `json:"immune_capable"`
+	Capabilities   []string `json:"capabilities"`
 }
 
 func (s *Server) peerStatus(peer string) (peerStatus, error) {
@@ -1180,6 +1209,27 @@ func parseUintQuery(r *http.Request, name string) (uint64, error) {
 		return 0, errors.New("invalid " + name)
 	}
 	return value, nil
+}
+
+func (s *Server) probePeerEarliest(peer string, low, high uint64) uint64 {
+	if low >= high {
+		return high
+	}
+	found := uint64(0)
+	for low <= high {
+		mid := low + (high-low)/2
+		blks, err := s.peerBlocks(peer, int(mid), 1)
+		if err == nil && len(blks) > 0 {
+			found = blks[0].Header.Height
+			if mid == 0 {
+				break
+			}
+			high = mid - 1
+		} else {
+			low = mid + 1
+		}
+	}
+	return found
 }
 
 var _ = errors.New // keep import stable for future error mapping

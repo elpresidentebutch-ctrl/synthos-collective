@@ -6,10 +6,8 @@
   "genesis_path": "/config/genesis.json",
   "peers": [],
   "http_peers": [
-    "https://synthos-validator-11.onrender.com",
-    "https://synthos-validator-13.onrender.com",
-    "https://synthos-validator-14.onrender.com",
-    "https://synthos-validator-15.onrender.com"
+    "https://synthos-rpc.onrender.com",
+    "https://synthos-validator-13.onrender.com"
   ],
   "listen_addr": ":0",
   "validators": ["synthos-validator-12", "synthos-validator-13", "synthos-render-validator-1"],
