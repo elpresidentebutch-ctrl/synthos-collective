@@ -1089,6 +1089,37 @@ func (s *Server) CatchUpOnce() error {
 					myHeight = s.Chain.Height()
 				}
 			}
+			if stop && batchApplied == 0 && myHeight > 0 {
+				reorgDone := false
+				for back := uint64(0); back <= 3 && myHeight >= back && (myHeight-back) >= s.Chain.EarliestHeight(); back++ {
+					forkH := myHeight - back
+					if forkH == 0 {
+						break
+					}
+					cand, err := s.peerBlocks(peer, int(forkH), catchUpBatchSize)
+					if err == nil && len(cand) > 0 && cand[0].Header.Height == forkH {
+						curBlk := s.Chain.BlockAt(forkH)
+						if curBlk != nil && curBlk.Hash != cand[0].Hash {
+							reorged, rerr := s.Chain.TryReorg(forkH, cand)
+							if reorged {
+								log.Printf("http peer catch-up: reorged from height %d to heavier branch from %s (new tip: %d)", forkH, peer, s.Chain.Height())
+								if s.Store != nil {
+									_ = s.Store.Save(s.Chain)
+								}
+								myHeight = s.Chain.Height()
+								anyApplied = true
+								reorgDone = true
+								break
+							} else if rerr != nil {
+								log.Printf("http peer catch-up: reorg attempt at %d failed: %v", forkH, rerr)
+							}
+						}
+					}
+				}
+				if reorgDone {
+					continue
+				}
+			}
 			if stop || len(blocks) < catchUpBatchSize {
 				break
 			}
