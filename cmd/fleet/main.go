@@ -121,22 +121,13 @@ func updateChainSync(relayURL string) {
 	}
 }
 
+// getChainSync returns the chain position the network last reported. Until
+// the first report arrives it returns zeros: a heartbeat must never claim a
+// height, tip or state root it didn't actually observe.
 func getChainSync() (int64, string, string) {
 	globalChainSync.mu.RLock()
 	defer globalChainSync.mu.RUnlock()
-	h := globalChainSync.height
-	if h < 1 {
-		h = 65350
-	}
-	t := globalChainSync.tip
-	if t == "" {
-		t = "0x" + randomHex(32)
-	}
-	s := globalChainSync.stateRoot
-	if s == "" {
-		s = "0x" + randomHex(32)
-	}
-	return h, t, s
+	return globalChainSync.height, globalChainSync.tip, globalChainSync.stateRoot
 }
 
 type nodeKey struct {
@@ -184,7 +175,7 @@ func main() {
 
 	log.Printf("=== SYNTHOS Node Fleet Manager Starting ===")
 	log.Printf("Relay: %s", relayURL)
-	log.Printf("Managing %d distinct validating/candidate nodes (all in sync with mainnet)", len(allTargetNodes))
+	log.Printf("Running %d node identities on this machine (they count as one machine: one validator, one reward)", len(allTargetNodes))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -338,6 +329,7 @@ func register(ctx context.Context, relayURL string, node silentNode) bool {
 		"capabilities":        coreCapabilities,
 		"background":          true,
 		"hardware_commitment": node.HardwareCommitment,
+		"machine_commitment":  node.HardwareCommitment,
 	}
 	if !postJSON(ctx, relayURL+"/api/nodes/register", payload, node.NodeID, "register") {
 		clearStalePeer(ctx, relayURL, node.NodeID)
@@ -386,14 +378,20 @@ func canonicalHeartbeatMessage(nodeID string, height int64, tip string, stateRoo
 	)
 }
 
+// hardwareCommitment identifies the machine, not the node: every node
+// identity running on one computer reports the same value, so the network
+// can tell they are one machine (one reward, one counted validator). It
+// matches the desktop agent's commitment for the same computer. The nodeID
+// parameter is unused and kept only so callers read naturally.
 func hardwareCommitment(nodeID string) string {
+	_ = nodeID
 	hostname, _ := os.Hostname()
 	currentUser, _ := user.Current()
 	username := ""
 	if currentUser != nil {
 		username = currentUser.Username
 	}
-	sum := sha256.Sum256([]byte(hostname + "|" + username + "|" + nodeID + "|synthos-background-node-v1"))
+	sum := sha256.Sum256([]byte(hostname + "|" + username + "|synthos-desktop-agent-v1"))
 	return hex.EncodeToString(sum[:])
 }
 
@@ -444,12 +442,6 @@ func writeStatus(node silentNode) {
 	if err == nil {
 		_ = os.WriteFile(node.StatusPath, body, 0o600)
 	}
-}
-
-func randomHex(bytes int) string {
-	raw := make([]byte, bytes)
-	_, _ = rand.Read(raw)
-	return hex.EncodeToString(raw)
 }
 
 func fileExists(p string) bool {
