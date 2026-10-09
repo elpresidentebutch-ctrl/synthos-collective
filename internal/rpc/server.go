@@ -492,6 +492,11 @@ func (s *Server) handleMempool(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+const (
+	defaultBlocksLimit = 50
+	maxBlocksLimit     = 250
+)
+
 func (s *Server) handleBlocks(w http.ResponseWriter, r *http.Request) {
 	from := 0
 	if raw := r.URL.Query().Get("from"); raw != "" {
@@ -502,25 +507,19 @@ func (s *Server) handleBlocks(w http.ResponseWriter, r *http.Request) {
 		}
 		from = parsed
 	}
-	blocks := s.Chain.BlocksFrom(from)
-	// Optional cap so a caller (a human debugging via curl, or a peer
-	// catching up over HTTP) can request a bounded page instead of the
-	// entire remaining chain in one response. Unbounded was fine while the
-	// chain was small; at tens of thousands of blocks a single response is
-	// many MB, which risks slow requests and timeouts for no benefit --
-	// catch-up applies blocks one at a time regardless, so it doesn't need
-	// them all in one round trip. Omitting limit keeps the old unbounded
-	// behavior so nothing else relying on this endpoint breaks.
+	limit := defaultBlocksLimit
 	if raw := r.URL.Query().Get("limit"); raw != "" {
-		limit, err := strconv.Atoi(raw)
-		if err != nil || limit < 0 {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed <= 0 {
 			http.Error(w, "invalid limit", http.StatusBadRequest)
 			return
 		}
-		if limit < len(blocks) {
-			blocks = blocks[:limit]
-		}
+		limit = parsed
 	}
+	if limit > maxBlocksLimit {
+		limit = maxBlocksLimit
+	}
+	blocks := s.Chain.BlocksRange(from, limit)
 	writeJSON(w, map[string]any{
 		"blocks":          blocks,
 		"count":           len(blocks),
@@ -1018,7 +1017,7 @@ func (s *Server) StartPeerSync(interval time.Duration) {
 // larger forever; fetching in bounded pages keeps each request's size
 // roughly constant regardless of how far behind a catching-up node is or
 // how long the chain has been running.
-const catchUpBatchSize = 500
+const catchUpBatchSize = 250
 
 func (s *Server) CatchUpOnce() error {
 	myHeight := s.Chain.Height()
@@ -1047,7 +1046,11 @@ func (s *Server) CatchUpOnce() error {
 					},
 					Hash: first.Header.ParentHash,
 				}
-				s.Chain.RestoreHotWindow(earliestAvailable, s.Chain.State.Clone(), baseBlock, 2000, s.Store)
+				hwSize := s.Chain.MaxHotBlocks()
+				if hwSize <= 0 {
+					hwSize = 250
+				}
+				s.Chain.RestoreHotWindow(earliestAvailable, s.Chain.State.Clone(), baseBlock, hwSize, s.Store)
 				for _, b := range blks {
 					if ok, _ := s.applyPeerBlock(b); ok {
 						myHeight = s.Chain.Height()

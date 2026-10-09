@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"runtime/debug"
 	"strconv"
 	"strings"
 
@@ -22,6 +23,13 @@ import (
 )
 
 func main() {
+	if os.Getenv("GOMEMLIMIT") == "" {
+		debug.SetMemoryLimit(256 * 1024 * 1024)
+	}
+	if os.Getenv("GOGC") == "" {
+		debug.SetGCPercent(30)
+	}
+
 	dataDir := os.Getenv("SYNTHOS_DATA_DIR")
 	if dataDir == "" {
 		dataDir = ".synthos-data"
@@ -178,7 +186,7 @@ func loadGenesis(path string) chain.Genesis {
 // binary's copy for the full reasoning. Duplicated rather than shared
 // because these are separate main packages; SYNTHOS_MAX_HOT_BLOCKS is the
 // same env var both binaries honor.
-const defaultMaxHotBlocks = 2000
+const defaultMaxHotBlocks = 250
 
 func maxHotBlocksFromEnv() int {
 	raw := strings.TrimSpace(os.Getenv("SYNTHOS_MAX_HOT_BLOCKS"))

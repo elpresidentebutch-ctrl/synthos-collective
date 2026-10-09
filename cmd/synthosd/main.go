@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -32,6 +33,13 @@ import (
 // genesis + RPC wiring are in place so that the chain is "ready to decentralize"
 // once a real transport is plugged in.
 func main() {
+	if os.Getenv("GOMEMLIMIT") == "" {
+		debug.SetMemoryLimit(256 * 1024 * 1024)
+	}
+	if os.Getenv("GOGC") == "" {
+		debug.SetGCPercent(30)
+	}
+
 	cfgPath := os.Getenv("SYNTHOS_CONFIG")
 	if cfgPath == "" {
 		cfgPath = "config/node.json"
@@ -1023,7 +1031,7 @@ func shouldRefreshHeightZeroSnapshot(snap *storage.Snapshot, genesisChain *chain
 // reorg depth (TryReorg's only production caller only ever contests a
 // height at or very near the current tip) while still bounding memory well
 // below what full, ever-growing chain history would otherwise cost.
-const defaultMaxHotBlocks = 2000
+const defaultMaxHotBlocks = 250
 
 // maxHotBlocksFromEnv reads SYNTHOS_MAX_HOT_BLOCKS, falling back to
 // defaultMaxHotBlocks if unset or not a positive integer. A value <= 0

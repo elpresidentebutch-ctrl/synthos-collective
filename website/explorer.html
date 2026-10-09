@@ -187,7 +187,8 @@
     }catch(e){}
 
     try{
-      var b = await j("/blocks");
+      var fromH = (s && s.height != null && s.height >= 12) ? (s.height - 11) : 0;
+      var b = await j("/blocks?from=" + fromH + "&limit=12");
       var blocks = (b.blocks||[]).slice().sort(function(a,c){ return c.header.height - a.header.height; }).slice(0,12);
       var html = blocks.map(function(bl){
         var h = bl.header||{};

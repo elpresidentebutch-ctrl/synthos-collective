@@ -22,6 +22,9 @@ COPY website/ /website/
 COPY config/*.json /config/
 ENV SYNTHOS_DATA_DIR=/data
 ENV SYNTHOS_EARLY_ACCESS_WIDGET_PATH=/website/assets/early-access-sale.js
+ENV GOMEMLIMIT=256MiB
+ENV GOGC=30
+ENV SYNTHOS_MAX_HOT_BLOCKS=250
 RUN mkdir -p /data
 EXPOSE 8080
 CMD ["/usr/local/bin/cloudless-registry"]

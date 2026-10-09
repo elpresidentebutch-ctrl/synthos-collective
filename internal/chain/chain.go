@@ -289,6 +289,13 @@ func (c *Chain) HotWindowInfo() HotWindowInfo {
 	return info
 }
 
+// MaxHotBlocks returns the configured hot-window bound (0 if unbounded).
+func (c *Chain) MaxHotBlocks() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.maxHotBlocks
+}
+
 func (c *Chain) EarliestHeight() uint64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -413,14 +420,12 @@ func (c *Chain) tipLocked() *Block {
 	return c.Blocks[len(c.Blocks)-1]
 }
 
-// BlocksFrom returns all blocks from height from onward -- the mechanism
-// peer catch-up (CatchUpOnce/StartPeerSync) and the /blocks HTTP endpoint
-// both rely on to let a fresh or resyncing node rebuild its entire history
-// from genesis, so it must keep working for any from, including heights
-// this chain has long since trimmed out of memory: those are read back on
-// demand from coldBlocks (see SetHotWindow), one height at a time, without
-// ever holding the chain lock while doing disk I/O.
-func (c *Chain) BlocksFrom(from int) []*Block {
+// BlocksRange returns up to limit blocks from height from onward. A limit <= 0
+// returns all available blocks up to the tip (identical to BlocksFrom).
+// Older trimmed heights are read from coldBlocks on demand without holding
+// the chain lock, and BlocksRange will never read or allocate more than limit
+// blocks, preventing memory spikes when querying old ranges.
+func (c *Chain) BlocksRange(from int, limit int) []*Block {
 	if from < 0 {
 		from = 0
 	}
@@ -438,24 +443,45 @@ func (c *Chain) BlocksFrom(from int) []*Block {
 		c.mu.RUnlock()
 		return nil
 	}
+
+	available := int(tipHeight - fromHeight + 1)
+	want := available
+	if limit > 0 && limit < want {
+		want = limit
+	}
+
 	var hot []*Block
 	if fromHeight >= hotStart {
 		idx := fromHeight - hotStart
 		if idx < uint64(len(c.Blocks)) {
-			hot = make([]*Block, len(c.Blocks)-int(idx))
-			copy(hot, c.Blocks[idx:])
+			n := len(c.Blocks) - int(idx)
+			if limit > 0 && n > want {
+				n = want
+			}
+			hot = make([]*Block, n)
+			copy(hot, c.Blocks[idx:idx+uint64(n)])
 		}
 	} else {
-		hot = make([]*Block, len(c.Blocks))
-		copy(hot, c.Blocks)
+		coldCount := int(hotStart - fromHeight)
+		if limit <= 0 || want > coldCount {
+			hotNeeded := len(c.Blocks)
+			if limit > 0 && (want-coldCount) < hotNeeded {
+				hotNeeded = want - coldCount
+			}
+			hot = make([]*Block, hotNeeded)
+			copy(hot, c.Blocks[:hotNeeded])
+		}
 	}
 	c.mu.RUnlock()
 
 	if fromHeight >= hotStart || reader == nil {
 		return hot
 	}
-	out := make([]*Block, 0, int(hotStart-fromHeight)+len(hot))
+	out := make([]*Block, 0, want)
 	for h := fromHeight; h < hotStart; h++ {
+		if limit > 0 && len(out) >= limit {
+			return out
+		}
 		blk, ok := reader.ColdBlockAt(h)
 		if !ok {
 			// A gap in the archive -- stop rather than hand a resyncing
@@ -464,8 +490,21 @@ func (c *Chain) BlocksFrom(from int) []*Block {
 		}
 		out = append(out, blk)
 	}
-	out = append(out, hot...)
+	if limit <= 0 || len(out) < limit {
+		remaining := hot
+		if limit > 0 && len(out)+len(remaining) > limit {
+			remaining = remaining[:limit-len(out)]
+		}
+		out = append(out, remaining...)
+	}
 	return out
+}
+
+// BlocksFrom returns all blocks from height from onward -- the mechanism
+// peer catch-up (CatchUpOnce/StartPeerSync) and tests rely on when unbounded
+// history is requested.
+func (c *Chain) BlocksFrom(from int) []*Block {
+	return c.BlocksRange(from, 0)
 }
 
 func (c *Chain) SubmitTx(tx Tx) error {

@@ -31,11 +31,11 @@ services:
       - key: SYNTHOS_CONSENSUS_TOKEN
         sync: false
       - key: SYNTHOS_MAX_HOT_BLOCKS
-        value: "500"
+        value: "250"
       - key: GOMEMLIMIT
-        value: "350MiB"
+        value: "256MiB"
       - key: GOGC
-        value: "50"
+        value: "30"
     disk:
       name: synthos-rpc-data
       mountPath: /data
@@ -94,11 +94,11 @@ services:
       - key: SYNTHOS_PRIVATE_KEY
         sync: false
       - key: SYNTHOS_MAX_HOT_BLOCKS
-        value: "500"
+        value: "250"
       - key: GOMEMLIMIT
-        value: "350MiB"
+        value: "256MiB"
       - key: GOGC
-        value: "50"
+        value: "30"
     disk:
       name: synthos-validator-12-data
       mountPath: /data
@@ -144,11 +144,11 @@ services:
       - key: SYNTHOS_PRIVATE_KEY
         sync: false
       - key: SYNTHOS_MAX_HOT_BLOCKS
-        value: "500"
+        value: "250"
       - key: GOMEMLIMIT
-        value: "350MiB"
+        value: "256MiB"
       - key: GOGC
-        value: "50"
+        value: "30"
     disk:
       name: synthos-validator-13-data
       mountPath: /data
@@ -165,9 +165,9 @@ services:
       - key: SYNTHOS_NATIVE_RPC_URL
         value: https://synthos-rpc.onrender.com
       - key: GOMEMLIMIT
-        value: "350MiB"
+        value: "256MiB"
       - key: GOGC
-        value: "50"
+        value: "30"
       # Separate from SYNTHOS_NATIVE_RPC_URL above (used by
       # fetchRealChainStatus/the early-access allocator): this is the var
       # proxyRPCJSON checks (handleAPIExplorerBlocks/Mempool and the bridge

@@ -352,3 +352,59 @@ func TestHotWindow_BlocksFromOutOfRangeReturnsNil(t *testing.T) {
 func TestHotWindow_ColdReaderInterfaceSatisfiedByFakeStore(t *testing.T) {
 	var _ ColdBlockReader = (*fakeColdStore)(nil)
 }
+
+func TestHotWindow_BlocksRange(t *testing.T) {
+	fake := newFakeColdStore()
+	c := newTestChain(t)
+	const maxHot = 5
+	const totalBlocks = 20 // 0 to 20 = 21 blocks
+	c.SetHotWindow(maxHot, fake)
+	fake.archive(c.Blocks) // archive genesis
+	for i := 0; i < totalBlocks; i++ {
+		b := finalizeEmptyBlock(t, c, "validator-1")
+		fake.archive([]*Block{b})
+	}
+
+	// 1. Query with limit within cold range only
+	resCold := c.BlocksRange(0, 3)
+	if len(resCold) != 3 {
+		t.Fatalf("expected 3 blocks, got %d", len(resCold))
+	}
+	if resCold[0].Header.Height != 0 || resCold[2].Header.Height != 2 {
+		t.Fatalf("unexpected heights in resCold: %d, %d", resCold[0].Header.Height, resCold[2].Header.Height)
+	}
+
+	// 2. Query spanning cold and hot ranges
+	// tip is 20, maxHot is 5 => hot starts around 16
+	resSpan := c.BlocksRange(14, 5)
+	if len(resSpan) != 5 {
+		t.Fatalf("expected 5 blocks spanning boundary, got %d", len(resSpan))
+	}
+	for i, blk := range resSpan {
+		if blk.Header.Height != uint64(14+i) {
+			t.Fatalf("resSpan[%d] height = %d, expected %d", i, blk.Header.Height, 14+i)
+		}
+	}
+
+	// 3. Query in hot range only
+	resHot := c.BlocksRange(18, 2)
+	if len(resHot) != 2 {
+		t.Fatalf("expected 2 blocks in hot range, got %d", len(resHot))
+	}
+	if resHot[0].Header.Height != 18 || resHot[1].Header.Height != 19 {
+		t.Fatalf("unexpected heights in resHot: %d, %d", resHot[0].Header.Height, resHot[1].Header.Height)
+	}
+
+	// 4. Query with limit larger than remaining
+	resExcess := c.BlocksRange(19, 10)
+	if len(resExcess) != 2 { // only 19 and 20 exist
+		t.Fatalf("expected 2 blocks for excess limit, got %d", len(resExcess))
+	}
+
+	// 5. Query with limit <= 0 (unbounded)
+	resAll := c.BlocksRange(16, 0)
+	if len(resAll) != 5 { // 16, 17, 18, 19, 20
+		t.Fatalf("expected 5 blocks for unbounded range, got %d", len(resAll))
+	}
+}
+
