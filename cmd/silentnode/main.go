@@ -246,6 +246,7 @@ func register(ctx context.Context, relayURL string, node silentNode) bool {
 		"capabilities":        coreCapabilities,
 		"background":          true,
 		"hardware_commitment": node.HardwareCommitment,
+		"machine_commitment":  node.HardwareCommitment,
 	}
 	return postJSON(ctx, relayURL+"/api/nodes/register", payload, node.NodeID, "register")
 }
@@ -303,14 +304,20 @@ func canonicalHeartbeatMessage(nodeID string, height int64, tip string, stateRoo
 	)
 }
 
+// hardwareCommitment identifies the machine, not the node: every node
+// identity running on one computer reports the same value, so the network
+// can tell they are one machine (one reward, one counted validator). It
+// matches the desktop agent's commitment for the same computer. The nodeID
+// parameter is unused and kept only so callers read naturally.
 func hardwareCommitment(nodeID string) string {
+	_ = nodeID
 	hostname, _ := os.Hostname()
 	currentUser, _ := user.Current()
 	username := ""
 	if currentUser != nil {
 		username = currentUser.Username
 	}
-	sum := sha256.Sum256([]byte(hostname + "|" + username + "|" + nodeID + "|synthos-background-node-v1"))
+	sum := sha256.Sum256([]byte(hostname + "|" + username + "|synthos-desktop-agent-v1"))
 	return hex.EncodeToString(sum[:])
 }
 
