@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -297,7 +298,17 @@ func (s *Server) bodyLimitMiddleware(next http.Handler) http.Handler {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, map[string]any{"ok": true, "service": "synthos-rpc"})
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	writeJSON(w, map[string]any{
+		"ok":      true,
+		"service": "synthos-rpc",
+		"mem": map[string]any{
+			"alloc_mb": m.Alloc / (1024 * 1024),
+			"sys_mb":   m.Sys / (1024 * 1024),
+			"num_gc":   m.NumGC,
+		},
+	})
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -1118,6 +1129,34 @@ func (s *Server) CatchUpOnce() error {
 				}
 				if reorgDone {
 					continue
+				}
+				if !reorgDone && status.Height > myHeight && earliestAvailable > 0 {
+					blks, err := s.peerBlocks(peer, int(earliestAvailable), catchUpBatchSize)
+					if err == nil && len(blks) > 0 {
+						first := blks[0]
+						baseBlock := &chain.Block{
+							Header: chain.BlockHeader{
+								Height:    first.Header.Height - 1,
+								StateRoot: first.Header.StateRoot,
+							},
+							Hash: first.Header.ParentHash,
+						}
+						hwSize := s.Chain.MaxHotBlocks()
+						if hwSize <= 0 {
+							hwSize = 250
+						}
+						log.Printf("http peer catch-up: fast-forwarding across divergent fork to peer %s hot window at %d", peer, earliestAvailable)
+						s.Chain.RestoreHotWindow(earliestAvailable, s.Chain.State.Clone(), baseBlock, hwSize, s.Store)
+						for _, b := range blks {
+							if ok, _ := s.applyPeerBlock(b); ok {
+								myHeight = s.Chain.Height()
+								anyApplied = true
+							}
+						}
+						if anyApplied {
+							continue
+						}
+					}
 				}
 			}
 			if stop || len(blocks) < catchUpBatchSize {

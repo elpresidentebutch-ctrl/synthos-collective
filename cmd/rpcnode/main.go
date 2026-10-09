@@ -8,9 +8,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"runtime"
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"time"
 
 	"synthos-collective/internal/agent"
 	"synthos-collective/internal/chain"
@@ -29,6 +31,7 @@ func main() {
 	if os.Getenv("GOGC") == "" {
 		debug.SetGCPercent(30)
 	}
+	startMemoryWatchdog()
 
 	dataDir := os.Getenv("SYNTHOS_DATA_DIR")
 	if dataDir == "" {
@@ -307,4 +310,21 @@ func validatorKeys(privateKeyHex string) (synthoscrypto.KeyPair, error) {
 		return synthoscrypto.KeyPair{}, fmt.Errorf("failed to derive public key")
 	}
 	return synthoscrypto.KeyPair{Public: pub, Private: priv}, nil
+}
+
+func startMemoryWatchdog() {
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		var m runtime.MemStats
+		for range ticker.C {
+			runtime.ReadMemStats(&m)
+			if m.Alloc > 150*1024*1024 || m.Sys > 220*1024*1024 {
+				runtime.GC()
+				debug.FreeOSMemory()
+				log.Printf("memory watchdog: proactive OS memory release (alloc=%d MB, sys=%d MB, num_gc=%d)",
+					m.Alloc/(1024*1024), m.Sys/(1024*1024), m.NumGC)
+			}
+		}
+	}()
 }

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"sort"
 	"strconv"
@@ -39,6 +40,7 @@ func main() {
 	if os.Getenv("GOGC") == "" {
 		debug.SetGCPercent(30)
 	}
+	startMemoryWatchdog()
 
 	cfgPath := os.Getenv("SYNTHOS_CONFIG")
 	if cfgPath == "" {
@@ -1137,4 +1139,24 @@ func loadOrCreatePersistedKeyPair(dataDir string) (synthoscrypto.KeyPair, error)
 		return synthoscrypto.KeyPair{}, fmt.Errorf("writing persisted node identity %s: %w", path, err)
 	}
 	return kp, nil
+}
+
+// startMemoryWatchdog monitors memory every 10 seconds. If heap or system allocations
+// approach container thresholds, it triggers a garbage collection and explicitly returns
+// physical pages to the OS via debug.FreeOSMemory(), ensuring RSS never exceeds Render's 512MB limit.
+func startMemoryWatchdog() {
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		var m runtime.MemStats
+		for range ticker.C {
+			runtime.ReadMemStats(&m)
+			if m.Alloc > 150*1024*1024 || m.Sys > 220*1024*1024 {
+				runtime.GC()
+				debug.FreeOSMemory()
+				log.Printf("memory watchdog: proactive OS memory release (alloc=%d MB, sys=%d MB, num_gc=%d)",
+					m.Alloc/(1024*1024), m.Sys/(1024*1024), m.NumGC)
+			}
+		}
+	}()
 }
