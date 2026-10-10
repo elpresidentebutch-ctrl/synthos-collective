@@ -1,6 +1,7 @@
 services:
   - type: web
     name: synthos-rpc
+    plan: standard
     runtime: docker
     dockerfilePath: ./Dockerfile
     dockerCommand: /usr/local/bin/synthosd
@@ -33,7 +34,7 @@ services:
       - key: SYNTHOS_MAX_HOT_BLOCKS
         value: "250"
       - key: GOMEMLIMIT
-        value: "256MiB"
+        value: "1536MiB"
       - key: GOGC
         value: "30"
     disk:
@@ -43,6 +44,7 @@ services:
 
   - type: web
     name: synthos-validator-12
+    plan: standard
     runtime: docker
     dockerfilePath: ./Dockerfile
     dockerCommand: /usr/local/bin/synthosd
@@ -96,7 +98,7 @@ services:
       - key: SYNTHOS_MAX_HOT_BLOCKS
         value: "250"
       - key: GOMEMLIMIT
-        value: "256MiB"
+        value: "1536MiB"
       - key: GOGC
         value: "30"
     disk:
@@ -106,6 +108,7 @@ services:
 
   - type: web
     name: synthos-validator-13
+    plan: standard
     runtime: docker
     dockerfilePath: ./Dockerfile
     dockerCommand: /usr/local/bin/synthosd
@@ -146,7 +149,7 @@ services:
       - key: SYNTHOS_MAX_HOT_BLOCKS
         value: "250"
       - key: GOMEMLIMIT
-        value: "256MiB"
+        value: "1536MiB"
       - key: GOGC
         value: "30"
     disk:
@@ -156,6 +159,7 @@ services:
 
   - type: web
     name: synthos-www
+    plan: standard
     runtime: docker
     dockerfilePath: ./Dockerfile
     dockerCommand: /usr/local/bin/cloudless-registry -state /data/cloudless-registry.json
@@ -165,7 +169,7 @@ services:
       - key: SYNTHOS_NATIVE_RPC_URL
         value: https://synthos-rpc.onrender.com
       - key: GOMEMLIMIT
-        value: "256MiB"
+        value: "1536MiB"
       - key: GOGC
         value: "30"
       # Separate from SYNTHOS_NATIVE_RPC_URL above (used by
