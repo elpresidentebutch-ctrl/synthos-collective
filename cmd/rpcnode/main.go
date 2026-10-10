@@ -25,13 +25,20 @@ import (
 )
 
 func main() {
+	cgroupLimit := readCgroupMemoryLimit()
 	if os.Getenv("GOMEMLIMIT") == "" {
-		debug.SetMemoryLimit(256 * 1024 * 1024)
+		if cgroupLimit > 0 {
+			target := int64(float64(cgroupLimit) * 0.75)
+			debug.SetMemoryLimit(target)
+			log.Printf("memory: container limit detected as %d MB; set GOMEMLIMIT to %d MB", cgroupLimit/(1024*1024), target/(1024*1024))
+		} else {
+			debug.SetMemoryLimit(256 * 1024 * 1024)
+		}
 	}
 	if os.Getenv("GOGC") == "" {
 		debug.SetGCPercent(30)
 	}
-	startMemoryWatchdog()
+	startMemoryWatchdog(cgroupLimit)
 
 	dataDir := os.Getenv("SYNTHOS_DATA_DIR")
 	if dataDir == "" {
@@ -312,14 +319,40 @@ func validatorKeys(privateKeyHex string) (synthoscrypto.KeyPair, error) {
 	return synthoscrypto.KeyPair{Public: pub, Private: priv}, nil
 }
 
-func startMemoryWatchdog() {
+func readCgroupMemoryLimit() uint64 {
+	// cgroup v2
+	if data, err := os.ReadFile("/sys/fs/cgroup/memory.max"); err == nil {
+		str := strings.TrimSpace(string(data))
+		if str != "max" && str != "" {
+			if val, err := strconv.ParseUint(str, 10, 64); err == nil {
+				return val
+			}
+		}
+	}
+	// cgroup v1
+	if data, err := os.ReadFile("/sys/fs/cgroup/memory/memory.limit_in_bytes"); err == nil {
+		str := strings.TrimSpace(string(data))
+		if val, err := strconv.ParseUint(str, 10, 64); err == nil && val < 0x7FFFFFFFFFFFF000 {
+			return val
+		}
+	}
+	return 0
+}
+
+func startMemoryWatchdog(containerLimit uint64) {
+	thresholdAlloc := uint64(150 * 1024 * 1024)
+	thresholdSys := uint64(220 * 1024 * 1024)
+	if containerLimit > 0 {
+		thresholdAlloc = uint64(float64(containerLimit) * 0.65)
+		thresholdSys = uint64(float64(containerLimit) * 0.85)
+	}
 	go func() {
 		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
 		var m runtime.MemStats
 		for range ticker.C {
 			runtime.ReadMemStats(&m)
-			if m.Alloc > 150*1024*1024 || m.Sys > 220*1024*1024 {
+			if m.Alloc > thresholdAlloc || m.Sys > thresholdSys {
 				runtime.GC()
 				debug.FreeOSMemory()
 				log.Printf("memory watchdog: proactive OS memory release (alloc=%d MB, sys=%d MB, num_gc=%d)",
