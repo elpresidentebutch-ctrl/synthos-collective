@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"runtime"
 	"strconv"
 	"strings"
@@ -297,16 +298,42 @@ func (s *Server) bodyLimitMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+func readCgroupMemoryLimit() uint64 {
+	// cgroup v2
+	if data, err := os.ReadFile("/sys/fs/cgroup/memory.max"); err == nil {
+		str := strings.TrimSpace(string(data))
+		if str != "max" && str != "" {
+			if val, err := strconv.ParseUint(str, 10, 64); err == nil {
+				return val
+			}
+		}
+	}
+	// cgroup v1
+	if data, err := os.ReadFile("/sys/fs/cgroup/memory/memory.limit_in_bytes"); err == nil {
+		str := strings.TrimSpace(string(data))
+		if val, err := strconv.ParseUint(str, 10, 64); err == nil && val < 0x7FFFFFFFFFFFF000 {
+			return val
+		}
+	}
+	return 0
+}
+
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
+	cgroupLimit := readCgroupMemoryLimit()
+	cgroupLimitMB := uint64(0)
+	if cgroupLimit > 0 {
+		cgroupLimitMB = cgroupLimit / (1024 * 1024)
+	}
 	writeJSON(w, map[string]any{
 		"ok":      true,
 		"service": "synthos-rpc",
 		"mem": map[string]any{
-			"alloc_mb": m.Alloc / (1024 * 1024),
-			"sys_mb":   m.Sys / (1024 * 1024),
-			"num_gc":   m.NumGC,
+			"alloc_mb":           m.Alloc / (1024 * 1024),
+			"sys_mb":             m.Sys / (1024 * 1024),
+			"num_gc":             m.NumGC,
+			"container_limit_mb": cgroupLimitMB,
 		},
 	})
 }
