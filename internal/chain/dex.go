@@ -3,6 +3,7 @@ package chain
 import (
 	"errors"
 	"math/bits"
+	"strings"
 	"sync"
 )
 
@@ -16,6 +17,42 @@ type Pool struct {
 	Shares       map[Address]uint64 `json:"shares"`
 }
 
+// PoolAddress returns the deterministic on-chain account address for an asset pair's reserves.
+func PoolAddress(assetID string) Address {
+	clean := strings.ToLower(strings.TrimSpace(assetID))
+	return Address("0xdex_pool_" + clean)
+}
+
+func clonePool(p *Pool) *Pool {
+	if p == nil {
+		return nil
+	}
+	cp := &Pool{
+		AssetID:      p.AssetID,
+		SynReserve:   p.SynReserve,
+		AssetReserve: p.AssetReserve,
+		TotalShares:  p.TotalShares,
+		Shares:       make(map[Address]uint64, len(p.Shares)),
+	}
+	for address, shares := range p.Shares {
+		cp.Shares[address] = shares
+	}
+	return cp
+}
+
+func sqrtUint64(x uint64) uint64 {
+	if x == 0 {
+		return 0
+	}
+	z := (x + 1) / 2
+	y := x
+	for z < y {
+		y = z
+		z = (x/z + z) / 2
+	}
+	return y
+}
+
 type DEX struct {
 	mu    sync.RWMutex
 	Pools map[string]*Pool // AssetID -> Pool
@@ -27,7 +64,7 @@ func NewDEX() *DEX {
 	}
 }
 
-// GetAmountOut calculates the output amount for a swap using x * y = k
+// GetAmountOut calculates the output amount for a swap using x * y = k with a 0.3% (30 bps) fee.
 func (d *DEX) GetAmountOut(amountIn uint64, reserveIn uint64, reserveOut uint64) (uint64, error) {
 	if amountIn == 0 {
 		return 0, errors.New("insufficient input amount")
@@ -36,7 +73,7 @@ func (d *DEX) GetAmountOut(amountIn uint64, reserveIn uint64, reserveOut uint64)
 		return 0, errors.New("insufficient liquidity")
 	}
 
-	// 0.3% fee
+	// 0.3% fee (99.7% of input amount contributes to trade)
 	amountInHi, amountInWithFee := bits.Mul64(amountIn, 997)
 	if amountInHi != 0 {
 		return 0, errors.New("swap input overflow")
@@ -73,14 +110,11 @@ func (d *DEX) AddLiquidity(assetID string, synAmount uint64, assetAmount uint64,
 
 	var shares uint64
 	if pool.TotalShares == 0 {
-		shares = synAmount
+		shares = sqrtUint64(synAmount * assetAmount)
+		if shares == 0 {
+			shares = synAmount
+		}
 	} else {
-		// Defensive guard: TotalShares != 0 should always imply both reserves
-		// are non-zero too (a pool is seeded with both sides positive, and
-		// GetAmountOut's own denominator/overflow checks keep a swap from
-		// draining a reserve to exactly 0). Guarding here anyway rather than
-		// relying on that invariant holding everywhere it's touched -- a
-		// division by either reserve otherwise panics the node process.
 		if pool.SynReserve == 0 || pool.AssetReserve == 0 {
 			return 0, errors.New("pool has shares but a zero reserve")
 		}
@@ -103,6 +137,43 @@ func (d *DEX) AddLiquidity(assetID string, synAmount uint64, assetAmount uint64,
 	pool.Shares[provider] += shares
 
 	return shares, nil
+}
+
+// RemoveLiquidity burns provider shares and returns proportionate SYN and asset reserves.
+func (d *DEX) RemoveLiquidity(assetID string, shares uint64, provider Address) (uint64, uint64, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	pool, exists := d.Pools[assetID]
+	if !exists {
+		return 0, 0, errors.New("pool not found")
+	}
+	if shares == 0 {
+		return 0, 0, errors.New("invalid shares")
+	}
+	if pool.TotalShares == 0 || pool.SynReserve == 0 || pool.AssetReserve == 0 {
+		return 0, 0, errors.New("insufficient pool liquidity")
+	}
+	providerShares := pool.Shares[provider]
+	if providerShares < shares {
+		return 0, 0, errors.New("insufficient provider shares")
+	}
+
+	synOut := (shares * pool.SynReserve) / pool.TotalShares
+	assetOut := (shares * pool.AssetReserve) / pool.TotalShares
+	if synOut == 0 || assetOut == 0 {
+		return 0, 0, errors.New("zero output amount")
+	}
+
+	pool.Shares[provider] -= shares
+	if pool.Shares[provider] == 0 {
+		delete(pool.Shares, provider)
+	}
+	pool.TotalShares -= shares
+	pool.SynReserve -= synOut
+	pool.AssetReserve -= assetOut
+
+	return synOut, assetOut, nil
 }
 
 // Swap swaps tokens
@@ -154,6 +225,15 @@ func (d *DEX) SeedPool(assetID string, synAmount uint64, assetAmount uint64) {
 		TotalShares:  synAmount,
 		Shares:       make(map[Address]uint64),
 	}
+}
+
+func (d *DEX) SyncFromState(state *State) {
+	if state == nil {
+		return
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.Pools = state.ListDEXPools()
 }
 
 func (d *DEX) ListPools() map[string]*Pool {

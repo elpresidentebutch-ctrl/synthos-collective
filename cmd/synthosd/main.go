@@ -90,6 +90,9 @@ func main() {
 				Blocks:    snap.Blocks,
 				Mempool:   make(map[string]chain.Tx),
 			}
+			if ch.DEX != nil && ch.State != nil {
+				ch.DEX.SyncFromState(ch.State)
+			}
 		}
 		// A restored chain starts from its saved State, not from genesis, so it
 		// doesn't have the pre-block-1 state TryReorg needs to safely replay an

@@ -43,6 +43,13 @@ func TestStateClone_CopiesEveryExportedField(t *testing.T) {
 		VotesFor: 10, IsActive: true, Voters: map[Address]bool{addr1: true},
 	}
 	s.GovernanceFounder = addr1
+	s.DEXPools["NGOT"] = &Pool{
+		AssetID:      "NGOT",
+		SynReserve:   1000,
+		AssetReserve: 2000,
+		TotalShares:  500,
+		Shares:       map[Address]uint64{addr1: 500},
+	}
 
 	clone := s.Clone()
 
@@ -71,5 +78,10 @@ func TestStateClone_CopiesEveryExportedField(t *testing.T) {
 	clone.GovernanceProposals["prop-1"].VotesFor = 999999
 	if s.GovernanceProposals["prop-1"].VotesFor == 999999 {
 		t.Fatal("Clone aliased a *Proposal instead of deep-copying it: mutating the clone's proposal changed the source's proposal")
+	}
+
+	clone.DEXPools["NGOT"].SynReserve = 999999
+	if s.DEXPools["NGOT"].SynReserve == 999999 {
+		t.Fatal("Clone aliased a *Pool instead of deep-copying it: mutating the clone's pool changed the source's pool")
 	}
 }

@@ -306,6 +306,11 @@ type State struct {
 	// this struct.
 	GovernanceProposals map[string]*Proposal
 	GovernanceFounder   Address
+
+	// DEX pools (see dex.go). DEXPools tracks all automated market maker liquidity pools
+	// and LP shares on the native chain. All pool mutations are finalized through ApplyTx
+	// with strict balance conservation and 30 bps LP fee auto-compounding.
+	DEXPools map[string]*Pool
 }
 
 func NewState() *State {
@@ -318,6 +323,7 @@ func NewState() *State {
 		BridgeValidators:      make(map[string]string),
 		CitizenStakes:         make(map[Address]CitizenStake),
 		GovernanceProposals:   make(map[string]*Proposal),
+		DEXPools:              make(map[string]*Pool),
 		TotalSupply:           MAX_SUPPLY,
 	}
 }
@@ -399,6 +405,13 @@ var citizenGovernanceTxTypes = map[string]bool{
 	"governance_execute":    true,
 }
 
+var dexTxTypes = map[string]bool{
+	"asset_issue":          true,
+	"dex_add_liquidity":    true,
+	"dex_remove_liquidity": true,
+	"dex_swap":             true,
+}
+
 func (s *State) ApplyTx(tx Tx) error {
 	if err := tx.Verify(); err != nil {
 		return err
@@ -406,6 +419,9 @@ func (s *State) ApplyTx(tx Tx) error {
 
 	if txType := metadataValue(tx.Metadata, "type"); citizenGovernanceTxTypes[txType] {
 		return s.applyCitizenGovernanceTx(tx, txType)
+	}
+	if txType := metadataValue(tx.Metadata, "type"); dexTxTypes[txType] {
+		return s.applyDEXTx(tx, txType)
 	}
 
 	from := s.Get(tx.From)
@@ -587,6 +603,338 @@ func parseTxMetadataUint64(items []KeyValuePair, key string) (uint64, error) {
 		return 0, fmt.Errorf("missing %s", key)
 	}
 	return strconv.ParseUint(raw, 10, 64)
+}
+
+func (s *State) applyDEXTx(tx Tx, txType string) error {
+	acc := s.Get(tx.From)
+	if tx.Nonce != acc.Nonce {
+		return errors.New("bad nonce")
+	}
+
+	switch txType {
+	case "asset_issue":
+		assetID := strings.ToUpper(strings.TrimSpace(metadataValue(tx.Metadata, "asset_id")))
+		if assetID == "" {
+			assetID = strings.ToUpper(strings.TrimSpace(tx.AssetID))
+		}
+		if assetID == "" || assetID == "SYN" {
+			return errors.New("invalid asset ID for issuance")
+		}
+		amount := tx.Amount
+		if amount == 0 {
+			var err error
+			amount, err = parseTxMetadataUint64(tx.Metadata, "amount")
+			if err != nil || amount == 0 {
+				return errors.New("issuance amount must be greater than zero")
+			}
+		}
+		if acc.Balance < tx.Fee {
+			return ErrInsufficientFunds
+		}
+
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		settled := s.Accounts[tx.From]
+		if settled.Assets == nil {
+			settled.Assets = make(map[string]uint64)
+		}
+		nextAssetBal, err := safeAdd(settled.Assets[assetID], amount)
+		if err != nil {
+			return errors.New("asset balance overflow")
+		}
+		settled.Assets[assetID] = nextAssetBal
+		settled.Balance -= tx.Fee
+		settled.Nonce++
+		s.Accounts[tx.From] = settled
+		return nil
+
+	case "dex_add_liquidity":
+		assetID := strings.ToUpper(strings.TrimSpace(metadataValue(tx.Metadata, "asset_id")))
+		if assetID == "" {
+			assetID = strings.ToUpper(strings.TrimSpace(tx.AssetID))
+		}
+		if assetID == "" || assetID == "SYN" {
+			return errors.New("invalid asset ID for DEX pool")
+		}
+
+		synAmount, _ := parseTxMetadataUint64(tx.Metadata, "syn_amount")
+		if synAmount == 0 && (tx.AssetID == "" || strings.ToLower(tx.AssetID) == "syn") {
+			synAmount = tx.Amount
+		}
+		assetAmount, _ := parseTxMetadataUint64(tx.Metadata, "asset_amount")
+		if assetAmount == 0 && tx.AssetID != "" && strings.ToLower(tx.AssetID) != "syn" {
+			assetAmount = tx.Amount
+		}
+		if synAmount == 0 || assetAmount == 0 {
+			return errors.New("syn_amount and asset_amount must be greater than zero")
+		}
+		minShares, _ := parseTxMetadataUint64(tx.Metadata, "min_shares")
+
+		totalSyn, err := safeAdd(synAmount, tx.Fee)
+		if err != nil {
+			return errors.New("amount overflow detected")
+		}
+		if acc.Balance < totalSyn {
+			return ErrInsufficientFunds
+		}
+		if acc.Assets[assetID] < assetAmount {
+			return errors.New("insufficient asset balance for liquidity")
+		}
+
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.DEXPools == nil {
+			s.DEXPools = make(map[string]*Pool)
+		}
+		pool, exists := s.DEXPools[assetID]
+		if !exists || pool == nil {
+			pool = &Pool{
+				AssetID: assetID,
+				Shares:  make(map[Address]uint64),
+			}
+			s.DEXPools[assetID] = pool
+		}
+
+		var shares uint64
+		if pool.TotalShares == 0 {
+			shares = sqrtUint64(synAmount * assetAmount)
+			if shares == 0 {
+				shares = synAmount
+			}
+		} else {
+			if pool.SynReserve == 0 || pool.AssetReserve == 0 {
+				return errors.New("pool has shares but a zero reserve")
+			}
+			shareSyn := (synAmount * pool.TotalShares) / pool.SynReserve
+			shareAsset := (assetAmount * pool.TotalShares) / pool.AssetReserve
+			if shareSyn < shareAsset {
+				shares = shareSyn
+			} else {
+				shares = shareAsset
+			}
+		}
+
+		if shares == 0 {
+			return errors.New("insufficient liquidity minted")
+		}
+		if minShares > 0 && shares < minShares {
+			return fmt.Errorf("slippage exceeded: minted %d shares, minimum was %d", shares, minShares)
+		}
+
+		poolAddr := PoolAddress(assetID)
+		poolAcc := s.Accounts[poolAddr]
+		if poolAcc.Assets == nil {
+			poolAcc.Assets = make(map[string]uint64)
+		}
+		poolAcc.Balance += synAmount
+		poolAcc.Assets[assetID] += assetAmount
+		s.Accounts[poolAddr] = poolAcc
+
+		pool.SynReserve = poolAcc.Balance
+		pool.AssetReserve = poolAcc.Assets[assetID]
+		pool.TotalShares += shares
+		pool.Shares[tx.From] += shares
+
+		settledFrom := s.Accounts[tx.From]
+		settledFrom.Balance -= totalSyn
+		settledFrom.Assets[assetID] -= assetAmount
+		settledFrom.Nonce++
+		s.Accounts[tx.From] = settledFrom
+		return nil
+
+	case "dex_remove_liquidity":
+		assetID := strings.ToUpper(strings.TrimSpace(metadataValue(tx.Metadata, "asset_id")))
+		if assetID == "" {
+			assetID = strings.ToUpper(strings.TrimSpace(tx.AssetID))
+		}
+		shares, err := parseTxMetadataUint64(tx.Metadata, "shares")
+		if err != nil || shares == 0 {
+			return errors.New("shares must be greater than zero")
+		}
+		minSynOut, _ := parseTxMetadataUint64(tx.Metadata, "min_syn_out")
+		minAssetOut, _ := parseTxMetadataUint64(tx.Metadata, "min_asset_out")
+
+		if acc.Balance < tx.Fee {
+			return ErrInsufficientFunds
+		}
+
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		pool := s.DEXPools[assetID]
+		if pool == nil || pool.TotalShares == 0 {
+			return errors.New("pool not found or empty")
+		}
+		if pool.Shares[tx.From] < shares {
+			return errors.New("insufficient LP shares")
+		}
+
+		synOut := (shares * pool.SynReserve) / pool.TotalShares
+		assetOut := (shares * pool.AssetReserve) / pool.TotalShares
+		if synOut == 0 || assetOut == 0 {
+			return errors.New("zero output amount")
+		}
+		if minSynOut > 0 && synOut < minSynOut {
+			return fmt.Errorf("slippage exceeded: syn out %d < min %d", synOut, minSynOut)
+		}
+		if minAssetOut > 0 && assetOut < minAssetOut {
+			return fmt.Errorf("slippage exceeded: asset out %d < min %d", assetOut, minAssetOut)
+		}
+
+		poolAddr := PoolAddress(assetID)
+		poolAcc := s.Accounts[poolAddr]
+		if poolAcc.Balance < synOut || poolAcc.Assets[assetID] < assetOut {
+			return errors.New("pool balance mismatch")
+		}
+		poolAcc.Balance -= synOut
+		poolAcc.Assets[assetID] -= assetOut
+		s.Accounts[poolAddr] = poolAcc
+
+		pool.Shares[tx.From] -= shares
+		if pool.Shares[tx.From] == 0 {
+			delete(pool.Shares, tx.From)
+		}
+		pool.TotalShares -= shares
+		pool.SynReserve = poolAcc.Balance
+		pool.AssetReserve = poolAcc.Assets[assetID]
+
+		settledFrom := s.Accounts[tx.From]
+		settledFrom.Balance = settledFrom.Balance - tx.Fee + synOut
+		if settledFrom.Assets == nil {
+			settledFrom.Assets = make(map[string]uint64)
+		}
+		settledFrom.Assets[assetID] += assetOut
+		settledFrom.Nonce++
+		s.Accounts[tx.From] = settledFrom
+		return nil
+
+	case "dex_swap":
+		assetID := strings.ToUpper(strings.TrimSpace(metadataValue(tx.Metadata, "asset_id")))
+		if assetID == "" {
+			assetID = strings.ToUpper(strings.TrimSpace(tx.AssetID))
+		}
+		if assetID == "" || assetID == "SYN" {
+			return errors.New("invalid asset ID for swap")
+		}
+		direction := metadataValue(tx.Metadata, "direction")
+		fromSyn := true
+		if direction == "asset_for_syn" || metadataValue(tx.Metadata, "from_syn") == "false" || (tx.AssetID != "" && strings.ToUpper(tx.AssetID) == assetID && direction != "syn_for_asset") {
+			fromSyn = false
+		}
+
+		amountIn := tx.Amount
+		if amountIn == 0 {
+			amountIn, _ = parseTxMetadataUint64(tx.Metadata, "amount_in")
+		}
+		if amountIn == 0 {
+			return errors.New("amount_in must be greater than zero")
+		}
+		minAmountOut, _ := parseTxMetadataUint64(tx.Metadata, "min_amount_out")
+
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		pool := s.DEXPools[assetID]
+		if pool == nil || pool.SynReserve == 0 || pool.AssetReserve == 0 {
+			return errors.New("pool not found or insufficient liquidity")
+		}
+
+		d := &DEX{}
+		poolAddr := PoolAddress(assetID)
+		poolAcc := s.Accounts[poolAddr]
+
+		if fromSyn {
+			totalSyn, err := safeAdd(amountIn, tx.Fee)
+			if err != nil {
+				return errors.New("amount overflow detected")
+			}
+			if acc.Balance < totalSyn {
+				return ErrInsufficientFunds
+			}
+			amountOut, err := d.GetAmountOut(amountIn, pool.SynReserve, pool.AssetReserve)
+			if err != nil {
+				return fmt.Errorf("quote error: %w", err)
+			}
+			if minAmountOut > 0 && amountOut < minAmountOut {
+				return fmt.Errorf("slippage exceeded: output %d < minimum %d", amountOut, minAmountOut)
+			}
+			if amountOut >= pool.AssetReserve || poolAcc.Assets[assetID] < amountOut {
+				return errors.New("insufficient pool asset reserve")
+			}
+
+			poolAcc.Balance += amountIn
+			poolAcc.Assets[assetID] -= amountOut
+			s.Accounts[poolAddr] = poolAcc
+
+			pool.SynReserve = poolAcc.Balance
+			pool.AssetReserve = poolAcc.Assets[assetID]
+
+			settledFrom := s.Accounts[tx.From]
+			settledFrom.Balance -= totalSyn
+			if settledFrom.Assets == nil {
+				settledFrom.Assets = make(map[string]uint64)
+			}
+			settledFrom.Assets[assetID] += amountOut
+			settledFrom.Nonce++
+			s.Accounts[tx.From] = settledFrom
+			return nil
+		} else {
+			if acc.Balance < tx.Fee {
+				return ErrInsufficientFunds
+			}
+			if acc.Assets[assetID] < amountIn {
+				return errors.New("insufficient asset balance for swap")
+			}
+			amountOut, err := d.GetAmountOut(amountIn, pool.AssetReserve, pool.SynReserve)
+			if err != nil {
+				return fmt.Errorf("quote error: %w", err)
+			}
+			if minAmountOut > 0 && amountOut < minAmountOut {
+				return fmt.Errorf("slippage exceeded: output %d < minimum %d", amountOut, minAmountOut)
+			}
+			if amountOut >= pool.SynReserve || poolAcc.Balance < amountOut {
+				return errors.New("insufficient pool SYN reserve")
+			}
+
+			poolAcc.Assets[assetID] += amountIn
+			poolAcc.Balance -= amountOut
+			s.Accounts[poolAddr] = poolAcc
+
+			pool.SynReserve = poolAcc.Balance
+			pool.AssetReserve = poolAcc.Assets[assetID]
+
+			settledFrom := s.Accounts[tx.From]
+			settledFrom.Assets[assetID] -= amountIn
+			settledFrom.Balance = settledFrom.Balance - tx.Fee + amountOut
+			settledFrom.Nonce++
+			s.Accounts[tx.From] = settledFrom
+			return nil
+		}
+
+	default:
+		return fmt.Errorf("unhandled dex tx type %q", txType)
+	}
+}
+
+func (s *State) GetDEXPool(assetID string) *Pool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	pool, ok := s.DEXPools[strings.ToUpper(strings.TrimSpace(assetID))]
+	if !ok || pool == nil {
+		return nil
+	}
+	return clonePool(pool)
+}
+
+func (s *State) ListDEXPools() map[string]*Pool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make(map[string]*Pool, len(s.DEXPools))
+	for assetID, pool := range s.DEXPools {
+		if pool == nil {
+			continue
+		}
+		out[assetID] = clonePool(pool)
+	}
+	return out
 }
 
 func (s *State) applyBridgeMetadata(tx Tx) error {
@@ -1051,6 +1399,9 @@ func (s *State) Clone() *State {
 		out.GovernanceProposals[k] = &cloned
 	}
 	out.GovernanceFounder = s.GovernanceFounder
+	for k, v := range s.DEXPools {
+		out.DEXPools[k] = clonePool(v)
+	}
 	return out
 }
 

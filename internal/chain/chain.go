@@ -181,6 +181,9 @@ func NewChain(genesis Genesis) (*Chain, error) {
 		Blocks:    make([]*Block, 0, 1024),
 		Mempool:   make(map[string]Tx),
 	}
+	if c.DEX != nil && c.State != nil {
+		c.DEX.SyncFromState(c.State)
+	}
 
 	// stateRoot/hash normally come from a fresh computation, but a genesis
 	// that's already live can pin them instead -- see
@@ -800,6 +803,9 @@ func (c *Chain) FinalizeBlock(b *Block) error {
 	}
 
 	c.State = nextState
+	if c.DEX != nil {
+		c.DEX.SyncFromState(c.State)
+	}
 	for _, tx := range b.Tx {
 		delete(c.Mempool, tx.ID)
 	}

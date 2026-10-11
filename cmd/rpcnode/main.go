@@ -71,6 +71,9 @@ func main() {
 			Blocks:    snap.Blocks,
 			Mempool:   make(map[string]chain.Tx),
 		}
+		if c.DEX != nil && c.State != nil {
+			c.DEX.SyncFromState(c.State)
+		}
 		c.SeedGenesisState(genesisChain.State)
 		// A one-time legacy-format snapshot loads c.Blocks with the chain's
 		// ENTIRE history. Archive all of it now, while maxHotBlocks is still

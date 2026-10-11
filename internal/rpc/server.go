@@ -245,6 +245,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/dex/pools", s.handleDEXPools)
 	mux.HandleFunc("/dex/quote", s.handleDEXQuote)
 	mux.HandleFunc("/dex/swap", s.handleDEXSwap)
+	mux.HandleFunc("/dex/liquidity", s.handleDEXLiquidity)
+	mux.HandleFunc("/dex/issue", s.handleDEXIssue)
 	mux.HandleFunc("/immune/status", s.handleImmuneStatus)
 	mux.HandleFunc("/bridge/status", s.handleBridgeStatus)
 	mux.HandleFunc("/bridge/events", s.handleBridgeEvents)
@@ -566,52 +568,474 @@ func (s *Server) handleBlocks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDEXPools(w http.ResponseWriter, r *http.Request) {
+	asset := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("asset")))
+	if asset != "" {
+		pool := s.Chain.State.GetDEXPool(asset)
+		if pool == nil {
+			pool = s.Chain.DEX.ListPools()[asset]
+		}
+		if pool == nil {
+			http.Error(w, "pool not found", http.StatusNotFound)
+			return
+		}
+		writeJSON(w, map[string]any{
+			"ok":           true,
+			"pool":         pool,
+			"pool_address": chain.PoolAddress(asset),
+		})
+		return
+	}
+
+	pools := s.Chain.State.ListDEXPools()
+	if len(pools) == 0 && s.Chain.DEX != nil {
+		pools = s.Chain.DEX.ListPools()
+	}
+	poolsWithMeta := make(map[string]any, len(pools))
+	for assetID, p := range pools {
+		poolsWithMeta[assetID] = map[string]any{
+			"asset_id":      p.AssetID,
+			"syn_reserve":   p.SynReserve,
+			"asset_reserve": p.AssetReserve,
+			"total_shares":  p.TotalShares,
+			"pool_address":  chain.PoolAddress(assetID),
+			"shares_count":  len(p.Shares),
+		}
+	}
 	writeJSON(w, map[string]any{
 		"ok":    true,
-		"pools": s.Chain.DEX.ListPools(),
+		"pools": poolsWithMeta,
+		"count": len(poolsWithMeta),
 	})
 }
 
 func (s *Server) handleDEXQuote(w http.ResponseWriter, r *http.Request) {
-	asset := r.URL.Query().Get("asset")
+	asset := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("asset")))
+	if asset == "" {
+		http.Error(w, "missing asset query parameter", http.StatusBadRequest)
+		return
+	}
 	amount, err := parseUintQuery(r, "amount")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if amount == 0 {
+		http.Error(w, "amount must be greater than zero", http.StatusBadRequest)
+		return
+	}
+
 	fromSyn := r.URL.Query().Get("from") != "asset"
-	pool := s.Chain.DEX.ListPools()[asset]
+	pool := s.Chain.State.GetDEXPool(asset)
+	if pool == nil && s.Chain.DEX != nil {
+		pool = s.Chain.DEX.ListPools()[asset]
+	}
 	if pool == nil {
 		http.Error(w, "pool not found", http.StatusNotFound)
 		return
 	}
 
 	var out uint64
+	d := s.Chain.DEX
+	if d == nil {
+		d = chain.NewDEX()
+	}
 	if fromSyn {
-		out, err = s.Chain.DEX.GetAmountOut(amount, pool.SynReserve, pool.AssetReserve)
+		out, err = d.GetAmountOut(amount, pool.SynReserve, pool.AssetReserve)
 	} else {
-		out, err = s.Chain.DEX.GetAmountOut(amount, pool.AssetReserve, pool.SynReserve)
+		out, err = d.GetAmountOut(amount, pool.AssetReserve, pool.SynReserve)
 	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+
 	writeJSON(w, map[string]any{
-		"ok":         true,
-		"asset":      asset,
-		"amount_in":  amount,
-		"amount_out": out,
-		"from_syn":   fromSyn,
-		"fee_bps":    30,
+		"ok":           true,
+		"asset":        asset,
+		"amount_in":    amount,
+		"amount_out":   out,
+		"from_syn":     fromSyn,
+		"fee_bps":      30,
+		"pool_syn":     pool.SynReserve,
+		"pool_asset":   pool.AssetReserve,
+		"pool_address": chain.PoolAddress(asset),
 	})
 }
 
+func decodePrivateKey(raw string) (ed25519.PrivateKey, error) {
+	clean := strings.TrimPrefix(strings.TrimSpace(raw), "0x")
+	rawBytes, err := hex.DecodeString(clean)
+	if err != nil {
+		return nil, fmt.Errorf("invalid private key hex: %w", err)
+	}
+	if len(rawBytes) == ed25519.SeedSize {
+		return ed25519.NewKeyFromSeed(rawBytes), nil
+	}
+	if len(rawBytes) == ed25519.PrivateKeySize {
+		return ed25519.PrivateKey(rawBytes), nil
+	}
+	return nil, errors.New("invalid private key length (must be 32 or 64 bytes)")
+}
+
+type dexSwapRequest struct {
+	From         chain.Address `json:"from"`
+	AssetID      string        `json:"asset_id"`
+	Direction    string        `json:"direction"`
+	AmountIn     uint64        `json:"amount_in"`
+	MinAmountOut uint64        `json:"min_amount_out"`
+	PrivateKey   string        `json:"private_key,omitempty"`
+}
+
 func (s *Server) handleDEXSwap(w http.ResponseWriter, r *http.Request) {
-	http.Error(
-		w,
-		"DEX mutation is disabled until swaps are signed transactions finalized by consensus",
-		http.StatusNotImplemented,
-	)
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, s.MaxBodySize))
+	if err != nil {
+		http.Error(w, "error reading body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var signedTx chain.Tx
+	if err := json.Unmarshal(body, &signedTx); err == nil && signedTx.Signature != "" {
+		if err := s.Chain.SubmitTx(signedTx); err != nil {
+			http.Error(w, "submit tx error: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if s.Store != nil {
+			_ = s.Store.Save(s.Chain)
+		}
+		writeJSON(w, map[string]any{
+			"ok":     true,
+			"tx_id":  signedTx.ID,
+			"status": "pending_mempool",
+		})
+		return
+	}
+
+	var req dexSwapRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.PrivateKey == "" {
+		http.Error(w, "either signed transaction or private_key is required", http.StatusBadRequest)
+		return
+	}
+
+	privKey, err := decodePrivateKey(req.PrivateKey)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	pub := privKey.Public().(ed25519.PublicKey)
+	derivedFrom := chain.AddressFromPublicKey(pub)
+	if req.From != "" && req.From != derivedFrom {
+		http.Error(w, "from address does not match private key", http.StatusBadRequest)
+		return
+	}
+
+	assetID := strings.ToUpper(strings.TrimSpace(req.AssetID))
+	if assetID == "" || assetID == "SYN" {
+		http.Error(w, "invalid asset_id", http.StatusBadRequest)
+		return
+	}
+	direction := req.Direction
+	if direction != "asset_for_syn" {
+		direction = "syn_for_asset"
+	}
+	if req.AmountIn == 0 {
+		http.Error(w, "amount_in must be greater than zero", http.StatusBadRequest)
+		return
+	}
+
+	txAssetID := "syn"
+	if direction == "asset_for_syn" {
+		txAssetID = assetID
+	}
+
+	tx := chain.Tx{
+		ChainID:   s.Chain.TxChainID,
+		From:      derivedFrom,
+		To:        chain.PoolAddress(assetID),
+		Amount:    req.AmountIn,
+		Fee:       chain.MIN_FEE,
+		Nonce:     s.Chain.State.GetNextNonce(derivedFrom),
+		AssetID:   txAssetID,
+		Metadata: []chain.KeyValuePair{
+			{Key: "type", Value: "dex_swap"},
+			{Key: "asset_id", Value: assetID},
+			{Key: "direction", Value: direction},
+			{Key: "min_amount_out", Value: strconv.FormatUint(req.MinAmountOut, 10)},
+		},
+		Timestamp: time.Now().Unix(),
+	}
+
+	if err := tx.Sign(privKey); err != nil {
+		http.Error(w, "sign error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := s.Chain.SubmitTx(tx); err != nil {
+		http.Error(w, "submit tx error: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if s.Store != nil {
+		_ = s.Store.Save(s.Chain)
+	}
+
+	writeJSON(w, map[string]any{
+		"ok":        true,
+		"tx_id":     tx.ID,
+		"status":    "pending_mempool",
+		"asset_id":  assetID,
+		"direction": direction,
+		"amount_in": req.AmountIn,
+	})
+}
+
+type dexLiquidityRequest struct {
+	Action      string        `json:"action"` // "add" or "remove"
+	From        chain.Address `json:"from"`
+	AssetID     string        `json:"asset_id"`
+	SynAmount   uint64        `json:"syn_amount"`
+	AssetAmount uint64        `json:"asset_amount"`
+	Shares      uint64        `json:"shares"`
+	MinShares   uint64        `json:"min_shares"`
+	MinSynOut   uint64        `json:"min_syn_out"`
+	MinAssetOut uint64        `json:"min_asset_out"`
+	PrivateKey  string        `json:"private_key,omitempty"`
+}
+
+func (s *Server) handleDEXLiquidity(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, s.MaxBodySize))
+	if err != nil {
+		http.Error(w, "error reading body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var signedTx chain.Tx
+	if err := json.Unmarshal(body, &signedTx); err == nil && signedTx.Signature != "" {
+		if err := s.Chain.SubmitTx(signedTx); err != nil {
+			http.Error(w, "submit tx error: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if s.Store != nil {
+			_ = s.Store.Save(s.Chain)
+		}
+		writeJSON(w, map[string]any{
+			"ok":     true,
+			"tx_id":  signedTx.ID,
+			"status": "pending_mempool",
+		})
+		return
+	}
+
+	var req dexLiquidityRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.PrivateKey == "" {
+		http.Error(w, "either signed transaction or private_key is required", http.StatusBadRequest)
+		return
+	}
+
+	privKey, err := decodePrivateKey(req.PrivateKey)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	pub := privKey.Public().(ed25519.PublicKey)
+	derivedFrom := chain.AddressFromPublicKey(pub)
+	if req.From != "" && req.From != derivedFrom {
+		http.Error(w, "from address does not match private key", http.StatusBadRequest)
+		return
+	}
+
+	assetID := strings.ToUpper(strings.TrimSpace(req.AssetID))
+	if assetID == "" || assetID == "SYN" {
+		http.Error(w, "invalid asset_id", http.StatusBadRequest)
+		return
+	}
+
+	action := strings.ToLower(strings.TrimSpace(req.Action))
+	var txType string
+	var metadata []chain.KeyValuePair
+
+	if action == "remove" {
+		txType = "dex_remove_liquidity"
+		if req.Shares == 0 {
+			http.Error(w, "shares must be greater than zero for remove liquidity", http.StatusBadRequest)
+			return
+		}
+		metadata = []chain.KeyValuePair{
+			{Key: "type", Value: txType},
+			{Key: "asset_id", Value: assetID},
+			{Key: "shares", Value: strconv.FormatUint(req.Shares, 10)},
+			{Key: "min_syn_out", Value: strconv.FormatUint(req.MinSynOut, 10)},
+			{Key: "min_asset_out", Value: strconv.FormatUint(req.MinAssetOut, 10)},
+		}
+	} else {
+		txType = "dex_add_liquidity"
+		if req.SynAmount == 0 || req.AssetAmount == 0 {
+			http.Error(w, "syn_amount and asset_amount must be greater than zero", http.StatusBadRequest)
+			return
+		}
+		metadata = []chain.KeyValuePair{
+			{Key: "type", Value: txType},
+			{Key: "asset_id", Value: assetID},
+			{Key: "syn_amount", Value: strconv.FormatUint(req.SynAmount, 10)},
+			{Key: "asset_amount", Value: strconv.FormatUint(req.AssetAmount, 10)},
+			{Key: "min_shares", Value: strconv.FormatUint(req.MinShares, 10)},
+		}
+	}
+
+	tx := chain.Tx{
+		ChainID:   s.Chain.TxChainID,
+		From:      derivedFrom,
+		To:        chain.PoolAddress(assetID),
+		Amount:    0,
+		Fee:       chain.MIN_FEE,
+		Nonce:     s.Chain.State.GetNextNonce(derivedFrom),
+		Metadata:  metadata,
+		Timestamp: time.Now().Unix(),
+	}
+
+	if err := tx.Sign(privKey); err != nil {
+		http.Error(w, "sign error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := s.Chain.SubmitTx(tx); err != nil {
+		http.Error(w, "submit tx error: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if s.Store != nil {
+		_ = s.Store.Save(s.Chain)
+	}
+
+	writeJSON(w, map[string]any{
+		"ok":       true,
+		"tx_id":    tx.ID,
+		"status":   "pending_mempool",
+		"action":   txType,
+		"asset_id": assetID,
+	})
+}
+
+type dexIssueRequest struct {
+	From       chain.Address `json:"from"`
+	AssetID    string        `json:"asset_id"`
+	Amount     uint64        `json:"amount"`
+	PrivateKey string        `json:"private_key,omitempty"`
+}
+
+func (s *Server) handleDEXIssue(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, s.MaxBodySize))
+	if err != nil {
+		http.Error(w, "error reading body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var signedTx chain.Tx
+	if err := json.Unmarshal(body, &signedTx); err == nil && signedTx.Signature != "" {
+		if err := s.Chain.SubmitTx(signedTx); err != nil {
+			http.Error(w, "submit tx error: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if s.Store != nil {
+			_ = s.Store.Save(s.Chain)
+		}
+		writeJSON(w, map[string]any{
+			"ok":     true,
+			"tx_id":  signedTx.ID,
+			"status": "pending_mempool",
+		})
+		return
+	}
+
+	var req dexIssueRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.PrivateKey == "" {
+		http.Error(w, "either signed transaction or private_key is required", http.StatusBadRequest)
+		return
+	}
+
+	privKey, err := decodePrivateKey(req.PrivateKey)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	pub := privKey.Public().(ed25519.PublicKey)
+	derivedFrom := chain.AddressFromPublicKey(pub)
+	if req.From != "" && req.From != derivedFrom {
+		http.Error(w, "from address does not match private key", http.StatusBadRequest)
+		return
+	}
+
+	assetID := strings.ToUpper(strings.TrimSpace(req.AssetID))
+	if assetID == "" || assetID == "SYN" {
+		http.Error(w, "invalid asset_id", http.StatusBadRequest)
+		return
+	}
+	if req.Amount == 0 {
+		http.Error(w, "amount must be greater than zero", http.StatusBadRequest)
+		return
+	}
+
+	tx := chain.Tx{
+		ChainID:   s.Chain.TxChainID,
+		From:      derivedFrom,
+		To:        derivedFrom,
+		Amount:    req.Amount,
+		Fee:       chain.MIN_FEE,
+		Nonce:     s.Chain.State.GetNextNonce(derivedFrom),
+		AssetID:   assetID,
+		Metadata: []chain.KeyValuePair{
+			{Key: "type", Value: "asset_issue"},
+			{Key: "asset_id", Value: assetID},
+			{Key: "amount", Value: strconv.FormatUint(req.Amount, 10)},
+		},
+		Timestamp: time.Now().Unix(),
+	}
+
+	if err := tx.Sign(privKey); err != nil {
+		http.Error(w, "sign error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := s.Chain.SubmitTx(tx); err != nil {
+		http.Error(w, "submit tx error: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if s.Store != nil {
+		_ = s.Store.Save(s.Chain)
+	}
+
+	writeJSON(w, map[string]any{
+		"ok":       true,
+		"tx_id":    tx.ID,
+		"status":   "pending_mempool",
+		"action":   "asset_issue",
+		"asset_id": assetID,
+		"amount":   req.Amount,
+	})
 }
 
 func (s *Server) handleImmuneStatus(w http.ResponseWriter, r *http.Request) {

@@ -1,187 +1,17 @@
 services:
   - type: web
-    name: synthos-rpc
-    plan: standard
-    runtime: docker
-    dockerfilePath: ./Dockerfile
-    dockerCommand: /usr/local/bin/synthosd
-    healthCheckPath: /health
-    autoDeploy: true
-    envVars:
-      - key: SYNTHOS_CONFIG
-        value: /config/render-node.json
-      - key: SYNTHOS_DATA_DIR
-        value: /data
-      - key: SYNTHOS_BOOTSTRAP_IMMUNE_NODE
-        value: "true"
-      # Real multi-party consensus with multi-producer rotation & failover.
-      - key: SYNTHOS_BLOCK_PRODUCER
-        value: "true"
-      - key: SYNTHOS_BLOCK_INTERVAL_SECONDS
-        value: "10"
-      - key: SYNTHOS_PRODUCE_EMPTY_BLOCKS
-        value: "true"
-      - key: SYNTHOS_PRODUCER_ROTATION
-        value: "true"
-      - key: SYNTHOS_PRODUCER_ROUND_SECONDS
-        value: "30"
-      - key: SYNTHOS_PRODUCER_ROTATION_LOCK_SECONDS
-        value: "60"
-      - key: SYNTHOS_CONSENSUS_PEERS
-        value: https://synthos-validator-12.onrender.com,https://synthos-validator-13.onrender.com
-      - key: SYNTHOS_CONSENSUS_TOKEN
-        sync: false
-      - key: SYNTHOS_MAX_HOT_BLOCKS
-        value: "250"
-      - key: GOMEMLIMIT
-        value: "1536MiB"
-      - key: GOGC
-        value: "30"
-    disk:
-      name: synthos-rpc-data
-      mountPath: /data
-      sizeGB: 1
-
-  - type: web
-    name: synthos-validator-12
-    plan: standard
-    runtime: docker
-    dockerfilePath: ./Dockerfile
-    dockerCommand: /usr/local/bin/synthosd
-    healthCheckPath: /health
-    autoDeploy: true
-    envVars:
-      - key: SYNTHOS_CONFIG
-        value: /config/render-validator-12.json
-      - key: SYNTHOS_DATA_DIR
-        value: /data
-      - key: SYNTHOS_NODE_ID
-        value: synthos-validator-12
-      - key: SYNTHOS_SELF_URL
-        value: https://synthos-validator-12.onrender.com
-      - key: SYNTHOS_REGISTRY_URL
-        value: https://synthos-www.onrender.com
-      - key: SYNTHOS_BOOTSTRAP_IMMUNE_NODE
-        value: "true"
-      # Single designated sequencer: only this validator auto-produces blocks.
-      # The other validators (11, 13-15) follow via HTTP peer catch-up.
-      # Enabling the producer LOOP on more than one node would still fork the
-      # chain -- that part is unchanged. What changed: this node no longer
-      # just self-approves every block it proposes. With SYNTHOS_CONSENSUS_
-      # PEERS + SYNTHOS_CONSENSUS_TOKEN set, it asks synthos-validator-13 and
-      # synthos-render-validator-1 to independently validate and vote on
-      # each proposal over HTTPS, and only finalizes once a real 2-of-3
-      # quorum of genuine signatures is collected -- see rpc.Server.
-      # ProposeBlockWithConsensus. If quorum isn't reached in time, this
-      # node simply retries at the next tick rather than finalizing alone.
-      - key: SYNTHOS_BLOCK_PRODUCER
-        value: "true"
-      - key: SYNTHOS_BLOCK_INTERVAL_SECONDS
-        value: "10"
-      - key: SYNTHOS_PRODUCE_EMPTY_BLOCKS
-        value: "true"
-      - key: SYNTHOS_PRODUCER_ROTATION
-        value: "true"
-      - key: SYNTHOS_PRODUCER_ROUND_SECONDS
-        value: "30"
-      - key: SYNTHOS_PRODUCER_ROTATION_LOCK_SECONDS
-        value: "60"
-      - key: SYNTHOS_CONSENSUS_PEERS
-        value: https://synthos-validator-13.onrender.com,https://synthos-rpc.onrender.com
-      # Must be set to the exact same value as SYNTHOS_CONSENSUS_TOKEN on
-      # synthos-validator-13 and synthos-rpc -- set it once in the Render
-      # dashboard (it's sync: false so it isn't committed here).
-      - key: SYNTHOS_CONSENSUS_TOKEN
-        sync: false
-      - key: SYNTHOS_PRIVATE_KEY
-        sync: false
-      - key: SYNTHOS_MAX_HOT_BLOCKS
-        value: "250"
-      - key: GOMEMLIMIT
-        value: "1536MiB"
-      - key: GOGC
-        value: "30"
-    disk:
-      name: synthos-validator-12-data
-      mountPath: /data
-      sizeGB: 1
-
-  - type: web
-    name: synthos-validator-13
-    plan: standard
-    runtime: docker
-    dockerfilePath: ./Dockerfile
-    dockerCommand: /usr/local/bin/synthosd
-    healthCheckPath: /health
-    autoDeploy: true
-    envVars:
-      - key: SYNTHOS_CONFIG
-        value: /config/render-validator-13.json
-      - key: SYNTHOS_DATA_DIR
-        value: /data
-      - key: SYNTHOS_NODE_ID
-        value: synthos-validator-13
-      - key: SYNTHOS_SELF_URL
-        value: https://synthos-validator-13.onrender.com
-      - key: SYNTHOS_REGISTRY_URL
-        value: https://synthos-www.onrender.com
-      - key: SYNTHOS_BOOTSTRAP_IMMUNE_NODE
-        value: "true"
-      # Real multi-party consensus with multi-producer rotation & failover.
-      - key: SYNTHOS_BLOCK_PRODUCER
-        value: "true"
-      - key: SYNTHOS_BLOCK_INTERVAL_SECONDS
-        value: "10"
-      - key: SYNTHOS_PRODUCE_EMPTY_BLOCKS
-        value: "true"
-      - key: SYNTHOS_PRODUCER_ROTATION
-        value: "true"
-      - key: SYNTHOS_PRODUCER_ROUND_SECONDS
-        value: "30"
-      - key: SYNTHOS_PRODUCER_ROTATION_LOCK_SECONDS
-        value: "60"
-      - key: SYNTHOS_CONSENSUS_PEERS
-        value: https://synthos-rpc.onrender.com,https://synthos-validator-12.onrender.com
-      - key: SYNTHOS_CONSENSUS_TOKEN
-        sync: false
-      - key: SYNTHOS_PRIVATE_KEY
-        sync: false
-      - key: SYNTHOS_MAX_HOT_BLOCKS
-        value: "250"
-      - key: GOMEMLIMIT
-        value: "1536MiB"
-      - key: GOGC
-        value: "30"
-    disk:
-      name: synthos-validator-13-data
-      mountPath: /data
-      sizeGB: 1
-
-  - type: web
     name: synthos-www
-    plan: standard
+    plan: starter
     runtime: docker
     dockerfilePath: ./Dockerfile
     dockerCommand: /usr/local/bin/cloudless-registry -state /data/cloudless-registry.json
     healthCheckPath: /health
     autoDeploy: true
     envVars:
-      - key: SYNTHOS_NATIVE_RPC_URL
-        value: https://synthos-rpc.onrender.com
       - key: GOMEMLIMIT
-        value: "1536MiB"
+        value: "256MiB"
       - key: GOGC
         value: "30"
-      # Separate from SYNTHOS_NATIVE_RPC_URL above (used by
-      # fetchRealChainStatus/the early-access allocator): this is the var
-      # proxyRPCJSON checks (handleAPIExplorerBlocks/Mempool and the bridge
-      # status/events handlers) to proxy straight through to the real chain
-      # instead of falling back to the much weaker self-reported-heartbeat
-      # checkpoint data. It was never set here, so the public explorer's
-      # /blocks, /mempool, and bridge endpoints always used that fallback
-      # (usually empty/stale) even though the chain itself was healthy.
-      - key: SYNTHOS_RPC_URL
-        value: https://synthos-rpc.onrender.com
       - key: SYNTHOS_DISTRIBUTION_AGENT_ID
         value: synthos-early-adopter-distributor
       - key: SYNTHOS_EARLY_ACCESS_TREASURY_WALLET
@@ -194,8 +24,6 @@ services:
         value: "20260702"
       - key: SYNTHOS_EARLY_ACCESS_CHAIN_NAME
         value: synthos-mainnet-1
-      - key: SYNTHOS_EARLY_ACCESS_RPC_URLS
-        value: https://synthos-rpc.onrender.com,https://synthos-validator-12.onrender.com,https://synthos-validator-13.onrender.com
       - key: SYNTHOS_CORS_ORIGINS
         value: https://www.ishamwilliamsblockchains.com,https://ishamwilliamsblockchains.com,https://lovable.dev
       - key: SYNTHOS_EARLY_ACCESS_WIDGET_PATH
@@ -210,5 +38,3 @@ services:
       name: synthos-www-data
       mountPath: /data
       sizeGB: 1
-
-
