@@ -144,11 +144,9 @@
 
 <script>
 (function(){
-  var RPC = "https://synthos-www.onrender.com/api/explorer";
-  // Governance and Citizen data isn't aggregated by the registry -- it comes
-  // straight from a chain node's own RPC, which sets Access-Control-Allow-Origin: *
-  // specifically so a public page like this one can call it directly.
-  var RAW_RPC = "https://rpc.ishamwilliamsblockchains.com";
+  var RPC = (window.SYNTHOS_REGISTRY_URL || window.location.origin) + "/api/explorer";
+  // Governance and Citizen data comes from chain node RPC or same origin
+  var RAW_RPC = window.SYNTHOS_RPC_URL || (window.location.protocol + "//" + window.location.hostname + (window.location.port ? ":8080" : "/rpc"));
   var $ = function(s){ return document.querySelector(s); };
   function set(sel,v){ var n=document.querySelector(sel); if(n) n.textContent=v; }
   function shortHash(h){ if(!h) return "—"; h=String(h); return h.length>16 ? h.slice(0,10)+"…"+h.slice(-6) : h; }

