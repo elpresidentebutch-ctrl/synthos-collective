@@ -31,6 +31,10 @@ import (
 const staleAfter = 5 * time.Minute
 const heartbeatFreshAfter = 2 * time.Minute
 const rewardEpoch = 30 * 24 * time.Hour
+
+// nodeRekeyAfter is how long a node must be silent before its ID can be
+// registered again under a different public key.
+const nodeRekeyAfter = 24 * time.Hour
 const validatorMonthlyBaseRewardSYN = 5000
 const validatorMonthlyBonusCapSYN = 2500
 
@@ -62,6 +66,11 @@ type peer struct {
 	VerifiedUptimeMS   int64    `json:"verified_uptime_ms,omitempty"`
 	LastNonce          string   `json:"last_nonce,omitempty"`
 	HostedProofSession bool     `json:"hosted_proof_session,omitempty"`
+
+	// SharedHardwareWith is computed on read (never trusted from storage):
+	// the primary node of the same machine when this live node shares its
+	// hardware commitment with it. See hardware.go.
+	SharedHardwareWith string `json:"shared_hardware_with,omitempty"`
 
 	// ValidatorApproved, ValidatorApprovedAt, and ValidatorPublicURL track
 	// this operator's promotion from candidate to real validator. This is
@@ -369,7 +378,7 @@ func (s *server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		Kind               string   `json:"kind"`
 		Network            string   `json:"network"`
 		Status             string   `json:"status"`
-		PublicKey    string `json:"public_key"`
+		PublicKey          string   `json:"public_key"`
 		Capabilities       []string `json:"capabilities"`
 		Mode               string   `json:"mode"`
 		InboundPorts       int      `json:"inbound_ports"`
@@ -569,10 +578,12 @@ func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) 
 	}
 	s.mu.RUnlock()
 	sort.Slice(peers, func(i, j int) bool { return peers[i].Name < peers[j].Name })
+	markSharedHardware(peers, now)
 
 	reachable := 0
 	fresh := 0
 	validators := 0
+	machines := 0
 	immune := 0
 	agents := 0
 	activeTotal := 0
@@ -587,10 +598,15 @@ func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) 
 		activeTotal++
 		reachable++
 		fresh++
+		if peers[i].SharedHardwareWith == "" {
+			machines++
+		}
 		if peerHasCapability(peers[i], "immune_node") || peers[i].Kind == "immune" {
 			immune++
 		}
-		if peers[i].Kind == "" || peers[i].Kind == "validator" {
+		// Count machines, not identities: extra nodes on a machine that
+		// already has a counted node don't add a validator.
+		if (peers[i].Kind == "" || peers[i].Kind == "validator") && peers[i].SharedHardwareWith == "" {
 			validators++
 		}
 		if len(peers[i].Capabilities) > 0 {
@@ -634,6 +650,7 @@ func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) 
 		"mode":                      "Proof-of-Operation onboarding",
 		"heartbeat_target_s":        15,
 		"total":                     activeTotal,
+		"machines_running":          machines,
 		"registered_total":          len(peers),
 		"reachable":                 reachable,
 		"fresh_heartbeats":          fresh,
@@ -673,7 +690,7 @@ func (s *server) handleAPIAENStatus(w http.ResponseWriter, r *http.Request) {
 	for _, p := range snapshot.Peers {
 		role := defaultString(p.Role, normalizeRole(p.Kind))
 		isValidator := role == "validator" || role == "validator_candidate" || p.Kind == "" || p.Kind == "validator"
-		if !p.Stale && isValidator {
+		if !p.Stale && isValidator && p.SharedHardwareWith == "" {
 			healthyValidators++
 		}
 		if p.Stale && isValidator {
@@ -689,7 +706,7 @@ func (s *server) handleAPIAENStatus(w http.ResponseWriter, r *http.Request) {
 			"role":                  role,
 			"score":                 operatorReliabilityScore(p, now),
 			"rank_inputs":           report,
-			"reward_eligible_track": isValidator && isRealSignedHeartbeat(p) && !p.Stale,
+			"reward_eligible_track": isValidator && isRealSignedHeartbeat(p) && !p.Stale && p.SharedHardwareWith == "",
 		})
 		if p.Stale {
 			staleNodes = append(staleNodes, map[string]any{
@@ -1043,8 +1060,8 @@ func (s *server) handleAPINodeRegister(w http.ResponseWriter, r *http.Request) {
 		NodeID       string   `json:"node_id"`
 		NodeIDCamel  string   `json:"nodeId"`
 		PublicID     string   `json:"publicId"`
-		PublicKey    string `json:"public_key"`
-		PublicKeyAlt string `json:"publicKey"`
+		PublicKey    string   `json:"public_key"`
+		PublicKeyAlt string   `json:"publicKey"`
 		Role         string   `json:"role"`
 		Kind         string   `json:"kind"`
 		Mode         string   `json:"mode"`
@@ -1054,6 +1071,10 @@ func (s *server) handleAPINodeRegister(w http.ResponseWriter, r *http.Request) {
 		Capabilities []string `json:"capabilities"`
 		CreatedAt    string   `json:"created_at"`
 		ChainID      string   `json:"chain_id"`
+		// machine_commitment, not hardware_commitment: older fleet builds
+		// send a per-node hardware_commitment that doesn't identify the
+		// machine, and must not be stored as if it did.
+		Machine string `json:"machine_commitment"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -1077,23 +1098,38 @@ func (s *server) handleAPINodeRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now().UnixMilli()
 	entry := peer{
-		Name:         nodeID,
-		URL:          endpoint,
-		Kind:         kind,
-		Network:      normalizeChoice(body.Network, "mainnet", "testnet", "mainnet"),
-		Status:       "registered",
-		PublicKey:    publicKey,
-		Capabilities: normalizeCapabilities(body.Capabilities),
-		Cloud:        "operator",
-		Mode:         map[bool]string{true: "public_endpoint", false: "candidate"}[endpoint != ""],
-		InboundPorts: map[bool]int{true: 1, false: 0}[endpoint != ""],
-		RegisteredAt: now,
-		LastSeen:     0,
-		Role:         role,
-		ProofStatus:  "registered",
+		Name:               nodeID,
+		URL:                endpoint,
+		Kind:               kind,
+		Network:            normalizeChoice(body.Network, "mainnet", "testnet", "mainnet"),
+		Status:             "registered",
+		PublicKey:          publicKey,
+		Capabilities:       normalizeCapabilities(body.Capabilities),
+		Cloud:              "operator",
+		Mode:               map[bool]string{true: "public_endpoint", false: "candidate"}[endpoint != ""],
+		InboundPorts:       map[bool]int{true: 1, false: 0}[endpoint != ""],
+		RegisteredAt:       now,
+		LastSeen:           0,
+		Role:               role,
+		ProofStatus:        "registered",
+		HardwareCommitment: truncate(body.Machine, 128),
 	}
 	s.mu.Lock()
-	if existing, ok := s.state.Peers[nodeID]; ok {
+	existing, ok := s.state.Peers[nodeID]
+	if ok && existing.PublicKey != "" && existing.PublicKey != publicKey {
+		// This endpoint takes no secret, so anyone could re-register a
+		// node ID with their own key and inherit its verified uptime and
+		// reward progress. A node keeps its key; one that has been silent
+		// for a day can be re-keyed (a reinstall that lost its key file),
+		// but starts proving from zero.
+		if existing.LastSeen != 0 && time.Since(time.UnixMilli(existing.LastSeen)) < nodeRekeyAfter {
+			s.mu.Unlock()
+			http.Error(w, fmt.Sprintf("node %q is live with a different public key", nodeID), http.StatusConflict)
+			return
+		}
+		ok = false
+	}
+	if ok {
 		entry.RegisteredAt = existing.RegisteredAt
 		entry.FirstHeartbeatAt = existing.FirstHeartbeatAt
 		entry.LastHeartbeatAt = existing.LastHeartbeatAt
@@ -1105,6 +1141,15 @@ func (s *server) handleAPINodeRegister(w http.ResponseWriter, r *http.Request) {
 		entry.Height = existing.Height
 		entry.Tip = existing.Tip
 		entry.StateRoot = existing.StateRoot
+		entry.ValidatorApproved = existing.ValidatorApproved
+		entry.ValidatorApprovedAt = existing.ValidatorApprovedAt
+		entry.ValidatorPublicURL = existing.ValidatorPublicURL
+		// The machine a live node runs on doesn't change, and this
+		// endpoint is unsigned: don't let a re-registration move a live
+		// node onto (or off) another machine's hardware commitment.
+		if existing.HardwareCommitment != "" && !peerIsStale(existing, time.Now()) {
+			entry.HardwareCommitment = existing.HardwareCommitment
+		}
 		entry.ProofStatus = proofStatus(entry, time.Now())
 	}
 	s.state.Peers[nodeID] = entry
@@ -1114,7 +1159,7 @@ func (s *server) handleAPINodeRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":            true,
-		"node":          nodeStatus(entry, time.Now()),
+		"node":          nodeStatus(s.withSharedHardware(entry, time.Now()), time.Now()),
 		"message":       "node candidate registered; rewards require verified operation",
 		"reward_policy": validatorRewardPolicy(),
 	})
@@ -1225,7 +1270,7 @@ func (s *server) handleAPINodeHeartbeat(w http.ResponseWriter, r *http.Request) 
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":      true,
-		"node":    nodeStatus(entry, now),
+		"node":    nodeStatus(s.withSharedHardware(entry, now), now),
 		"message": "signed heartbeat accepted",
 	})
 }
@@ -1251,7 +1296,7 @@ func (s *server) handleAPINodeByID(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":            true,
-		"node":          nodeStatus(entry, time.Now()),
+		"node":          nodeStatus(s.withSharedHardware(entry, time.Now()), time.Now()),
 		"reward_policy": validatorRewardPolicy(),
 	})
 }
@@ -1279,10 +1324,12 @@ func (s *server) handleAPIAdminValidatorsPending(w http.ResponseWriter, r *http.
 	now := time.Now()
 	s.mu.RLock()
 	pending := make([]map[string]any, 0)
+	shared := s.sharedHardwareLocked(now)
 	for _, p := range s.state.Peers {
 		if p.ValidatorApproved {
 			continue
 		}
+		p.SharedHardwareWith = shared[p.Name]
 		role := defaultString(p.Role, normalizeRole(p.Kind))
 		if roleKind(role) != "validator" {
 			continue
@@ -1440,12 +1487,12 @@ func (s *server) handleAPIProvisionNode(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var body struct {
-		Kind    string `json:"kind"`
+		Kind         string `json:"kind"`
 		PublicKey    string `json:"public_key"`
 		PublicKeyAlt string `json:"publicKey"`
-		Network string `json:"network"`
-		Label   string `json:"label"`
-		URL     string `json:"url"`
+		Network      string `json:"network"`
+		Label        string `json:"label"`
+		URL          string `json:"url"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -1503,7 +1550,7 @@ func (s *server) handleAPIProvisionNode(w http.ResponseWriter, r *http.Request) 
 		"network":       network,
 		"endpoint":      endpoint,
 		"publicKey":     publicHex,
-		"node":          nodeStatus(entry, time.Now()),
+		"node":          nodeStatus(s.withSharedHardware(entry, time.Now()), time.Now()),
 		"nodeConfig":    "",
 		"startCommand":  "",
 		"workerName":    nodeID,
@@ -2175,6 +2222,7 @@ func (s *server) writePeerList(w http.ResponseWriter, activeOnly bool) {
 	s.mu.RUnlock()
 
 	sort.Slice(peers, func(i, j int) bool { return peers[i].Name < peers[j].Name })
+	markSharedHardware(peers, now)
 	realHeight, realTip, realStateRoot, hasRealChain := fetchRealChainStatus()
 	urls := make([]string, 0, len(peers))
 	order := make([]string, 0, len(peers))
@@ -2212,6 +2260,7 @@ func (s *server) networkSnapshot(now time.Time) networkSnapshot {
 		}
 		return peers[i].Height > peers[j].Height
 	})
+	markSharedHardware(peers, now)
 	out := networkSnapshot{
 		Peers:           peers,
 		RegisteredTotal: len(peers),
@@ -2227,7 +2276,7 @@ func (s *server) networkSnapshot(now time.Time) networkSnapshot {
 		if peerHasCapability(p, "immune_node") || p.Kind == "immune" {
 			out.Immune++
 		}
-		if p.Kind == "" || p.Kind == "validator" {
+		if (p.Kind == "" || p.Kind == "validator") && p.SharedHardwareWith == "" {
 			out.Validators++
 		}
 		if len(p.Capabilities) > 0 {
@@ -2689,7 +2738,8 @@ func nodeStatus(p peer, now time.Time) map[string]any {
 	eligible := p.ProofStatus == "eligible"
 	role := defaultString(p.Role, normalizeRole(p.Kind))
 	isValidator := role == "validator_candidate" || role == "validator"
-	rewardEligible := eligible && isValidator && !p.HostedProofSession
+	sharedHardware := p.SharedHardwareWith != ""
+	rewardEligible := eligible && isValidator && !p.HostedProofSession && !sharedHardware
 	uptimePercent := 0.0
 	if rewardEpoch > 0 {
 		uptimePercent = (float64(uptime) / float64(rewardEpoch)) * 100
@@ -2700,6 +2750,8 @@ func nodeStatus(p peer, now time.Time) map[string]any {
 	rewardStatus := "proving_uptime"
 	if p.HostedProofSession {
 		rewardStatus = "hosted_bootstrap_not_reward_eligible"
+	} else if sharedHardware {
+		rewardStatus = "shared_hardware_not_reward_eligible"
 	} else if rewardEligible {
 		rewardStatus = "eligible_next_payout"
 	}
@@ -2761,6 +2813,7 @@ func nodeStatus(p peer, now time.Time) map[string]any {
 		"capabilityStatus":          capabilityMap,
 		"accepted":                  rewardEligible,
 		"reward":                    reward,
+		"shared_hardware_with":      p.SharedHardwareWith,
 	}
 }
 

@@ -1491,36 +1491,11 @@ func (s *Server) CatchUpOnce() error {
 		if status.Height <= myHeight {
 			continue
 		}
-		// If peer has trimmed older history but state root matches, fast-forward across empty blocks
-		earliestAvailable := status.EarliestHeight
-		if earliestAvailable == 0 && status.StateRoot == s.Chain.State.Root() {
-			earliestAvailable = s.probePeerEarliest(peer, myHeight+1, status.Height)
-		}
-		if earliestAvailable > 0 && myHeight < earliestAvailable && status.StateRoot == s.Chain.State.Root() {
-			log.Printf("http peer catch-up: fast-forwarding from %d across trimmed empty blocks to peer hot window start %d", myHeight, earliestAvailable)
-			blks, err := s.peerBlocks(peer, int(earliestAvailable), catchUpBatchSize)
-			if err == nil && len(blks) > 0 {
-				first := blks[0]
-				baseBlock := &chain.Block{
-					Header: chain.BlockHeader{
-						Height:    first.Header.Height - 1,
-						StateRoot: s.Chain.State.Root(),
-					},
-					Hash: first.Header.ParentHash,
-				}
-				hwSize := s.Chain.MaxHotBlocks()
-				if hwSize <= 0 {
-					hwSize = 250
-				}
-				s.Chain.RestoreHotWindow(earliestAvailable, s.Chain.State.Clone(), baseBlock, hwSize, s.Store)
-				for _, b := range blks {
-					if ok, _ := s.applyPeerBlock(b); ok {
-						myHeight = s.Chain.Height()
-					}
-				}
-			}
-		}
-
+		// No "fast-forward": a node only ever moves its chain by applying
+		// blocks it has verified (or by TryReorg, which replays and checks a
+		// competing branch). Jumping to a peer's window without the blocks
+		// in between let a node skip verification, left holes in its
+		// history, and could move its tip backwards.
 		anyApplied := false
 		for {
 			blocks, err := s.peerBlocks(peer, int(myHeight+1), catchUpBatchSize)
@@ -1580,34 +1555,6 @@ func (s *Server) CatchUpOnce() error {
 				}
 				if reorgDone {
 					continue
-				}
-				if !reorgDone && status.Height > myHeight && earliestAvailable > 0 {
-					blks, err := s.peerBlocks(peer, int(earliestAvailable), catchUpBatchSize)
-					if err == nil && len(blks) > 0 {
-						first := blks[0]
-						baseBlock := &chain.Block{
-							Header: chain.BlockHeader{
-								Height:    first.Header.Height - 1,
-								StateRoot: first.Header.StateRoot,
-							},
-							Hash: first.Header.ParentHash,
-						}
-						hwSize := s.Chain.MaxHotBlocks()
-						if hwSize <= 0 {
-							hwSize = 250
-						}
-						log.Printf("http peer catch-up: fast-forwarding across divergent fork to peer %s hot window at %d", peer, earliestAvailable)
-						s.Chain.RestoreHotWindow(earliestAvailable, s.Chain.State.Clone(), baseBlock, hwSize, s.Store)
-						for _, b := range blks {
-							if ok, _ := s.applyPeerBlock(b); ok {
-								myHeight = s.Chain.Height()
-								anyApplied = true
-							}
-						}
-						if anyApplied {
-							continue
-						}
-					}
 				}
 			}
 			if stop || len(blocks) < catchUpBatchSize {
@@ -1733,27 +1680,6 @@ func parseUintQuery(r *http.Request, name string) (uint64, error) {
 		return 0, errors.New("invalid " + name)
 	}
 	return value, nil
-}
-
-func (s *Server) probePeerEarliest(peer string, low, high uint64) uint64 {
-	if low >= high {
-		return high
-	}
-	found := uint64(0)
-	for low <= high {
-		mid := low + (high-low)/2
-		blks, err := s.peerBlocks(peer, int(mid), 1)
-		if err == nil && len(blks) > 0 {
-			found = blks[0].Header.Height
-			if mid == 0 {
-				break
-			}
-			high = mid - 1
-		} else {
-			low = mid + 1
-		}
-	}
-	return found
 }
 
 var _ = errors.New // keep import stable for future error mapping
