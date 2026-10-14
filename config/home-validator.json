@@ -28,6 +28,9 @@
     "https://synthos-validator-12.onrender.com",
     "https://synthos-validator-13.onrender.com"
   ],
-  "auth_enforce_from_height": 15265,
-  "state_root_enforce_from_height": 30000
+  "auth_enforce_from_height": 33908,
+  "state_root_enforce_from_height": 30000,
+  "irregular_state_corrections": [
+    {"height": 41950, "address": "0xa6cc70355b1dc27d0d12c000aaad34dcd3d246c5", "debit": 50}
+  ]
 }

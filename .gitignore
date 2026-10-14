@@ -18,6 +18,9 @@ SYNTHOS_AUDIT_PACKET/
 *.exe~
 *.test
 .gocache/
+*-linux-amd64
+website.zip
+cookies.txt
 
 # Compiled binaries from `go build ./cmd/<name>` run at repo root (Linux/Mac
 # builds have no extension, so *.exe above doesn't catch them -- this repo
