@@ -1,34 +1,151 @@
-.synthos-data
-data-local/
-data-*/
-.synthos-node-*/
+# ==============================================================================
+# SYNTHOS COLLECTIVE - SOVEREIGN BLOCKCHAIN SECURITY & SENSITIVE DATA IGNORE RULES
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. SOVEREIGN CRYPTOGRAPHIC KEYS, WALLETS, SEED PHRASES & IDENTITIES
+# ------------------------------------------------------------------------------
+*.key
+*.pem
+*.pk
+*.pkcs8
+*.pkcs12
+*.pfx
+*.p12
+*.seed
+*.seedphrase
+*.mnemonic
+*mnemonic*.txt
+*mnemonic*.json
+*_KEYS*.txt
+*_keys*.txt
+*WALLET*.txt
+*wallet*.txt
+*wallets*.json
+*node_identity*.json
 node_identity.json
+validator-keys*.json
+validator_key*.json
+*privkey*
+*priv_key*
+*private_key*
+*privatekey*
+*.keystore
+keystore/
+
+# Entire local sovereign vault & key storage directories
+.synthos/
+.synthos/**
+.synthos-*/
+.synthos-data
+.synthos-data/
+.synthos-node-*/
+validator-deployment/validator-keys.json
+validator-deployment/validators.txt
+validator-deployment/test-results.json
+validator-deployment/.dev.vars*
+
+# ------------------------------------------------------------------------------
+# 2. ENVIRONMENT FILES, SECRETS, TOKENS & API CREDENTIALS
+# ------------------------------------------------------------------------------
 .env
 .env.*
+*.env
+*.env.local
+*.env.production
+*.env.mainnet.*
+contracts/.env.mainnet.local
+contracts/.env.mainnet.generated
+
+# Allow public example templates
 !.env.example
 !contracts/.env.testnet.example
+!*.env.example
 
-# Redundant audit export (use docs/audit + scripts/package_audit.ps1 to regenerate)
-SYNTHOS_AUDIT_PACKET.zip
-SYNTHOS_AUDIT_PACKET_FINAL.zip
-SYNTHOS_AUDIT_PACKET/
+*.token
+*.pat
+*.jwt
+cookies.txt
+session.json
+token.json
+credentials.json
+*credentials*.json
+auth.json
+*auth*.json
+client_secret*.json
+*.secret
+*.secrets
+secret*.json
+secrets*.json
+.dev.vars
+.dev.vars*
+.wrangler/
+wrangler.toml.bak
 
-# Go
+# ------------------------------------------------------------------------------
+# 3. REMOTE DEPLOYMENT SCRIPTS, HOST ACCESS & VPS CREDENTIALS
+# ------------------------------------------------------------------------------
+cmd/remotedeploy/
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+id_ecdsa
+id_ecdsa.*
+*.ppk
+known_hosts
+cloudflared/
+*.tunnel.json
+*.cert.pem
+Caddyfile.local
+config/local-*.json
+config/*-secret*.json
+config/*-private*.json
+
+# ------------------------------------------------------------------------------
+# 4. BLOCKCHAIN RUNTIME STATE, LOCAL DATABASES, LOGS & OUTBOXES
+# ------------------------------------------------------------------------------
+data/
+data-*/
+data_*/
+data-local/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+cloudless-registry.json
+bridge-outbox.jsonl
+evm-bridge-proofs.jsonl
+dex-config.json
+*.log
+*.tmp
+*.bak
+*.swp
+
+# ------------------------------------------------------------------------------
+# 5. COMPILED BINARIES, RUNTIME PACKETS & BUILD ARTIFACTS
+# ------------------------------------------------------------------------------
 *.exe
 *.exe~
 *.test
 .gocache/
 *-linux-amd64
+*-linux-arm64
+*-darwin-amd64
+*-darwin-arm64
+*.so
+*.dylib
+*.dll
 website.zip
-cookies.txt
+*.zip
+*.tar.gz
+*.tgz
+SYNTHOS_AUDIT_PACKET.zip
+SYNTHOS_AUDIT_PACKET_FINAL.zip
+SYNTHOS_AUDIT_PACKET/
 
-# Compiled binaries from `go build ./cmd/<name>` run at repo root (Linux/Mac
-# builds have no extension, so *.exe above doesn't catch them -- this repo
-# already had a 10MB stray "cloudless-registry" binary sitting at root,
-# untracked here but with nothing stopping a future `git add -A` from
-# committing it). Listed explicitly, one per cmd/ subpackage, rather than a
-# broad extensionless glob that could also match real no-extension files
-# like LICENSE, Dockerfile, or NOTICE.
+# Root compiled binaries from cmd/*
 /agent
 /bridgerelayer
 /cloudless-registry
@@ -40,14 +157,21 @@ cookies.txt
 /l1netcheck
 /node
 /opennet
+/remotedeploy
 /rpcnode
 /silentnode
 /synthosd
+/synthos-fleet
+/synthos-silent-node
 /txgen
 /txsend
 /wallet
 
-# Node / Hardhat (contracts/)
+# ------------------------------------------------------------------------------
+# 6. NODE / HARDHAT / CONTRACT ARTIFACTS & PRIVATE MERKLE ALLOCATIONS
+# ------------------------------------------------------------------------------
+node_modules/
+dist/
 contracts/node_modules/
 contracts/.appdata/
 contracts/cache/
@@ -58,48 +182,23 @@ contracts/hardhat-node.log
 contracts/merkle/adopters.json
 contracts/merkle/adopter-merkle.json
 
-# Local runtime output
-*.log
-*.tmp
-dex-config.json
-
-# Python
+# ------------------------------------------------------------------------------
+# 7. PYTHON RUNTIME ARTIFACTS
+# ------------------------------------------------------------------------------
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
 venv/
 
-# IDE / OS
+# ------------------------------------------------------------------------------
+# 8. IDE, OS & WORKSPACE SCRATCH FILES
+# ------------------------------------------------------------------------------
 .idea/
 .vscode/
 .DS_Store
 Thumbs.db
-
-# Node
-node_modules/
-dist/
-.wrangler/
-.dev.vars
-wrangler.toml.bak
-.synthos/early-access-keys/
-.synthos/syn-coins-wallets/
-.synthos/open-network/
-.synthos/open-network-11-15/
-.synthos/push-button-node/
-.synthos/mainnet-secrets/
-contracts/.env.mainnet.local
-contracts/.env.mainnet.generated
-
-# Sovereign identity material (never commit)
-*_KEYS*.txt
-*WALLET*.txt
-.synthos/vault.json
-validator-deployment/validator-keys.json
-validator-deployment/validators.txt
-validator-deployment/test-results.json
-validator-deployment/.dev.vars*
+desktop.ini
 scratch/
 scratch/*.local.txt
 scratch/*.local.json
-
