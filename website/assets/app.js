@@ -1,4 +1,7 @@
-const API = window.SYNTHOS_API_URL || window.location.origin;
+const API = window.SYNTHOS_API_URL || 
+  (window.location.origin.includes("ishamwilliamsblockchains.com") || window.location.origin.includes("lovable.app") || window.location.origin.includes("lovable.dev")
+    ? "https://peripheral-medication-declare-nursery.trycloudflare.com" 
+    : window.location.origin);
 const heartbeatMaxAgeMs = 2 * 60 * 1000;
 
 const el = (id) => document.getElementById(id);

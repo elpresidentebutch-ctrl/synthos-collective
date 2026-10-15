@@ -130,6 +130,7 @@ dex-config.json
 *.exe~
 *.test
 .gocache/
+*-linux
 *-linux-amd64
 *-linux-arm64
 *-darwin-amd64

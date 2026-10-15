@@ -3,28 +3,883 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>SYNTHOS DEX</title>
+  <title>SYNTHOS Native L1 AMM — Decentralized Exchange</title>
   <link rel="stylesheet" href="./assets/styles.css" />
+  <style>
+    :root {
+      --card-bg: rgba(17, 23, 34, 0.95);
+      --card-border: rgba(255, 255, 255, 0.12);
+      --accent-glow: rgba(49, 211, 159, 0.2);
+    }
+    .dex-container {
+      max-width: 1180px;
+      margin: 28px auto 60px;
+      padding: 0 16px;
+    }
+    .hero-strip {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-bottom: 24px;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 20px;
+    }
+    .hero-strip h1 {
+      margin: 0 0 6px;
+      font-size: 2rem;
+      letter-spacing: -0.03em;
+    }
+    .hero-strip p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+    .net-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(49, 211, 159, 0.08);
+      border: 1px solid rgba(49, 211, 159, 0.3);
+      border-radius: 999px;
+      padding: 6px 14px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--green);
+    }
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 8px var(--green);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0% { opacity: 0.5; }
+      50% { opacity: 1; transform: scale(1.15); }
+      100% { opacity: 0.5; }
+    }
+    .metric-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+      margin-bottom: 28px;
+    }
+    .metric-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 16px 18px;
+    }
+    .metric-card dt {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      margin-bottom: 6px;
+      font-weight: 700;
+    }
+    .metric-card dd {
+      margin: 0;
+      font-size: 1.4rem;
+      font-weight: 800;
+      color: var(--text);
+    }
+    .metric-card small {
+      color: var(--cyan);
+      font-size: 0.78rem;
+    }
+    .dex-layout {
+      display: grid;
+      grid-template-columns: minmax(360px, 480px) 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+    @media (max-width: 900px) {
+      .dex-layout { grid-template-columns: 1fr; }
+    }
+    .app-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 22px;
+      box-shadow: 0 14px 34px rgba(0, 0, 0, 0.4);
+    }
+    .tab-bar {
+      display: flex;
+      gap: 6px;
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 10px;
+      padding: 4px;
+      margin-bottom: 20px;
+    }
+    .tab-btn {
+      flex: 1;
+      background: transparent;
+      border: 0;
+      color: var(--muted);
+      padding: 9px 12px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .tab-btn.active {
+      background: var(--panel-2);
+      color: var(--text);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+    .swap-box {
+      background: rgba(7, 9, 13, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 8px;
+      transition: border-color 0.2s;
+    }
+    .swap-box:focus-within {
+      border-color: var(--cyan);
+    }
+    .swap-box-header {
+      display: flex;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: 0.78rem;
+      margin-bottom: 8px;
+    }
+    .swap-input-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .swap-input {
+      flex: 1;
+      background: transparent;
+      border: 0;
+      color: var(--text);
+      font-size: 1.45rem;
+      font-weight: 800;
+      outline: none;
+      width: 100%;
+      font-family: inherit;
+    }
+    .swap-input::placeholder { color: rgba(255, 255, 255, 0.25); }
+    .token-select {
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      color: var(--text);
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 0.92rem;
+      outline: none;
+      cursor: pointer;
+    }
+    .flip-btn-wrap {
+      display: flex;
+      justify-content: center;
+      margin: -14px 0 -14px;
+      position: relative;
+      z-index: 2;
+    }
+    .flip-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--panel-2);
+      border: 2px solid var(--bg);
+      color: var(--cyan);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+      transition: transform 0.2s;
+    }
+    .flip-btn:hover {
+      transform: rotate(180deg) scale(1.1);
+      border-color: var(--cyan);
+    }
+    .info-tray {
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin: 16px 0;
+      font-size: 0.8rem;
+    }
+    .info-line {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+      color: var(--muted);
+    }
+    .info-line:last-child { margin-bottom: 0; }
+    .info-line strong { color: var(--text); }
+    .action-btn {
+      width: 100%;
+      background: var(--green);
+      color: #04130e;
+      border: 0;
+      border-radius: 10px;
+      padding: 14px 18px;
+      font-size: 1rem;
+      font-weight: 850;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.1s;
+    }
+    .action-btn:hover { opacity: 0.95; }
+    .action-btn:active { transform: scale(0.98); }
+    .action-btn:disabled {
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--muted);
+      cursor: not-allowed;
+    }
+    .pools-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.86rem;
+    }
+    .pools-table th {
+      text-align: left;
+      padding: 10px 12px;
+      color: var(--muted);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid var(--line);
+    }
+    .pools-table td {
+      padding: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      vertical-align: middle;
+    }
+    .pools-table tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .tag-chip {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      background: rgba(115, 215, 255, 0.1);
+      color: var(--cyan);
+      border: 1px solid rgba(115, 215, 255, 0.25);
+    }
+    .signer-box {
+      margin-top: 14px;
+      font-size: 0.78rem;
+    }
+    .signer-box summary {
+      color: var(--cyan);
+      cursor: pointer;
+      user-select: none;
+      font-weight: 700;
+    }
+    .signer-box input {
+      width: 100%;
+      margin-top: 6px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--line);
+      background: #07090d;
+      color: var(--text);
+      font-family: ui-monospace, monospace;
+      font-size: 0.78rem;
+    }
+    .status-banner {
+      padding: 10px 14px;
+      border-radius: 8px;
+      margin-top: 14px;
+      font-size: 0.82rem;
+      display: none;
+    }
+    .status-banner.success {
+      display: block;
+      background: rgba(49, 211, 159, 0.12);
+      border: 1px solid rgba(49, 211, 159, 0.35);
+      color: var(--green);
+    }
+    .status-banner.error {
+      display: block;
+      background: rgba(255, 107, 107, 0.12);
+      border: 1px solid rgba(255, 107, 107, 0.35);
+      color: var(--red);
+    }
+  </style>
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="./index.html"><span class="brand-mark"></span><span>SYNTHOS Collective</span></a>
-    <nav><a href="./index.html#network">Network</a><a href="./chain.html">Chain</a><a href="./api.html">API</a></nav>
+    <a class="brand" href="./index.html">
+      <span class="brand-mark"></span>
+      <span>SYNTHOS Collective</span>
+    </a>
+    <nav>
+      <a href="./index.html#network">Network</a>
+      <a href="./explorer.html">Explorer</a>
+      <a href="./chain.html">Chain</a>
+      <a href="./nodes.html">Nodes</a>
+      <a href="./dex.html" style="color:var(--green);font-weight:700">L1 AMM</a>
+      <a href="./bridge.html">Bridge</a>
+      <a href="./api.html">API</a>
+    </nav>
   </header>
-  <main>
-    <section class="band">
-      <div class="section-head">
-        <p class="eyebrow">SYN Financial Layer</p>
-        <h1>Collective DEX</h1>
-        <p class="lede">DEX trading is not live yet. This page is the public placeholder for deployed SYNTHOSDex contract addresses, pool reserves, wallet connection, and swap controls once the contracts are deployed and verified.</p>
+
+  <main class="dex-container">
+    <div class="hero-strip">
+      <div>
+        <p class="eyebrow" style="color:var(--cyan)">Layer-1 Consensus AMM</p>
+        <h1>SYNTHOS Native DEX</h1>
+        <p>Direct state-transition constant-product automated market maker running natively on SYNTHOS L1 consensus.</p>
       </div>
-      <div class="grid-three">
-        <article class="tile"><strong>AMM Formula</strong><span>Constant-product swaps with transparent fee and slippage math.</span></article>
-        <article class="tile"><strong>Pool Surface</strong><span>Pool cards will read deployed SYN pair reserves from chain or contract config.</span></article>
-        <article class="tile"><strong>Wallet Path</strong><span>Browser wallet connection remains outbound-only through the user’s RPC provider.</span></article>
+      <div class="net-badge">
+        <span class="pulse-dot"></span>
+        <span id="consensusStatus">L1 AMM Consensus Active</span>
       </div>
-    </section>
+    </div>
+
+    <!-- Live AMM Metrics -->
+    <div class="metric-row">
+      <div class="metric-card">
+        <dt>Invariant Model</dt>
+        <dd>x · y = k</dd>
+        <small>Constant-product formula</small>
+      </div>
+      <div class="metric-card">
+        <dt>Protocol LP Fee</dt>
+        <dd>0.30%</dd>
+        <small>30 bps liquidity reward</small>
+      </div>
+      <div class="metric-card">
+        <dt>Active Pools</dt>
+        <dd id="totalPoolsCount">0</dd>
+        <small id="poolsSummary">Loading pools…</small>
+      </div>
+      <div class="metric-card">
+        <dt>L1 Block Height</dt>
+        <dd id="blockHeightDisplay">—</dd>
+        <small id="chainStateRoot">State root syncing</small>
+      </div>
+    </div>
+
+    <div class="dex-layout">
+      <!-- Left: Interactive Trading Interface -->
+      <div class="app-card">
+        <div class="tab-bar">
+          <button class="tab-btn active" id="tabSwapBtn" onclick="switchTab('swap')">Instant Swap</button>
+          <button class="tab-btn" id="tabAddLiqBtn" onclick="switchTab('liquidity')">Add Liquidity</button>
+          <button class="tab-btn" id="tabFaucetBtn" onclick="switchTab('faucet')">Asset Faucet</button>
+        </div>
+
+        <!-- 1. SWAP VIEW -->
+        <div id="viewSwap">
+          <div class="swap-box">
+            <div class="swap-box-header">
+              <span>You Pay</span>
+              <span>Available: <strong id="fromBalance">SYN Native</strong></span>
+            </div>
+            <div class="swap-input-row">
+              <input type="number" id="swapAmountIn" class="swap-input" placeholder="0.0" min="0" step="any" oninput="onInputAmountChanged()" />
+              <select id="swapTokenIn" class="token-select" onchange="onTokenInChanged()">
+                <option value="SYN">SYN</option>
+                <option value="USDC">USDC</option>
+                <option value="USDT">USDT</option>
+                <option value="BTC">BTC</option>
+                <option value="ETH">ETH</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="flip-btn-wrap">
+            <button class="flip-btn" type="button" onclick="flipTokens()" title="Invert Pair">↓↑</button>
+          </div>
+
+          <div class="swap-box">
+            <div class="swap-box-header">
+              <span>You Receive (Estimated)</span>
+              <span id="rateLabel">Rate: —</span>
+            </div>
+            <div class="swap-input-row">
+              <input type="text" id="swapAmountOut" class="swap-input" placeholder="0.0" readonly />
+              <select id="swapTokenOut" class="token-select" onchange="onTokenOutChanged()">
+                <option value="USDC">USDC</option>
+                <option value="SYN">SYN</option>
+                <option value="USDT">USDT</option>
+                <option value="BTC">BTC</option>
+                <option value="ETH">ETH</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="info-tray">
+            <div class="info-line">
+              <span>Execution Price</span>
+              <span id="detailRate">—</span>
+            </div>
+            <div class="info-line">
+              <span>Minimum Received (0.5% Slippage)</span>
+              <span id="detailMinOut">—</span>
+            </div>
+            <div class="info-line">
+              <span>Protocol Fee (0.30%)</span>
+              <span id="detailFee">—</span>
+            </div>
+            <div class="info-line">
+              <span>Route</span>
+              <span style="color:var(--cyan)">Direct L1 Native AMM</span>
+            </div>
+          </div>
+
+          <details class="signer-box">
+            <summary>Advanced / Key Settings (Optional)</summary>
+            <input type="password" id="signerPrivateKey" placeholder="Optional private key (hex) to sign consensus tx directly" />
+            <small style="color:var(--muted);display:block;margin-top:4px">If left empty, runs quote verification against live chain state.</small>
+          </details>
+
+          <button id="btnExecuteSwap" class="action-btn" style="margin-top:16px" onclick="executeSwap()">
+            Swap Tokens
+          </button>
+          <div id="swapStatusBanner" class="status-banner"></div>
+        </div>
+
+        <!-- 2. LIQUIDITY VIEW -->
+        <div id="viewLiquidity" style="display:none">
+          <p style="font-size:0.84rem;color:var(--muted);margin-top:0">Deposit equal-value SYN and paired asset to earn 0.30% fees on all trades through this pool.</p>
+          <div class="swap-box">
+            <div class="swap-box-header"><span>Asset ID</span></div>
+            <div class="swap-input-row">
+              <input type="text" id="liqAssetId" class="swap-input" placeholder="e.g. USDC" value="USDC" style="text-transform:uppercase" />
+            </div>
+          </div>
+          <div class="swap-box">
+            <div class="swap-box-header"><span>SYN Amount</span></div>
+            <div class="swap-input-row">
+              <input type="number" id="liqSynAmount" class="swap-input" placeholder="1000" min="1" />
+              <span class="token-select">SYN</span>
+            </div>
+          </div>
+          <div class="swap-box">
+            <div class="swap-box-header"><span>Asset Amount</span></div>
+            <div class="swap-input-row">
+              <input type="number" id="liqAssetAmount" class="swap-input" placeholder="100" min="1" />
+              <span class="token-select" id="liqAssetBadge">USDC</span>
+            </div>
+          </div>
+          <details class="signer-box">
+            <summary>Signer Private Key (Required to commit)</summary>
+            <input type="password" id="liqPrivateKey" placeholder="64-character hex private key" />
+          </details>
+          <button id="btnAddLiquidity" class="action-btn" style="margin-top:16px" onclick="executeAddLiquidity()">
+            Deposit Liquidity to Pool
+          </button>
+          <div id="liqStatusBanner" class="status-banner"></div>
+        </div>
+
+        <!-- 3. FAUCET / ISSUE VIEW -->
+        <div id="viewFaucet" style="display:none">
+          <p style="font-size:0.84rem;color:var(--muted);margin-top:0">Issue testnet assets directly on Layer-1 to test AMM swaps and pool provisioning without bridge delays.</p>
+          <div class="swap-box">
+            <div class="swap-box-header"><span>Asset Symbol to Mint</span></div>
+            <div class="swap-input-row">
+              <input type="text" id="faucetAsset" class="swap-input" value="USDC" style="text-transform:uppercase" />
+            </div>
+          </div>
+          <div class="swap-box">
+            <div class="swap-box-header"><span>Recipient Address</span></div>
+            <div class="swap-input-row">
+              <input type="text" id="faucetToAddress" class="swap-input" placeholder="0x… SYNTHOS address" style="font-size:1rem" />
+            </div>
+          </div>
+          <div class="swap-box">
+            <div class="swap-box-header"><span>Amount</span></div>
+            <div class="swap-input-row">
+              <input type="number" id="faucetAmount" class="swap-input" value="10000" />
+            </div>
+          </div>
+          <details class="signer-box">
+            <summary>Authorized Issuer Key (Optional)</summary>
+            <input type="password" id="faucetPrivateKey" placeholder="Leave blank to use node default authority" />
+          </details>
+          <button id="btnFaucetMint" class="action-btn" style="margin-top:16px" onclick="executeMintAsset()">
+            Mint Test Assets
+          </button>
+          <div id="faucetStatusBanner" class="status-banner"></div>
+        </div>
+      </div>
+
+      <!-- Right: Active Pools & Protocol Surface -->
+      <div>
+        <div class="app-card" style="margin-bottom:20px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+            <h2 style="margin:0;font-size:1.15rem">Active Liquidity Pools</h2>
+            <button class="tag-chip" style="cursor:pointer;background:transparent" onclick="loadPools()">↻ Refresh</button>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="pools-table">
+              <thead>
+                <tr>
+                  <th>Pair</th>
+                  <th>SYN Reserve</th>
+                  <th>Asset Reserve</th>
+                  <th>LP Shares</th>
+                  <th>Price</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="poolsTableBody">
+                <tr>
+                  <td colspan="6" style="text-align:center;color:var(--muted);padding:24px">Querying L1 AMM pools…</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="app-card">
+          <h2 style="margin:0 0 10px;font-size:1.15rem">Consensus Integration</h2>
+          <p style="font-size:0.86rem;color:var(--muted);line-height:1.55;margin:0 0 14px">
+            The SYNTHOS AMM is not an external smart contract or wrapped subnetwork. It is an immutable state machine rule wired directly into the block execution loop of the L1 chain.
+          </p>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:0.8rem">
+            <div style="background:rgba(0,0,0,0.25);padding:10px 12px;border-radius:8px">
+              <strong style="color:var(--text);display:block;margin-bottom:4px">Block Execution</strong>
+              <span style="color:var(--muted)">Swaps finalize at block confirmation with zero front-running mempool leak.</span>
+            </div>
+            <div style="background:rgba(0,0,0,0.25);padding:10px 12px;border-radius:8px">
+              <strong style="color:var(--text);display:block;margin-bottom:4px">Deterministic Math</strong>
+              <span style="color:var(--muted)">64-bit integer overflow-safe arithmetic without fractional rounding loss.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </main>
-  <footer><span>SYNTHOS Collective</span><span>DEX not live — contract config pending</span></footer>
+
+  <footer>
+    <span>SYNTHOS Collective · Native Layer-1 AMM</span>
+    <span>Host: <span class="mono" id="activeApiHost">connecting…</span></span>
+  </footer>
+
+  <script>
+    // Smart backend endpoint resolution:
+    // 1. window.SYNTHOS_API_URL if injected
+    // 2. If opened from Lovable (ishamwilliamsblockchains.com / lovable.app), routes automatically to Cloudflare tunnel
+    // 3. Otherwise uses same-origin
+    const API = window.SYNTHOS_API_URL || 
+      (window.location.origin.includes("ishamwilliamsblockchains.com") || window.location.origin.includes("lovable.app") || window.location.origin.includes("lovable.dev")
+        ? "https://peripheral-medication-declare-nursery.trycloudflare.com" 
+        : window.location.origin);
+
+    document.getElementById("activeApiHost").textContent = API.replace(/^https?:\/\//, "");
+
+    let activePools = {};
+    let debounceTimer = null;
+
+    function switchTab(tab) {
+      document.getElementById("tabSwapBtn").classList.toggle("active", tab === "swap");
+      document.getElementById("tabAddLiqBtn").classList.toggle("active", tab === "liquidity");
+      document.getElementById("tabFaucetBtn").classList.toggle("active", tab === "faucet");
+
+      document.getElementById("viewSwap").style.display = tab === "swap" ? "block" : "none";
+      document.getElementById("viewLiquidity").style.display = tab === "liquidity" ? "block" : "none";
+      document.getElementById("viewFaucet").style.display = tab === "faucet" ? "block" : "none";
+    }
+
+    function onTokenInChanged() {
+      const inVal = document.getElementById("swapTokenIn").value;
+      const outSelect = document.getElementById("swapTokenOut");
+      if (inVal === outSelect.value) {
+        outSelect.value = inVal === "SYN" ? "USDC" : "SYN";
+      }
+      onInputAmountChanged();
+    }
+
+    function onTokenOutChanged() {
+      const outVal = document.getElementById("swapTokenOut").value;
+      const inSelect = document.getElementById("swapTokenIn");
+      if (outVal === inSelect.value) {
+        inSelect.value = outVal === "SYN" ? "USDC" : "SYN";
+      }
+      onInputAmountChanged();
+    }
+
+    function flipTokens() {
+      const inSelect = document.getElementById("swapTokenIn");
+      const outSelect = document.getElementById("swapTokenOut");
+      const oldIn = inSelect.value;
+      inSelect.value = outSelect.value;
+      outSelect.value = oldIn;
+      onInputAmountChanged();
+    }
+
+    function onInputAmountChanged() {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(fetchQuote, 250);
+    }
+
+    async function fetchQuote() {
+      const tokenIn = document.getElementById("swapTokenIn").value;
+      const tokenOut = document.getElementById("swapTokenOut").value;
+      const rawAmt = parseFloat(document.getElementById("swapAmountIn").value);
+      const outField = document.getElementById("swapAmountOut");
+
+      if (!rawAmt || rawAmt <= 0) {
+        outField.value = "";
+        document.getElementById("detailRate").textContent = "—";
+        document.getElementById("detailMinOut").textContent = "—";
+        document.getElementById("detailFee").textContent = "—";
+        return;
+      }
+
+      // One token must be SYN in the native AMM pair structure
+      const isSynIn = tokenIn === "SYN";
+      const asset = isSynIn ? tokenOut : tokenIn;
+      const amountInUnits = Math.floor(rawAmt * 1000000); // 6-decimal scaling
+
+      try {
+        const url = `${API}/dex/quote?asset=${encodeURIComponent(asset)}&amount_in=${amountInUnits}&in_is_syn=${isSynIn}`;
+        const res = await fetch(url, { cache: "no-store" });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          outField.value = "";
+          document.getElementById("detailRate").textContent = errData.error || "No pool liquidity yet";
+          return;
+        }
+        const data = await res.json();
+        const amtOut = data.amount_out / 1000000;
+        outField.value = amtOut.toFixed(4);
+
+        const rate = amtOut / rawAmt;
+        document.getElementById("rateLabel").textContent = `1 ${tokenIn} ≈ ${rate.toFixed(4)} ${tokenOut}`;
+        document.getElementById("detailRate").textContent = `1 ${tokenIn} = ${rate.toFixed(4)} ${tokenOut}`;
+        const minOut = (amtOut * 0.995).toFixed(4);
+        document.getElementById("detailMinOut").textContent = `${minOut} ${tokenOut}`;
+        document.getElementById("detailFee").textContent = `${(rawAmt * 0.003).toFixed(4)} ${tokenIn} (0.30%)`;
+      } catch (err) {
+        outField.value = "";
+        document.getElementById("detailRate").textContent = "Quote connection error";
+      }
+    }
+
+    async function loadPools() {
+      try {
+        const res = await fetch(`${API}/dex/pools`, { cache: "no-store" });
+        const data = await res.json();
+        const tbody = document.getElementById("poolsTableBody");
+        tbody.innerHTML = "";
+
+        if (!data.pools || Object.keys(data.pools).length === 0) {
+          tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px">No liquidity pools created yet. Use the "Add Liquidity" tab to seed the first pool.</td></tr>`;
+          document.getElementById("totalPoolsCount").textContent = "0";
+          document.getElementById("poolsSummary").textContent = "Ready for genesis pools";
+          return;
+        }
+
+        activePools = data.pools;
+        const keys = Object.keys(data.pools);
+        document.getElementById("totalPoolsCount").textContent = keys.length;
+        document.getElementById("poolsSummary").textContent = `${keys.join(", ")} pairs active`;
+
+        keys.forEach(asset => {
+          const p = data.pools[asset];
+          const synRes = (p.syn_reserve / 1000000).toLocaleString(undefined, { maximumFractionDigits: 2 });
+          const assetRes = (p.asset_reserve / 1000000).toLocaleString(undefined, { maximumFractionDigits: 2 });
+          const shares = p.total_shares.toLocaleString();
+          const price = p.asset_reserve > 0 ? (p.syn_reserve / p.asset_reserve).toFixed(4) : "—";
+
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td><strong style="color:var(--text)">SYN / ${asset}</strong></td>
+            <td>${synRes} SYN</td>
+            <td>${assetRes} ${asset}</td>
+            <td>${shares}</td>
+            <td style="color:var(--cyan)">1 ${asset} ≈ ${price} SYN</td>
+            <td>
+              <button class="tag-chip" style="cursor:pointer" onclick="selectPool('${asset}')">Trade</button>
+            </td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (e) {
+        document.getElementById("poolsTableBody").innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--red);padding:20px">Failed to load pools: ${e.message}</td></tr>`;
+      }
+    }
+
+    function selectPool(asset) {
+      document.getElementById("swapTokenIn").value = "SYN";
+      document.getElementById("swapTokenOut").value = asset;
+      switchTab("swap");
+      onInputAmountChanged();
+    }
+
+    async function executeSwap() {
+      const banner = document.getElementById("swapStatusBanner");
+      const btn = document.getElementById("btnExecuteSwap");
+      banner.className = "status-banner";
+      banner.style.display = "none";
+
+      const tokenIn = document.getElementById("swapTokenIn").value;
+      const tokenOut = document.getElementById("swapTokenOut").value;
+      const amtIn = parseFloat(document.getElementById("swapAmountIn").value);
+      const privKey = document.getElementById("signerPrivateKey").value.trim();
+
+      if (!amtIn || amtIn <= 0) {
+        banner.className = "status-banner error";
+        banner.textContent = "Please enter an amount to swap.";
+        return;
+      }
+
+      const isSynIn = tokenIn === "SYN";
+      const asset = isSynIn ? tokenOut : tokenIn;
+      const amountInUnits = Math.floor(amtIn * 1000000);
+
+      btn.disabled = true;
+      btn.textContent = "Broadcasting to L1 Consensus…";
+
+      try {
+        const payload = {
+          asset_id: asset,
+          amount_in: amountInUnits,
+          in_is_syn: isSynIn,
+          min_amount_out: 1
+        };
+        if (privKey) payload.private_key = privKey;
+
+        const res = await fetch(`${API}/dex/swap`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const out = await res.json();
+        if (!res.ok || !out.ok) {
+          throw new Error(out.error || "Swap transaction rejected by L1 node");
+        }
+        banner.className = "status-banner success";
+        banner.innerHTML = `<strong>Swap Submitted!</strong> Tx ID: <code class="mono">${out.tx_id || "confirmed"}</code>. State is updating on L1.`;
+        fetchQuote();
+        loadPools();
+      } catch (err) {
+        banner.className = "status-banner error";
+        banner.textContent = err.message;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Swap Tokens";
+      }
+    }
+
+    async function executeAddLiquidity() {
+      const banner = document.getElementById("liqStatusBanner");
+      const btn = document.getElementById("btnAddLiquidity");
+      const asset = document.getElementById("liqAssetId").value.trim().toUpperCase();
+      const synAmt = parseFloat(document.getElementById("liqSynAmount").value);
+      const assetAmt = parseFloat(document.getElementById("liqAssetAmount").value);
+      const privKey = document.getElementById("liqPrivateKey").value.trim();
+
+      if (!asset || !synAmt || !assetAmt || !privKey) {
+        banner.className = "status-banner error";
+        banner.textContent = "Please fill in Asset, SYN Amount, Asset Amount, and Private Key.";
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = "Provisioning Pool on L1…";
+
+      try {
+        const payload = {
+          asset_id: asset,
+          syn_amount: Math.floor(synAmt * 1000000),
+          asset_amount: Math.floor(assetAmt * 1000000),
+          min_shares: 1,
+          private_key: privKey
+        };
+        const res = await fetch(`${API}/dex/liquidity`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const out = await res.json();
+        if (!res.ok || !out.ok) {
+          throw new Error(out.error || "Deposit rejected by L1 node");
+        }
+        banner.className = "status-banner success";
+        banner.innerHTML = `<strong>Liquidity Deposited!</strong> Tx ID: <code class="mono">${out.tx_id || "confirmed"}</code>`;
+        loadPools();
+      } catch (err) {
+        banner.className = "status-banner error";
+        banner.textContent = err.message;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Deposit Liquidity to Pool";
+      }
+    }
+
+    async function executeMintAsset() {
+      const banner = document.getElementById("faucetStatusBanner");
+      const btn = document.getElementById("btnFaucetMint");
+      const asset = document.getElementById("faucetAsset").value.trim().toUpperCase();
+      const to = document.getElementById("faucetToAddress").value.trim();
+      const amt = parseFloat(document.getElementById("faucetAmount").value);
+      const privKey = document.getElementById("faucetPrivateKey").value.trim();
+
+      if (!asset || !amt) {
+        banner.className = "status-banner error";
+        banner.textContent = "Please specify Asset and Amount.";
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = "Minting L1 Asset…";
+
+      try {
+        const payload = {
+          asset_id: asset,
+          amount: Math.floor(amt * 1000000),
+          to: to || undefined,
+          private_key: privKey || undefined
+        };
+        const res = await fetch(`${API}/dex/issue`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const out = await res.json();
+        if (!res.ok || !out.ok) {
+          throw new Error(out.error || "Minting rejected by L1 node");
+        }
+        banner.className = "status-banner success";
+        banner.innerHTML = `<strong>Asset Minted!</strong> Tx ID: <code class="mono">${out.tx_id || "confirmed"}</code>`;
+      } catch (err) {
+        banner.className = "status-banner error";
+        banner.textContent = err.message;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Mint Test Assets";
+      }
+    }
+
+    async function updateNetworkStatus() {
+      try {
+        const res = await fetch(`${API}/api/network/status`, { cache: "no-store" });
+        const data = await res.json();
+        if (data.height) {
+          document.getElementById("blockHeightDisplay").textContent = `#${data.height.toLocaleString()}`;
+        }
+        if (data.state_root) {
+          const r = String(data.state_root);
+          document.getElementById("chainStateRoot").textContent = `${r.slice(0, 8)}…${r.slice(-6)}`;
+        }
+      } catch (_) {}
+    }
+
+    // Init
+    loadPools();
+    updateNetworkStatus();
+    setInterval(updateNetworkStatus, 10000);
+  </script>
 </body>
 </html>

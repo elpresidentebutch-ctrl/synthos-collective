@@ -106,7 +106,10 @@
   </main>
 
   <script>
-    const API = window.location.origin;
+    const API = window.SYNTHOS_API_URL || 
+      (window.location.origin.includes("ishamwilliamsblockchains.com") || window.location.origin.includes("lovable.app") || window.location.origin.includes("lovable.dev")
+        ? "https://peripheral-medication-declare-nursery.trycloudflare.com" 
+        : window.location.origin);
     const SESSION_KEY = "synthos_node_session_v1";
     const CAPS = [
       ["ed25519", "Real Ed25519 signatures"],

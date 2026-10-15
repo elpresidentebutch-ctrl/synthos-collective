@@ -143,10 +143,13 @@
   </footer>
 
 <script>
-(function(){
-  var RPC = (window.SYNTHOS_REGISTRY_URL || window.location.origin) + "/api/explorer";
-  // Governance and Citizen data comes from chain node RPC or same origin
-  var RAW_RPC = window.SYNTHOS_RPC_URL || (window.location.protocol + "//" + window.location.hostname + (window.location.port ? ":8080" : "/rpc"));
+  var defaultBase = window.SYNTHOS_API_URL || 
+    ((window.location.origin.includes("ishamwilliamsblockchains.com") || window.location.origin.includes("lovable.app") || window.location.origin.includes("lovable.dev"))
+      ? "https://peripheral-medication-declare-nursery.trycloudflare.com"
+      : window.location.origin);
+  var RPC = (window.SYNTHOS_REGISTRY_URL || defaultBase) + "/api/explorer";
+  // Governance and Citizen data comes from chain node RPC or registry proxy
+  var RAW_RPC = window.SYNTHOS_RPC_URL || defaultBase;
   var $ = function(s){ return document.querySelector(s); };
   function set(sel,v){ var n=document.querySelector(sel); if(n) n.textContent=v; }
   function shortHash(h){ if(!h) return "—"; h=String(h); return h.length>16 ? h.slice(0,10)+"…"+h.slice(-6) : h; }

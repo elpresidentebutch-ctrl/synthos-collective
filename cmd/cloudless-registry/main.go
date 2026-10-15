@@ -166,6 +166,7 @@ type registryState struct {
 
 type server struct {
 	mu         sync.RWMutex
+	persistMu  sync.Mutex
 	state      registryState
 	secret     string
 	stateFile  string
@@ -261,6 +262,16 @@ func main() {
 	mux.HandleFunc("/bridge.html", s.handleWebsitePage)
 	mux.HandleFunc("/dex", s.handleWebsitePage)
 	mux.HandleFunc("/dex.html", s.handleWebsitePage)
+	mux.HandleFunc("/dex/", s.handleDEXProxy)
+	mux.HandleFunc("/api/dex/", s.handleDEXProxy)
+	mux.HandleFunc("/status", s.handleGenericRPC)
+	mux.HandleFunc("/account", s.handleGenericRPC)
+	mux.HandleFunc("/balance", s.handleGenericRPC)
+	mux.HandleFunc("/tx", s.handleGenericRPC)
+	mux.HandleFunc("/block", s.handleGenericRPC)
+	mux.HandleFunc("/blocks", s.handleGenericRPC)
+	mux.HandleFunc("/mempool", s.handleGenericRPC)
+	mux.HandleFunc("/propose_block", s.handleGenericRPC)
 	mux.HandleFunc("/api", s.handleWebsitePage)
 	mux.HandleFunc("/api.html", s.handleWebsitePage)
 	mux.HandleFunc("/early-access", s.handleEarlyAccessPage)
@@ -324,6 +335,11 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 			"GET /assets/early-access-sale.js",
 			"GET /api/node/windows-installer.ps1",
 			"DELETE /peers/NODE",
+			"GET /dex/pools",
+			"GET /dex/quote?asset=ASSET&amount_in=1000&in_is_syn=true",
+			"POST /dex/swap",
+			"POST /dex/liquidity",
+			"POST /dex/issue",
 		},
 	})
 }
@@ -2343,7 +2359,7 @@ func fetchRealChainStatus() (height int64, tip string, stateRoot string, ok bool
 	return parsed.Height, parsed.Tip, parsed.StateRoot, true
 }
 
-func (s *server) proxyRPCJSON(w http.ResponseWriter, r *http.Request, rpcPath string) bool {
+func (s *server) proxyRPC(w http.ResponseWriter, r *http.Request, rpcPath string) bool {
 	rpcURL := strings.TrimRight(os.Getenv("SYNTHOS_RPC_URL"), "/")
 	if rpcURL == "" {
 		return false
@@ -2352,8 +2368,30 @@ func (s *server) proxyRPCJSON(w http.ResponseWriter, r *http.Request, rpcPath st
 	if r.URL.RawQuery != "" {
 		target += "?" + r.URL.RawQuery
 	}
-	client := &http.Client{Timeout: 8 * time.Second}
-	resp, err := client.Get(target)
+	ctx := r.Context()
+	var body io.Reader
+	if r.Body != nil {
+		body = io.LimitReader(r.Body, 16<<20)
+	}
+	req, err := http.NewRequestWithContext(ctx, r.Method, target, body)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{
+			"ok":     false,
+			"error":  err.Error(),
+			"source": "synthos_rpc_proxy",
+		})
+		return true
+	}
+	for k, vv := range r.Header {
+		if strings.EqualFold(k, "Host") || strings.EqualFold(k, "Content-Length") {
+			continue
+		}
+		for _, v := range vv {
+			req.Header.Add(k, v)
+		}
+	}
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]any{
 			"ok":     false,
@@ -2363,15 +2401,42 @@ func (s *server) proxyRPCJSON(w http.ResponseWriter, r *http.Request, rpcPath st
 		return true
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-	if resp.Header.Get("Content-Type") != "" {
-		w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
-	} else {
-		w.Header().Set("Content-Type", "application/json")
+	for k, vv := range resp.Header {
+		for _, v := range vv {
+			w.Header().Add(k, v)
+		}
 	}
 	w.WriteHeader(resp.StatusCode)
-	_, _ = w.Write(body)
+	_, _ = io.Copy(w, resp.Body)
 	return true
+}
+
+func (s *server) proxyRPCJSON(w http.ResponseWriter, r *http.Request, rpcPath string) bool {
+	return s.proxyRPC(w, r, rpcPath)
+}
+
+func (s *server) handleDEXProxy(w http.ResponseWriter, r *http.Request) {
+	p := r.URL.Path
+	if strings.HasPrefix(p, "/api/dex") {
+		p = "/dex" + strings.TrimPrefix(p, "/api/dex")
+	}
+	if !s.proxyRPC(w, r, p) {
+		writeJSON(w, http.StatusBadGateway, map[string]any{
+			"ok":     false,
+			"error":  "SYNTHOS_RPC_URL not configured for DEX proxy",
+			"source": "synthos_registry",
+		})
+	}
+}
+
+func (s *server) handleGenericRPC(w http.ResponseWriter, r *http.Request) {
+	if !s.proxyRPC(w, r, r.URL.Path) {
+		writeJSON(w, http.StatusBadGateway, map[string]any{
+			"ok":     false,
+			"error":  "SYNTHOS_RPC_URL not configured for RPC proxy",
+			"source": "synthos_registry",
+		})
+	}
 }
 
 // authorized used to compare the caller-supplied secret with a plain Go
@@ -2425,6 +2490,8 @@ func (s *server) persist() error {
 	if s.stateFile == "" {
 		return nil
 	}
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
 	if err := os.MkdirAll(dir(s.stateFile), 0o755); err != nil {
 		return err
 	}
