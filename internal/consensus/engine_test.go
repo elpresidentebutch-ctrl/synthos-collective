@@ -1,9 +1,13 @@
 package consensus
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"synthos-collective/internal/chain"
 )
@@ -341,3 +345,379 @@ func TestEngine_SetValidators_UsesUniqueNonEmptyIDs(t *testing.T) {
 		t.Fatalf("expected threshold for 2 unique validators, got %d", got)
 	}
 }
+
+func TestEngine_CometBFT_TwoPhasePrevoteAndPrecommit(t *testing.T) {
+	e := NewEngine(4)
+	e.SetValidators([]string{"v1", "v2", "v3", "v4"})
+	block := &chain.Block{Header: chain.BlockHeader{Height: 10}, Hash: "0xblock10"}
+	e.OnProposal(block)
+
+	// Step 1: Prevote phase
+	// 2 votes out of 4 (threshold is 3) -> should not meet POL
+	for _, vid := range []string{"v1", "v2"} {
+		thresholdMet, pol, votesFor, required, err := e.OnPrevote(BlockVote{
+			BlockHash: block.Hash,
+			Height:    10,
+			Round:     0,
+			VoterID:   vid,
+			Vote:      1,
+			Signature: "0xsig_" + vid,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error on prevote: %v", err)
+		}
+		if thresholdMet || pol != nil {
+			t.Fatalf("POL should not be met with %d/%d votes", votesFor, required)
+		}
+	}
+
+	// 3rd prevote -> reaches 2/3+ quorum (3 of 4) -> achieves Proof-of-Lock (POL)
+	thresholdMet, pol, votesFor, _, err := e.OnPrevote(BlockVote{
+		BlockHash: block.Hash,
+		Height:    10,
+		Round:     0,
+		VoterID:   "v3",
+		Vote:      1,
+		Signature: "0xsig_v3",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error on 3rd prevote: %v", err)
+	}
+	if !thresholdMet || pol == nil {
+		t.Fatalf("expected POL to be achieved at 3 of 4 votes, got thresholdMet=%v pol=%v", thresholdMet, pol)
+	}
+	if pol.BlockHash != block.Hash || pol.Round != 0 || pol.Height != 10 {
+		t.Fatalf("unexpected POL content: %+v", pol)
+	}
+	if !e.HasProofOfLock(10, 0, block.Hash) {
+		t.Fatal("expected HasProofOfLock to be true")
+	}
+	gotPOL, ok := e.ProofOfLock(10)
+	if !ok || gotPOL.BlockHash != block.Hash {
+		t.Fatalf("expected ProofOfLock(10) to return valid POL: %+v", gotPOL)
+	}
+
+	// Verify collected prevote approvals
+	prevoteSigs := e.CollectedPrevoteApprovals(10, 0, block.Hash)
+	if len(prevoteSigs) != 3 {
+		t.Fatalf("expected 3 prevote signatures, got %d", len(prevoteSigs))
+	}
+
+	// Step 2: Precommit phase
+	// 2 precommits -> not finalized yet
+	for _, vid := range []string{"v1", "v2"} {
+		finalized, votesFor, required, err := e.OnPrecommit(BlockVote{
+			BlockHash: block.Hash,
+			Height:    10,
+			Round:     0,
+			VoterID:   vid,
+			Vote:      1,
+			Signature: "0xprecommit_sig_" + vid,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error on precommit: %v", err)
+		}
+		if finalized {
+			t.Fatalf("block should not finalize with %d/%d votes", votesFor, required)
+		}
+	}
+
+	// 3rd precommit -> reaches 2/3+ finality!
+	finalized, votesFor, _, err := e.OnPrecommit(BlockVote{
+		BlockHash: block.Hash,
+		Height:    10,
+		Round:     0,
+		VoterID:   "v3",
+		Vote:      1,
+		Signature: "0xprecommit_sig_v3",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error on 3rd precommit: %v", err)
+	}
+	if !finalized || votesFor != 3 {
+		t.Fatalf("expected block to finalize at 3 votes: finalized=%v votesFor=%d", finalized, votesFor)
+	}
+}
+
+func TestEngine_CometBFT_RoundIsolation(t *testing.T) {
+	e := NewEngine(4)
+	e.SetValidators([]string{"v1", "v2", "v3", "v4"})
+
+	b0 := &chain.Block{Header: chain.BlockHeader{Height: 20}, Hash: "0xblock_round0"}
+	b1 := &chain.Block{Header: chain.BlockHeader{Height: 20}, Hash: "0xblock_round1"}
+	e.RecordOwnProposalWithRound(b0, 0)
+	e.RecordOwnProposalWithRound(b1, 1)
+
+	// Round 0: v1 and v2 prevote for b0 (2 votes, below 3)
+	for _, vid := range []string{"v1", "v2"} {
+		met, pol, _, _, err := e.OnPrevote(BlockVote{
+			BlockHash: b0.Hash,
+			Height:    20,
+			Round:     0,
+			VoterID:   vid,
+			Vote:      1,
+		})
+		if err != nil || met || pol != nil {
+			t.Fatalf("round 0 prevote failed: met=%v pol=%v err=%v", met, pol, err)
+		}
+	}
+
+	// Round 1: v3 and v4 prevote for b1 (2 votes, below 3)
+	// Round 0 votes must NOT leak into Round 1
+	for _, vid := range []string{"v3", "v4"} {
+		met, pol, votesFor, _, err := e.OnPrevote(BlockVote{
+			BlockHash: b1.Hash,
+			Height:    20,
+			Round:     1,
+			VoterID:   vid,
+			Vote:      1,
+		})
+		if err != nil {
+			t.Fatalf("round 1 prevote error: %v", err)
+		}
+		if met || pol != nil || votesFor > 2 {
+			t.Fatalf("round isolation breach: round 0 votes leaked into round 1! votesFor=%d met=%v", votesFor, met)
+		}
+	}
+
+	// Now v1 votes in Round 1 -> reaches 3 votes for Round 1
+	met, pol, votesFor, _, err := e.OnPrevote(BlockVote{
+		BlockHash: b1.Hash,
+		Height:    20,
+		Round:     1,
+		VoterID:   "v1",
+		Vote:      1,
+	})
+	if err != nil {
+		t.Fatalf("round 1 3rd prevote error: %v", err)
+	}
+	if !met || pol == nil || votesFor != 3 {
+		t.Fatalf("expected round 1 to achieve POL with 3 votes: met=%v pol=%v votesFor=%d", met, pol, votesFor)
+	}
+	if pol.Round != 1 || pol.BlockHash != b1.Hash {
+		t.Fatalf("expected POL for round 1 b1, got %+v", pol)
+	}
+}
+
+func TestEngine_CometBFT_StakeWeightedPowerQuorum(t *testing.T) {
+	e := NewEngine(3)
+	e.SetValidatorPowers(map[string]uint64{
+		"whale": 500,
+		"mid":   300,
+		"small": 200,
+	})
+
+	if e.ValidatorPower("whale") != 500 || e.ValidatorPower("mid") != 300 || e.ValidatorPower("small") != 200 {
+		t.Fatalf("unexpected validator powers")
+	}
+
+	// Total power = 1000. Required power = (2*1000 + 2)/3 = 667. Required count = 2.
+	if got := e.RequiredPowerForFinality(); got != 667 {
+		t.Fatalf("expected required power 667, got %d", got)
+	}
+
+	block := &chain.Block{Header: chain.BlockHeader{Height: 5}, Hash: "0xweighted_block"}
+	e.OnProposal(block)
+
+	// Mid and Small prevote: 2 votes, but total power = 300 + 200 = 500 < 667.
+	// Threshold should NOT be met because voting power quorum is unsatisfied!
+	for _, vid := range []string{"mid", "small"} {
+		met, pol, _, _, err := e.OnPrevote(BlockVote{
+			BlockHash: block.Hash,
+			Height:    5,
+			Round:     0,
+			VoterID:   vid,
+			Vote:      1,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if met || pol != nil {
+			t.Fatalf("power threshold violated: 500/1000 power should not achieve POL")
+		}
+	}
+
+	// Whale prevotes in a fresh engine:
+	e2 := NewEngine(3)
+	e2.SetValidatorPowers(map[string]uint64{
+		"whale": 500,
+		"mid":   300,
+		"small": 200,
+	})
+	e2.OnProposal(block)
+
+	// Whale alone: power = 500 < 667, count = 1 < 2 -> no POL
+	met, pol, _, _, err := e2.OnPrevote(BlockVote{
+		BlockHash: block.Hash,
+		Height:    5,
+		Round:     0,
+		VoterID:   "whale",
+		Vote:      1,
+	})
+	if err != nil || met || pol != nil {
+		t.Fatalf("whale alone should not achieve POL")
+	}
+
+	// Whale + Small: power = 500 + 200 = 700 >= 667, count = 2 >= 2 -> POL achieved!
+	met, pol, _, _, err = e2.OnPrevote(BlockVote{
+		BlockHash: block.Hash,
+		Height:    5,
+		Round:     0,
+		VoterID:   "small",
+		Vote:      1,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !met || pol == nil {
+		t.Fatalf("whale + small (700 power) must achieve POL")
+	}
+
+	// Precommit phase: Whale + Small precommit -> finalized!
+	_, _, _, _ = e2.OnPrecommit(BlockVote{
+		BlockHash: block.Hash,
+		Height:    5,
+		Round:     0,
+		VoterID:   "whale",
+		Vote:      1,
+	})
+	finalized, _, _, err := e2.OnPrecommit(BlockVote{
+		BlockHash: block.Hash,
+		Height:    5,
+		Round:     0,
+		VoterID:   "small",
+		Vote:      1,
+	})
+	if err != nil {
+		t.Fatalf("precommit error: %v", err)
+	}
+	if !finalized {
+		t.Fatalf("expected finality with 700/1000 stake-weighted voting power")
+	}
+}
+
+func TestEngine_CometBFT_CryptographicEquivocationEvidence(t *testing.T) {
+	pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate ed25519 key: %v", err)
+	}
+
+	validatorID := "val-equivocator"
+	height := uint64(50)
+	round := 0
+
+	msgA := []byte("APPROVE|0xblockAlpha")
+	sigA := "0x" + hex.EncodeToString(ed25519.Sign(privKey, msgA))
+
+	msgB := []byte("APPROVE|0xblockBeta")
+	sigB := "0x" + hex.EncodeToString(ed25519.Sign(privKey, msgB))
+
+	evidence := EquivocationEvidence{
+		ValidatorID: validatorID,
+		Height:      height,
+		Round:       round,
+		VoteA: BlockVote{
+			BlockHash: "0xblockAlpha",
+			Height:    height,
+			Round:     round,
+			VoterID:   validatorID,
+			Vote:      1,
+			Signature: sigA,
+		},
+		VoteB: BlockVote{
+			BlockHash: "0xblockBeta",
+			Height:    height,
+			Round:     round,
+			VoterID:   validatorID,
+			Vote:      1,
+			Signature: sigB,
+		},
+		DiscoveredAt: time.Now(),
+	}
+
+	// Valid cryptographic evidence must verify
+	if err := evidence.Verify(pubKey); err != nil {
+		t.Fatalf("expected valid equivocation evidence to verify, got: %v", err)
+	}
+
+	// Forged / tampered signature must fail verification
+	badEvidence := evidence
+	badEvidence.VoteB.Signature = "0x" + hex.EncodeToString([]byte("invalid_signature_bytes_that_fail_verification_32b_long!"))
+	if err := badEvidence.Verify(pubKey); err == nil {
+		t.Fatalf("expected tampered signature to fail verification")
+	}
+
+	// Slashing execution via cryptographic evidence
+	tracker := NewSlashingTracker(SlashingParams{DoubleSignPenalty: 5000})
+	var slashedValidator string
+	var slashedPenalty uint64
+	tracker.SetExecuteSlash(func(vID string, penalty uint64) {
+		slashedValidator = vID
+		slashedPenalty = penalty
+	})
+
+	err = tracker.RecordCryptographicEvidence(evidence, pubKey)
+	if err != nil {
+		t.Fatalf("failed to record cryptographic evidence: %v", err)
+	}
+	if slashedValidator != validatorID || slashedPenalty != 5000 {
+		t.Fatalf("expected slashed validator %s with penalty 5000, got %s / %d", validatorID, slashedValidator, slashedPenalty)
+	}
+	if tracker.TotalSlashEvents() != 1 {
+		t.Fatalf("expected 1 slash event, got %d", tracker.TotalSlashEvents())
+	}
+}
+
+func TestProposalProcessor_ABCIInvariants(t *testing.T) {
+	processor := NewProposalProcessor(15 * time.Second)
+	now := time.Now()
+
+	validBlock := &chain.Block{
+		Header: chain.BlockHeader{
+			Height:     101,
+			ParentHash: "0xtip100",
+			ProposerID: "proposer1",
+			Timestamp:  now,
+		},
+		Hash: "0xblock101",
+	}
+
+	// 1. Valid proposal succeeds
+	if err := processor.ProcessProposal(validBlock, 100, "0xtip100", now); err != nil {
+		t.Fatalf("valid proposal failed: %v", err)
+	}
+
+	// 2. Nil block fails
+	if err := processor.ProcessProposal(nil, 100, "0xtip100", now); err == nil {
+		t.Fatal("expected error on nil block")
+	}
+
+	// 3. Height progression failure (skipping height)
+	badHeightBlock := *validBlock
+	badHeightBlock.Header.Height = 102
+	if err := processor.ProcessProposal(&badHeightBlock, 100, "0xtip100", now); err == nil {
+		t.Fatal("expected error on invalid height progression")
+	}
+
+	// 4. Parent hash tip continuity broken
+	badParentBlock := *validBlock
+	badParentBlock.Header.ParentHash = "0xwrongparent"
+	if err := processor.ProcessProposal(&badParentBlock, 100, "0xtip100", now); err == nil {
+		t.Fatal("expected error on broken parent hash continuity")
+	}
+
+	// 5. Missing proposer ID
+	missingProposerBlock := *validBlock
+	missingProposerBlock.Header.ProposerID = ""
+	if err := processor.ProcessProposal(&missingProposerBlock, 100, "0xtip100", now); err == nil {
+		t.Fatal("expected error on missing proposer ID")
+	}
+
+	// 6. Future timestamp drift beyond allowable window (30s > 15s)
+	futureDriftBlock := *validBlock
+	futureDriftBlock.Header.Timestamp = now.Add(30 * time.Second)
+	if err := processor.ProcessProposal(&futureDriftBlock, 100, "0xtip100", now); err == nil {
+		t.Fatal("expected error on proposal timestamp drifting into future")
+	}
+}
+

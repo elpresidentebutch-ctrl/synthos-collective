@@ -2152,52 +2152,28 @@ func (s *server) handleSilentNodeBinary(w http.ResponseWriter, r *http.Request) 
 	http.ServeFile(w, r, path)
 }
 
-// handleWindowsInstaller serves a real one-shot PowerShell installer: it
-// downloads the prebuilt node binary and installs it as an Administrator-level
-// Windows Service. No Go, no repo clone, no browser tab, no website login.
+// handleWindowsInstaller serves a one-shot PowerShell installer that downloads
+// the prebuilt 1-click background node binary and launches it in user space
+// (no Administrator prompt required, auto-registers in HKCU Run, runs hidden).
 func (s *server) handleWindowsInstaller(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	base := baseURL(r)
-	script := "# SYNTHOS Windows Service node installer\n" +
+	script := "# SYNTHOS 1-Click Background Node Installer\n" +
 		"$ErrorActionPreference = \"Stop\"\n" +
 		"$base = \"" + base + "\"\n" +
-		"$principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())\n" +
-		"$admin = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)\n" +
-		"if (-not $admin) {\n" +
-		"  Write-Host \"Requesting Administrator permission to install the SYNTHOS node service...\"\n" +
-		"  $cmd = \"irm '$base/api/node/windows-installer.ps1' | iex\"\n" +
-		"  Start-Process powershell -Verb RunAs -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-Command',$cmd)\n" +
-		"  return\n" +
-		"}\n" +
-		"$dir = Join-Path $env:ProgramData \"SynthosNode\"\n" +
+		"$dir = Join-Path $env:APPDATA \"SynthosCollective\"\n" +
 		"New-Item -ItemType Directory -Force -Path $dir | Out-Null\n" +
 		"$exe = Join-Path $dir \"silentnode.exe\"\n" +
-		"$key = Join-Path $dir \"node-key.json\"\n" +
-		"$status = Join-Path $dir \"node-status.json\"\n" +
-		"Write-Host \"Downloading your SYNTHOS node...\"\n" +
+		"Write-Host \"Downloading your SYNTHOS 1-Click Background Node...\"\n" +
 		"Invoke-WebRequest -Uri \"$base/downloads/silentnode.exe\" -OutFile $exe\n" +
-		"$serviceName = \"SynthosNode\"\n" +
-		"$binPath = '\"' + $exe + '\" -key \"' + $key + '\" -status \"' + $status + '\" -relay \"' + $base + '\"'\n" +
-		"$existing = Get-Service -Name $serviceName -ErrorAction SilentlyContinue\n" +
-		"if ($existing) {\n" +
-		"  Write-Host \"Updating existing SYNTHOS node service...\"\n" +
-		"  Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue\n" +
-		"  sc.exe delete $serviceName | Out-Null\n" +
-		"  Start-Sleep -Seconds 2\n" +
-		"}\n" +
-		"Write-Host \"Installing SYNTHOS as a Windows Service...\"\n" +
-		"New-Service -Name $serviceName -BinaryPathName $binPath -DisplayName \"SYNTHOS Validator Node\" -Description \"Runs a SYNTHOS background validator node with real Ed25519 signed heartbeats.\" -StartupType Automatic | Out-Null\n" +
-		"Start-Service -Name $serviceName\n" +
+		"Write-Host \"Starting SYNTHOS Background Node...\"\n" +
+		"Start-Process -FilePath $exe -WorkingDirectory $dir\n" +
 		"Write-Host \"\"\n" +
-		"Write-Host \"Done! Your SYNTHOS validator node is running as a Windows Service.\"\n" +
-		"Write-Host \"It keeps sending signed uptime proofs while the computer is on.\"\n" +
-		"Write-Host \"Status file: $status\"\n" +
-		"Write-Host \"\"\n" +
-		"Write-Host \"To stop and remove it later, run:\"\n" +
-		"Write-Host \"  Stop-Service SynthosNode; sc.exe delete SynthosNode\"\n"
+		"Write-Host \"Done! Your SYNTHOS validator node is now running silently in the background.\"\n" +
+		"Write-Host \"It will automatically start whenever you log into your computer.\"\n"
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = w.Write([]byte(script))
 }

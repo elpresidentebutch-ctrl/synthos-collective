@@ -10,18 +10,44 @@ import (
 	"synthos-collective/internal/network"
 )
 
-// Engine is a minimal 2/3+ vote finality engine.
+// ProofOfLock (POL) is gleaned from CometBFT: it proves that a quorum (2/3+) of
+// voting power prevoted for a specific block proposal at a given height and round.
+// Once a POL is achieved, validators lock on this block, ensuring consensus safety
+// across subsequent rounds.
+type ProofOfLock struct {
+	Height     uint64            `json:"height"`
+	Round      int               `json:"round"`
+	BlockHash  string            `json:"block_hash"`
+	VotesFor   int               `json:"votes_for"`
+	TotalPower uint64            `json:"total_power"`
+	VotesPower uint64            `json:"votes_power"`
+	Signatures map[string]string `json:"signatures"`
+}
+
+// Engine is an enhanced BFT consensus engine incorporating CometBFT round-aware,
+// two-phase (prevote/precommit), stake-weighted finality while preserving Synthos L1 identity.
 type Engine struct {
 	mu sync.Mutex
 
 	totalValidators int
 	validators      map[string]struct{}
+	validatorPowers map[string]uint64
+	totalPower      uint64
 
 	// proposalsByHeight stores the deterministic canonical candidate per height.
 	proposalsByHeight map[uint64]*chain.Block
 
+	// proposalsByHeightAndRound stores candidate proposals indexed by [height][round].
+	proposalsByHeightAndRound map[uint64]map[int]*chain.Block
+
 	// votes[height][voterID] = (blockHash, vote). Each validator votes once/height.
 	votes map[uint64]map[string]voteRecord
+
+	// votesByHeightAndRound tracks votes partitioned by [height][round][stage][voterID].
+	votesByHeightAndRound map[uint64]map[int]map[VoteStage]map[string]voteRecord
+
+	// proofsOfLock tracks 2/3+ prevote Proofs of Lock per height.
+	proofsOfLock map[uint64]*ProofOfLock
 
 	// slashTracker, when set, turns observed double-signing and vote
 	// equivocation into real slashing events instead of the engine just
@@ -66,10 +92,15 @@ var (
 
 func NewEngine(totalValidators int) *Engine {
 	return &Engine{
-		totalValidators:   totalValidators,
-		validators:        make(map[string]struct{}),
-		proposalsByHeight: make(map[uint64]*chain.Block),
-		votes:             make(map[uint64]map[string]voteRecord),
+		totalValidators:           totalValidators,
+		validators:                make(map[string]struct{}),
+		validatorPowers:           make(map[string]uint64),
+		totalPower:                uint64(totalValidators),
+		proposalsByHeight:         make(map[uint64]*chain.Block),
+		proposalsByHeightAndRound: make(map[uint64]map[int]*chain.Block),
+		votes:                     make(map[uint64]map[string]voteRecord),
+		votesByHeightAndRound:     make(map[uint64]map[int]map[VoteStage]map[string]voteRecord),
+		proofsOfLock:              make(map[uint64]*ProofOfLock),
 	}
 }
 
@@ -78,12 +109,78 @@ func (e *Engine) SetValidators(validators []string) {
 	defer e.mu.Unlock()
 
 	e.validators = make(map[string]struct{}, len(validators))
+	e.validatorPowers = make(map[string]uint64, len(validators))
+	var sum uint64
 	for _, validatorID := range validators {
 		if validatorID != "" {
 			e.validators[validatorID] = struct{}{}
+			e.validatorPowers[validatorID] = 1
+			sum++
 		}
 	}
 	e.totalValidators = len(e.validators)
+	e.totalPower = sum
+}
+
+// SetValidatorPower configures the stake-weighted voting power for a validator (CometBFT weighted quorum).
+func (e *Engine) SetValidatorPower(validatorID string, power uint64) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if _, ok := e.validators[validatorID]; !ok {
+		e.validators[validatorID] = struct{}{}
+	}
+	old := e.validatorPowers[validatorID]
+	e.validatorPowers[validatorID] = power
+	e.totalPower = e.totalPower - old + power
+	e.totalValidators = len(e.validators)
+}
+
+// SetValidatorPowers configures stake-weighted voting power mapping across validators.
+func (e *Engine) SetValidatorPowers(powers map[string]uint64) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.validatorPowers = make(map[string]uint64, len(powers))
+	var sum uint64
+	for id, p := range powers {
+		if id != "" && p > 0 {
+			e.validators[id] = struct{}{}
+			e.validatorPowers[id] = p
+			sum += p
+		}
+	}
+	e.totalPower = sum
+	e.totalValidators = len(e.validators)
+}
+
+// ValidatorPower returns the current voting power of a validator.
+func (e *Engine) ValidatorPower(voterID string) uint64 {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if p, ok := e.validatorPowers[voterID]; ok {
+		return p
+	}
+	if _, ok := e.validators[voterID]; ok {
+		return 1
+	}
+	return 0
+}
+
+// RequiredPowerForFinality returns the total voting power needed for quorum (> 2/3 of total power).
+func (e *Engine) RequiredPowerForFinality() uint64 {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.requiredPowerForFinalityLocked()
+}
+
+func (e *Engine) requiredPowerForFinalityLocked() uint64 {
+	if e.totalPower <= 0 {
+		return 1
+	}
+	req := (2*e.totalPower + 2) / 3
+	if req < 1 {
+		req = 1
+	}
+	return req
 }
 
 func (e *Engine) isRegisteredValidator(voterID string) bool {
@@ -206,12 +303,28 @@ func (e *Engine) OnProposal(b *chain.Block) {
 // quorum and nothing else in the network ever saw or voted on it. So this
 // method deliberately does NOT go through the SlashingTracker at all.
 func (e *Engine) RecordOwnProposal(b *chain.Block) {
+	e.RecordOwnProposalWithRound(b, 0)
+}
+
+// RecordOwnProposalWithRound registers this node's own proposal for (height, round).
+// Gleaned from CometBFT: isolates candidate proposals and votes by consensus round.
+func (e *Engine) RecordOwnProposalWithRound(b *chain.Block, round int) {
 	if b == nil || b.Hash == "" {
 		return
 	}
 	e.mu.Lock()
 	h := b.Header.Height
 	e.proposalsByHeight[h] = b
+	if e.proposalsByHeightAndRound[h] == nil {
+		e.proposalsByHeightAndRound[h] = make(map[int]*chain.Block)
+	}
+	e.proposalsByHeightAndRound[h][round] = b
+	if e.votesByHeightAndRound[h] == nil {
+		e.votesByHeightAndRound[h] = make(map[int]map[VoteStage]map[string]voteRecord)
+	}
+	if e.votesByHeightAndRound[h][round] == nil {
+		e.votesByHeightAndRound[h][round] = make(map[VoteStage]map[string]voteRecord)
+	}
 	e.votes[h] = make(map[string]voteRecord)
 	tracker := e.slashTracker
 	e.mu.Unlock()
@@ -223,6 +336,37 @@ func (e *Engine) RecordOwnProposal(b *chain.Block) {
 	// vote on the fresh candidate as equivocation.
 	if tracker != nil {
 		tracker.ForgetVotesAtHeight(h)
+	}
+}
+
+// OnProposalWithRound registers a proposal for a specific height and round,
+// tracking CometBFT round-aware state transitions.
+func (e *Engine) OnProposalWithRound(b *chain.Block, round int, validRound int) {
+	if b == nil || b.Hash == "" {
+		return
+	}
+	e.mu.Lock()
+	h := b.Header.Height
+	if e.proposalsByHeightAndRound[h] == nil {
+		e.proposalsByHeightAndRound[h] = make(map[int]*chain.Block)
+	}
+	existing, ok := e.proposalsByHeightAndRound[h][round]
+	if !ok || existing == nil || b.Hash < existing.Hash {
+		e.proposalsByHeightAndRound[h][round] = b
+	}
+	existingH, okH := e.proposalsByHeight[h]
+	if !okH || existingH == nil || b.Hash < existingH.Hash {
+		e.proposalsByHeight[h] = b
+	}
+	if _, ok := e.votes[h]; !ok {
+		e.votes[h] = make(map[string]voteRecord)
+	}
+	proposerID := b.Header.ProposerID
+	tracker := e.slashTracker
+	e.mu.Unlock()
+
+	if tracker != nil && proposerID != "" {
+		_ = tracker.DetectDoubleSigning(proposerID, h)
 	}
 }
 
@@ -257,7 +401,28 @@ func (e *Engine) Proposal(blockHash string) (*chain.Block, bool) {
 			return b, true
 		}
 	}
+	for _, rounds := range e.proposalsByHeightAndRound {
+		for _, b := range rounds {
+			if b != nil && b.Hash == blockHash {
+				return b, true
+			}
+		}
+	}
 	return nil, false
+}
+
+// ProposalForRound returns the registered proposal for (height, round), if any.
+func (e *Engine) ProposalForRound(height uint64, round int) (*chain.Block, bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.proposalsByHeightAndRound[height] != nil {
+		b, ok := e.proposalsByHeightAndRound[height][round]
+		if ok && b != nil {
+			return b, true
+		}
+	}
+	b, ok := e.proposalsByHeight[height]
+	return b, ok
 }
 
 func (e *Engine) FinalityStatus(blockHash string) (finalized bool, votesFor int, required int, ok bool) {
@@ -285,12 +450,36 @@ func (e *Engine) FinalityStatus(blockHash string) (finalized bool, votesFor int,
 	return finalized, votesFor, required, true
 }
 
+// OnPrevote processes a Phase-1 Prevote. When >= 2/3 of voting power prevotes for the
+// same block hash at (height, round), a Proof-of-Lock (POL) is established.
+func (e *Engine) OnPrevote(v BlockVote) (hasPOL bool, pol *ProofOfLock, votesFor int, required int, err error) {
+	v.Stage = VoteStagePrevote
+	hasPOL, pol, votesFor, required, err = e.processVoteInternal(v)
+	return hasPOL, pol, votesFor, required, err
+}
+
+// OnPrecommit processes a Phase-2 Precommit. If >= 2/3 of voting power precommits for
+// the block, the block is finalized.
+func (e *Engine) OnPrecommit(v BlockVote) (finalized bool, votesFor int, required int, err error) {
+	v.Stage = VoteStagePrecommit
+	finalized, _, votesFor, required, err = e.processVoteInternal(v)
+	return finalized, votesFor, required, err
+}
+
 func (e *Engine) OnVote(v BlockVote) (finalized bool, votesFor int, required int, err error) {
+	if v.IsPrevote() {
+		hasPOL, _, votesFor, req, err := e.OnPrevote(v)
+		return hasPOL, votesFor, req, err
+	}
+	return e.OnPrecommit(v)
+}
+
+func (e *Engine) processVoteInternal(v BlockVote) (thresholdMet bool, pol *ProofOfLock, votesFor int, required int, err error) {
 	e.mu.Lock()
 
 	if !e.isRegisteredValidator(v.VoterID) {
 		e.mu.Unlock()
-		return false, 0, e.RequiredForFinality(), ErrUnknownValidator
+		return false, nil, 0, e.RequiredForFinality(), ErrUnknownValidator
 	}
 	h := v.Height
 	tracker := e.slashTracker
@@ -308,28 +497,140 @@ func (e *Engine) OnVote(v BlockVote) (finalized bool, votesFor int, required int
 	}
 
 	e.mu.Lock()
-	canonical, ok := e.proposalsByHeight[h]
-	if !ok || canonical == nil || canonical.Hash != v.BlockHash {
-		e.mu.Unlock()
-		return false, 0, e.RequiredForFinality(), ErrUnknownProposal
+	defer e.mu.Unlock()
+
+	var canonical *chain.Block
+	if e.proposalsByHeightAndRound[h] != nil && e.proposalsByHeightAndRound[h][v.Round] != nil {
+		canonical = e.proposalsByHeightAndRound[h][v.Round]
+	} else {
+		canonical = e.proposalsByHeight[h]
 	}
-	if _, ok := e.votes[h]; !ok {
-		e.votes[h] = make(map[string]voteRecord)
-	}
-	if _, exists := e.votes[h][v.VoterID]; !exists {
-		e.votes[h][v.VoterID] = voteRecord{BlockHash: v.BlockHash, Vote: v.Vote, Signature: v.Signature}
+	if canonical == nil || canonical.Hash != v.BlockHash {
+		return false, nil, 0, e.requiredForFinalityLocked(), ErrUnknownProposal
 	}
 
-	required = e.requiredForFinalityLocked()
-	for _, rec := range e.votes[h] {
-		if rec.BlockHash == v.BlockHash && rec.Vote == 1 {
-			votesFor++
+	// 1. Record in legacy votes map (votes[h][voterID]) for precommits or default votes
+	if v.IsPrecommit() {
+		if _, ok := e.votes[h]; !ok {
+			e.votes[h] = make(map[string]voteRecord)
+		}
+		if _, exists := e.votes[h][v.VoterID]; !exists {
+			e.votes[h][v.VoterID] = voteRecord{BlockHash: v.BlockHash, Vote: v.Vote, Signature: v.Signature}
 		}
 	}
-	finalized = votesFor >= required
-	e.mu.Unlock()
 
-	return finalized, votesFor, required, nil
+	// 2. Record in round- and stage-aware partitioned votes map
+	stage := v.Stage
+	if stage == "" {
+		stage = VoteStagePrecommit
+	}
+	if e.votesByHeightAndRound[h] == nil {
+		e.votesByHeightAndRound[h] = make(map[int]map[VoteStage]map[string]voteRecord)
+	}
+	if e.votesByHeightAndRound[h][v.Round] == nil {
+		e.votesByHeightAndRound[h][v.Round] = make(map[VoteStage]map[string]voteRecord)
+	}
+	if e.votesByHeightAndRound[h][v.Round][stage] == nil {
+		e.votesByHeightAndRound[h][v.Round][stage] = make(map[string]voteRecord)
+	}
+	if _, exists := e.votesByHeightAndRound[h][v.Round][stage][v.VoterID]; !exists {
+		e.votesByHeightAndRound[h][v.Round][stage][v.VoterID] = voteRecord{BlockHash: v.BlockHash, Vote: v.Vote, Signature: v.Signature}
+	}
+
+	requiredCount := e.requiredForFinalityLocked()
+	requiredPower := e.requiredPowerForFinalityLocked()
+
+	// Tally votes and power for this stage and round
+	var votesPower uint64
+	stageVotes := e.votesByHeightAndRound[h][v.Round][stage]
+	for voterID, rec := range stageVotes {
+		if rec.BlockHash == v.BlockHash && rec.Vote == 1 {
+			votesFor++
+			p := e.validatorPowers[voterID]
+			if p == 0 {
+				p = 1
+			}
+			votesPower += p
+		}
+	}
+
+	// For legacy compatibility, also ensure e.votes[h] count is tallied if stage == Precommit
+	if stage == VoteStagePrecommit {
+		legacyVotesFor := 0
+		for _, rec := range e.votes[h] {
+			if rec.BlockHash == v.BlockHash && rec.Vote == 1 {
+				legacyVotesFor++
+			}
+		}
+		if legacyVotesFor > votesFor {
+			votesFor = legacyVotesFor
+		}
+	}
+
+	thresholdMet = votesFor >= requiredCount && (e.totalPower == 0 || votesPower >= requiredPower)
+
+	// If prevote threshold is met, record ProofOfLock
+	if stage == VoteStagePrevote && thresholdMet {
+		sigs := make(map[string]string)
+		for vid, vr := range stageVotes {
+			if vr.BlockHash == v.BlockHash && vr.Vote == 1 && vr.Signature != "" {
+				sigs[vid] = vr.Signature
+			}
+		}
+		createdPOL := &ProofOfLock{
+			Height:     h,
+			Round:      v.Round,
+			BlockHash:  v.BlockHash,
+			VotesFor:   votesFor,
+			TotalPower: e.totalPower,
+			VotesPower: votesPower,
+			Signatures: sigs,
+		}
+		e.proofsOfLock[h] = createdPOL
+		return true, createdPOL, votesFor, requiredCount, nil
+	}
+
+	return thresholdMet, nil, votesFor, requiredCount, nil
+}
+
+// ProofOfLock returns the current Proof-of-Lock for a height, if one was achieved.
+func (e *Engine) ProofOfLock(height uint64) (*ProofOfLock, bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	pol, ok := e.proofsOfLock[height]
+	if !ok || pol == nil {
+		return nil, false
+	}
+	cp := *pol
+	return &cp, true
+}
+
+// HasProofOfLock checks if a Proof-of-Lock was achieved for height, round, and blockHash.
+func (e *Engine) HasProofOfLock(height uint64, round int, blockHash string) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	pol, ok := e.proofsOfLock[height]
+	if !ok || pol == nil {
+		return false
+	}
+	return pol.Round == round && pol.BlockHash == blockHash
+}
+
+// CollectedPrevoteApprovals returns the raw prevote approval signatures gathered for height and round.
+func (e *Engine) CollectedPrevoteApprovals(height uint64, round int, blockHash string) map[string]string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	out := make(map[string]string)
+	if e.votesByHeightAndRound[height] == nil || e.votesByHeightAndRound[height][round] == nil {
+		return out
+	}
+	stageVotes := e.votesByHeightAndRound[height][round][VoteStagePrevote]
+	for voterID, rec := range stageVotes {
+		if rec.BlockHash == blockHash && rec.Vote == 1 && rec.Signature != "" {
+			out[voterID] = rec.Signature
+		}
+	}
+	return out
 }
 
 // CollectedApprovals returns the raw approval signatures gathered so far for

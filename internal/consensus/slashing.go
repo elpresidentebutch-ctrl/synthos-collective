@@ -1,10 +1,74 @@
 package consensus
 
 import (
+	"crypto/ed25519"
+	"encoding/hex"
+	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
+
+// EquivocationEvidence represents cryptographic proof that a validator signed
+// two conflicting blocks or votes at the same height and round.
+// Gleaned from CometBFT's DuplicateVoteEvidence.
+type EquivocationEvidence struct {
+	ValidatorID  string    `json:"validator_id"`
+	Height       uint64    `json:"height"`
+	Round        int       `json:"round"`
+	VoteA        BlockVote `json:"vote_a"`
+	VoteB        BlockVote `json:"vote_b"`
+	DiscoveredAt time.Time `json:"discovered_at"`
+}
+
+// Verify cryptographically validates that VoteA and VoteB are genuine conflicting
+// votes signed by the validator's Ed25519 public key.
+func (ev EquivocationEvidence) Verify(pubKey ed25519.PublicKey) error {
+	if ev.ValidatorID == "" {
+		return errors.New("empty validator id in evidence")
+	}
+	if ev.VoteA.VoterID != ev.ValidatorID || ev.VoteB.VoterID != ev.ValidatorID {
+		return errors.New("voter id mismatch in evidence")
+	}
+	if ev.VoteA.Height != ev.Height || ev.VoteB.Height != ev.Height {
+		return errors.New("vote height mismatch in evidence")
+	}
+	if ev.VoteA.Round != ev.Round || ev.VoteB.Round != ev.Round {
+		return errors.New("vote round mismatch in evidence")
+	}
+	if ev.VoteA.BlockHash == ev.VoteB.BlockHash && ev.VoteA.Vote == ev.VoteB.Vote && ev.VoteA.Stage == ev.VoteB.Stage {
+		return errors.New("votes do not conflict; identical payload")
+	}
+	if len(pubKey) != ed25519.PublicKeySize {
+		return errors.New("invalid public key size")
+	}
+
+	decodeSig := func(raw string) ([]byte, error) {
+		clean := strings.TrimPrefix(raw, "0x")
+		return hex.DecodeString(clean)
+	}
+
+	sigA, err := decodeSig(ev.VoteA.Signature)
+	if err != nil {
+		return fmt.Errorf("invalid vote A signature: %w", err)
+	}
+	msgA := []byte("APPROVE|" + ev.VoteA.BlockHash)
+	if !ed25519.Verify(pubKey, msgA, sigA) {
+		return errors.New("cryptographic verification failed for vote A")
+	}
+
+	sigB, err := decodeSig(ev.VoteB.Signature)
+	if err != nil {
+		return fmt.Errorf("invalid vote B signature: %w", err)
+	}
+	msgB := []byte("APPROVE|" + ev.VoteB.BlockHash)
+	if !ed25519.Verify(pubKey, msgB, sigB) {
+		return errors.New("cryptographic verification failed for vote B")
+	}
+
+	return nil
+}
 
 // SlashingEvent represents a validator misbehavior event
 type SlashingEvent struct {
@@ -159,6 +223,20 @@ func (st *SlashingTracker) RecordEquivocation(validatorID string, blockHeight ui
 	}
 	return st.recordSlashingLocked(validatorID, Equivocation, blockHeight,
 		fmt.Sprintf("validator voted for both %s and %s at height %d", prior, blockHash, blockHeight))
+}
+
+// RecordCryptographicEvidence verifies portable equivocation evidence and slashes the offender.
+// Gleaned from CometBFT's DuplicateVoteEvidence processing.
+func (st *SlashingTracker) RecordCryptographicEvidence(ev EquivocationEvidence, pubKey ed25519.PublicKey) error {
+	if err := ev.Verify(pubKey); err != nil {
+		return fmt.Errorf("invalid equivocation evidence: %w", err)
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	_ = st.recordSlashingLocked(ev.ValidatorID, Equivocation, ev.Height,
+		fmt.Sprintf("cryptographic equivocation: signed %s and %s at height %d round %d",
+			ev.VoteA.BlockHash, ev.VoteB.BlockHash, ev.Height, ev.Round))
+	return nil
 }
 
 // ForgetVotesAtHeight clears every validator's remembered vote-hash for the
