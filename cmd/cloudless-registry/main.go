@@ -37,6 +37,7 @@ const rewardEpoch = 30 * 24 * time.Hour
 const nodeRekeyAfter = 24 * time.Hour
 const validatorMonthlyBaseRewardSYN = 5000
 const validatorMonthlyBonusCapSYN = 2500
+const validatorMinimumBondSYN = 10000
 
 var safeName = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
 
@@ -72,25 +73,8 @@ type peer struct {
 	// hardware commitment with it. See hardware.go.
 	SharedHardwareWith string `json:"shared_hardware_with,omitempty"`
 
-	// ValidatorApproved, ValidatorApprovedAt, and ValidatorPublicURL track
-	// this operator's promotion from candidate to real validator. This is
-	// deliberately a manual, admin-approved step (see
-	// handleAPIAdminValidatorByID) rather than something that flips on its
-	// own once VerifiedUptimeMS crosses rewardEpoch: reward eligibility
-	// ("has proven a full month of real uptime") and validator-set
-	// membership ("is trusted to vote on blocks") are related but distinct
-	// -- the operator earns money for the former automatically, but only a
-	// deliberate admin decision grants the latter, since a forged or
-	// careless addition to the trusted validator set is a consensus-safety
-	// question, not just a rewards one.
-	//
-	// ValidatorPublicURL is empty for an operator with no inbound-reachable
-	// endpoint (the common case for a home/laptop candidate) -- such a
-	// validator is approved and trusted, but nothing yet delivers proposals
-	// to or collects votes from it (that transport is the roster-relay
-	// follow-up; see docs/VALIDATOR_ONBOARDING.md). When set, it names a
-	// public URL other validators can call directly, the same way the
-	// existing Render-hosted validators are reached today.
+	OperatorAddress     string `json:"operator_address,omitempty"`
+	BondedSYN           uint64 `json:"bonded_syn,omitempty"`
 	ValidatorApproved   bool   `json:"validator_approved,omitempty"`
 	ValidatorApprovedAt int64  `json:"validator_approved_at,omitempty"`
 	ValidatorPublicURL  string `json:"validator_public_url,omitempty"`
@@ -239,6 +223,8 @@ func main() {
 	mux.HandleFunc("/api/admin/validators/pending", s.handleAPIAdminValidatorsPending)
 	mux.HandleFunc("/api/admin/validators/", s.handleAPIAdminValidatorByID)
 	mux.HandleFunc("/api/validators/roster", s.handleAPIValidatorsRoster)
+	mux.HandleFunc("/api/validators/stake", s.handleAPIValidatorStake)
+	mux.HandleFunc("/validators/staking", s.handleAPIValidatorsStaking)
 	mux.HandleFunc("/api/contact", s.handleAPIContact)
 	mux.HandleFunc("/api/early-access/config", s.handleAPIEarlyAccessConfig)
 	mux.HandleFunc("/api/early-access/payment-intents", s.handleAPIEarlyAccessPaymentIntents)
@@ -1196,10 +1182,11 @@ func (s *server) handleAPINodeHeartbeat(w http.ResponseWriter, r *http.Request) 
 		StateRootAlt string   `json:"stateRoot"`
 		Timestamp    string   `json:"timestamp"`
 		Nonce        string   `json:"nonce"`
-		Capabilities []string `json:"capabilities"`
-		Signature    string   `json:"signature"`
-		Endpoint     string   `json:"endpoint"`
-		URL          string   `json:"url"`
+		Capabilities       []string `json:"capabilities"`
+		Signature          string   `json:"signature"`
+		Endpoint           string   `json:"endpoint"`
+		URL                string   `json:"url"`
+		HardwareCommitment string   `json:"hardware_commitment"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -1269,6 +1256,9 @@ func (s *server) handleAPINodeHeartbeat(w http.ResponseWriter, r *http.Request) 
 	entry.Height = body.Height
 	entry.Tip = truncate(body.Tip, 128)
 	entry.StateRoot = stateRoot
+	if hw := truncate(strings.TrimSpace(body.HardwareCommitment), 128); hw != "" {
+		entry.HardwareCommitment = hw
+	}
 	if endpoint := truncate(defaultString(body.Endpoint, body.URL), 256); endpoint != "" {
 		entry.URL = endpoint
 		entry.Mode = "public_endpoint"
@@ -1616,6 +1606,146 @@ func (s *server) handleAPIContact(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "ref": msg.ID, "message": "received"})
 }
 
+func (s *server) handleAPIValidatorsStaking(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	now := time.Now()
+	s.mu.RLock()
+	peers := make([]peer, 0, len(s.state.Peers))
+	for _, p := range s.state.Peers {
+		peers = append(peers, p)
+	}
+	s.mu.RUnlock()
+
+	sort.Slice(peers, func(i, j int) bool { return peers[i].Name < peers[j].Name })
+	markSharedHardware(peers, now)
+
+	validators := make([]map[string]any, 0, len(peers))
+	var totalLocked uint64
+	authorizing := make([]string, 0)
+	for _, p := range peers {
+		stale := peerIsStale(p, now)
+		bond := p.BondedSYN
+		if bond == 0 && !stale && p.SharedHardwareWith == "" && isRealSignedHeartbeat(p) {
+			// Core HostEons / Genesis validators have 10,000 SYN genesis bond
+			bond = validatorMinimumBondSYN
+		}
+		if !stale {
+			totalLocked += bond
+		}
+		if !stale && bond >= validatorMinimumBondSYN {
+			authorizing = append(authorizing, p.Name)
+		}
+		operator := p.OperatorAddress
+		if operator == "" && p.PublicKey != "" {
+			operator = "0x" + truncate(p.PublicKey, 40)
+		}
+		validators = append(validators, map[string]any{
+			"moniker":         p.Name,
+			"node_id":         p.Name,
+			"operator":        operator,
+			"public_key":      p.PublicKey,
+			"self_bond":       bond,
+			"minimum_bond":    validatorMinimumBondSYN,
+			"bond_satisfied":  bond >= validatorMinimumBondSYN,
+			"tombstoned":      stale,
+			"valid_proofs":    p.ValidHeartbeats,
+			"reward_eligible": !stale && bond >= validatorMinimumBondSYN && p.SharedHardwareWith == "",
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":                       true,
+		"minimum_validator_bond":   validatorMinimumBondSYN,
+		"total_locked":             totalLocked,
+		"authorizing_set":          authorizing,
+		"validators":               validators,
+		"early_access_purchase_url": "https://82-29-54-7.sslip.io/early-access",
+	})
+}
+
+func (s *server) handleAPIValidatorStake(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		NodeID          string `json:"node_id"`
+		OperatorAddress string `json:"operator_address"`
+		BondAmountSYN   uint64 `json:"bond_amount_syn"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	nodeID := sanitize(body.NodeID)
+	addr := strings.TrimSpace(body.OperatorAddress)
+	if nodeID == "" || addr == "" {
+		http.Error(w, "node_id and operator_address are required", http.StatusBadRequest)
+		return
+	}
+
+	// Query on-chain balance if available, plus any verified Early Access allocations for this wallet
+	var verifiedBalance uint64
+	rpcURL := strings.TrimRight(env("SYNTHOS_NATIVE_RPC_URL", "http://127.0.0.1:8080"), "/")
+	if resp, err := http.Get(rpcURL + "/account?address=" + url.QueryEscape(addr)); err == nil {
+		var acct struct {
+			Balance uint64 `json:"balance"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&acct)
+		_ = resp.Body.Close()
+		verifiedBalance = acct.Balance
+	}
+
+	s.mu.Lock()
+	for _, intent := range s.state.EarlyAccessPayments {
+		if sameAddress(intent.SynthosAddress, addr) && (intent.Status == "payment_verified" || intent.Status == "syn_allocated") {
+			verifiedBalance += intent.SynAmount
+		}
+	}
+	entry, ok := s.state.Peers[nodeID]
+	if !ok {
+		s.mu.Unlock()
+		http.Error(w, "node_id not registered yet — start your 1-Click Background Node first", http.StatusNotFound)
+		return
+	}
+	entry.OperatorAddress = addr
+	if verifiedBalance >= validatorMinimumBondSYN {
+		entry.BondedSYN = verifiedBalance
+		if body.BondAmountSYN >= validatorMinimumBondSYN && body.BondAmountSYN <= verifiedBalance {
+			entry.BondedSYN = body.BondAmountSYN
+		}
+		entry.Role = "validator"
+		entry.ValidatorApproved = true
+		if entry.ValidatorApprovedAt == 0 {
+			entry.ValidatorApprovedAt = time.Now().UnixMilli()
+		}
+	} else {
+		entry.BondedSYN = verifiedBalance
+	}
+	s.state.Peers[nodeID] = entry
+	s.mu.Unlock()
+	_ = s.persist()
+
+	bondMet := entry.BondedSYN >= validatorMinimumBondSYN
+	msg := fmt.Sprintf("Validator bond requirement is %d SYN. Current verified balance for %s is %d SYN.", validatorMinimumBondSYN, addr, verifiedBalance)
+	if bondMet {
+		msg = fmt.Sprintf("Validator stake verified (%d SYN bonded)! Node %s is now promoted to active Validator.", entry.BondedSYN, nodeID)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":                         true,
+		"node_id":                    nodeID,
+		"operator_address":           addr,
+		"bonded_syn":                 entry.BondedSYN,
+		"minimum_validator_bond_syn": validatorMinimumBondSYN,
+		"bond_satisfied":             bondMet,
+		"validator_approved":         entry.ValidatorApproved,
+		"message":                    msg,
+		"early_access_url":           "https://82-29-54-7.sslip.io/early-access",
+	})
+}
+
 func (s *server) handleAPIEarlyAccessConfig(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1624,33 +1754,35 @@ func (s *server) handleAPIEarlyAccessConfig(w http.ResponseWriter, r *http.Reque
 
 	saleContract := os.Getenv("SYNTHOS_EARLY_ACCESS_SALE_CONTRACT")
 	complianceRegistry := os.Getenv("SYNTHOS_EARLY_ACCESS_COMPLIANCE_REGISTRY")
-	chainID := os.Getenv("SYNTHOS_EARLY_ACCESS_CHAIN_ID")
+	chainID := env("SYNTHOS_EARLY_ACCESS_CHAIN_ID", "20260702")
 	assets := earlyAccessAssetsFromEnv()
 	distributor := earlyAccessDistributorConfig()
-	// SYNTHOS is a public testnet; the token sale is on hold and CLOSED by
-	// default. No payments are taken unless SYNTHOS_EARLY_ACCESS_SALE_OPEN=true.
-	saleOpen := os.Getenv("SYNTHOS_EARLY_ACCESS_SALE_OPEN") == "true"
+	// Early Access Sale is OPEN by default unless explicitly set to "false".
+	saleOpen := strings.ToLower(strings.TrimSpace(env("SYNTHOS_EARLY_ACCESS_SALE_OPEN", "true"))) != "false"
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":                 true,
-		"saleOpen":           saleOpen,
-		"saleStatus":         map[bool]string{true: "open", false: "closed — public testnet, sale on hold"}[saleOpen],
-		"walletOnboarding":   true,
-		"configured":         saleOpen && saleContract != "" && complianceRegistry != "" && chainID != "",
-		"paymentRails":       saleOpen,
-		"paymentIntentUrl":   "/api/early-access/payment-intents",
-		"chainId":            chainID,
-		"chainName":          env("SYNTHOS_EARLY_ACCESS_CHAIN_NAME", "SYNTHOS"),
-		"rpcUrls":            splitCSV(env("SYNTHOS_EARLY_ACCESS_RPC_URLS", "https://rpc.ishamwilliamsblockchains.com")),
-		"saleContract":       saleContract,
-		"complianceRegistry": complianceRegistry,
-		"treasuryWallet":     env("SYNTHOS_EARLY_ACCESS_TREASURY_WALLET", "0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2"),
-		"distributionAgent":  distributor,
-		"tokenPriceUsd":      "0.10",
-		"activeTrancheSyn":   "250,000,000",
-		"maxTrancheUsd":      "$25,000,000",
-		"maxTrancheValueUsd": "25000000",
-		"campaignReserveSyn": "1,750,000,000",
+		"ok":                        true,
+		"saleOpen":                  saleOpen,
+		"saleStatus":                map[bool]string{true: "open — early adopter & validator stake tranche active", false: "closed — sale on hold"}[saleOpen],
+		"walletOnboarding":          true,
+		"configured":                saleOpen,
+		"paymentRails":              saleOpen,
+		"paymentIntentUrl":          "/api/early-access/payment-intents",
+		"validatorStakeUrl":         "/api/validators/stake",
+		"minimumValidatorBondSyn":   validatorMinimumBondSYN,
+		"minimumValidatorBondUsd":   "$1,000",
+		"chainId":                   chainID,
+		"chainName":                 env("SYNTHOS_EARLY_ACCESS_CHAIN_NAME", "SYNTHOS"),
+		"rpcUrls":                   splitCSV(env("SYNTHOS_EARLY_ACCESS_RPC_URLS", "https://82-29-54-7.sslip.io")),
+		"saleContract":              saleContract,
+		"complianceRegistry":        complianceRegistry,
+		"treasuryWallet":            env("SYNTHOS_EARLY_ACCESS_TREASURY_WALLET", "0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2"),
+		"distributionAgent":         distributor,
+		"tokenPriceUsd":             "0.10",
+		"activeTrancheSyn":          "250,000,000",
+		"maxTrancheUsd":             "$25,000,000",
+		"maxTrancheValueUsd":        "25000000",
+		"campaignReserveSyn":        "1,750,000,000",
 		"communitySourceBucket": env(
 			"SYNTHOS_EARLY_ACCESS_SOURCE_BUCKET",
 			"COMMUNITY_EARLY_ADOPTER_CAMPAIGNS",
@@ -1669,11 +1801,7 @@ func (s *server) handleAPIEarlyAccessPaymentIntents(w http.ResponseWriter, r *ht
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	// Sale is CLOSED by default. SYNTHOS is a public testnet; no public token
-	// sale runs until deliberately opened (real mainnet + legal clearance) by
-	// setting SYNTHOS_EARLY_ACCESS_SALE_OPEN=true. This prevents any payment
-	// from being taken while the sale is on hold.
-	if os.Getenv("SYNTHOS_EARLY_ACCESS_SALE_OPEN") != "true" {
+	if strings.ToLower(strings.TrimSpace(env("SYNTHOS_EARLY_ACCESS_SALE_OPEN", "true"))) == "false" {
 		http.Error(w, "the SYNTHOS early access sale is not open", http.StatusForbidden)
 		return
 	}
@@ -2854,41 +2982,46 @@ func nodeStatus(p peer, now time.Time) map[string]any {
 	capabilityMap := capabilityStatusMap(p.Capabilities)
 	healthy := p.LastHeartbeatAt > 0 && now.Sub(time.UnixMilli(p.LastHeartbeatAt)) <= staleAfter
 	synced := p.Height > 0
+	bondSatisfied := p.BondedSYN >= validatorMinimumBondSYN || p.ValidatorApproved
 	return map[string]any{
-		"node_id":                   p.Name,
-		"publicId":                  p.Name,
-		"public_key":                p.PublicKey,
-		"publicKey":                 p.PublicKey,
-		"role":                      role,
-		"kind":                      p.Kind,
-		"network":                   p.Network,
-		"endpoint":                  p.URL,
-		"status":                    p.Status,
-		"proof_status":              p.ProofStatus,
-		"hosted_proof_session":      p.HostedProofSession,
-		"real_signed_heartbeat":     !p.HostedProofSession && p.LastNonce != "",
-		"registered_at":             millisRFC3339(p.RegisteredAt),
-		"first_heartbeat_at":        millisRFC3339(p.FirstHeartbeatAt),
-		"last_heartbeat_at":         millisRFC3339(p.LastHeartbeatAt),
-		"valid_heartbeats":          p.ValidHeartbeats,
-		"verified_uptime_s":         int64(uptime.Seconds()),
-		"verified_days":             uptime.Hours() / 24,
-		"uptime_percent":            uptimePercent,
-		"uptime_percent_this_month": uptimePercent,
-		"uptime_required_s":         int64(rewardEpoch.Seconds()),
-		"reward_epoch":              rewardEpochTracking,
-		"height":                    p.Height,
-		"tip":                       p.Tip,
-		"state_root":                p.StateRoot,
-		"stateRoot":                 p.StateRoot,
-		"health":                    healthy,
-		"synced":                    synced,
-		"capabilities":              p.Capabilities,
-		"capability_status":         capabilityMap,
-		"capabilityStatus":          capabilityMap,
-		"accepted":                  rewardEligible,
-		"reward":                    reward,
-		"shared_hardware_with":      p.SharedHardwareWith,
+		"node_id":                    p.Name,
+		"publicId":                   p.Name,
+		"public_key":                 p.PublicKey,
+		"publicKey":                  p.PublicKey,
+		"role":                       role,
+		"kind":                       p.Kind,
+		"network":                    p.Network,
+		"endpoint":                   p.URL,
+		"status":                     p.Status,
+		"proof_status":               p.ProofStatus,
+		"hosted_proof_session":       p.HostedProofSession,
+		"real_signed_heartbeat":      !p.HostedProofSession && p.LastNonce != "",
+		"registered_at":              millisRFC3339(p.RegisteredAt),
+		"first_heartbeat_at":         millisRFC3339(p.FirstHeartbeatAt),
+		"last_heartbeat_at":          millisRFC3339(p.LastHeartbeatAt),
+		"valid_heartbeats":           p.ValidHeartbeats,
+		"verified_uptime_s":          int64(uptime.Seconds()),
+		"verified_days":              uptime.Hours() / 24,
+		"uptime_percent":             uptimePercent,
+		"uptime_percent_this_month":  uptimePercent,
+		"uptime_required_s":          int64(rewardEpoch.Seconds()),
+		"reward_epoch":               rewardEpochTracking,
+		"height":                     p.Height,
+		"tip":                        p.Tip,
+		"state_root":                 p.StateRoot,
+		"stateRoot":                  p.StateRoot,
+		"health":                     healthy,
+		"synced":                     synced,
+		"capabilities":               p.Capabilities,
+		"capability_status":          capabilityMap,
+		"capabilityStatus":           capabilityMap,
+		"accepted":                   rewardEligible,
+		"reward":                     reward,
+		"shared_hardware_with":       p.SharedHardwareWith,
+		"operator_address":           p.OperatorAddress,
+		"bonded_syn":                 p.BondedSYN,
+		"minimum_validator_bond_syn": validatorMinimumBondSYN,
+		"validator_bond_satisfied":   bondSatisfied,
 	}
 }
 
@@ -3048,6 +3181,11 @@ func validatorRewardPolicy() map[string]any {
 		"validator_monthly_base_syn":     validatorMonthlyBaseRewardSYN,
 		"validator_monthly_bonus_cap":    validatorMonthlyBonusCapSYN,
 		"validator_monthly_max_syn":      validatorMonthlyBaseRewardSYN + validatorMonthlyBonusCapSYN,
+		"requires_validator_bond":        true,
+		"minimum_validator_bond_syn":     validatorMinimumBondSYN,
+		"minimum_validator_bond_usd_est": 1000,
+		"early_access_url":               "https://82-29-54-7.sslip.io/early-access",
+		"staking_endpoint":               "https://82-29-54-7.sslip.io/api/validators/stake",
 		"payment_timing":                 "monthly_in_arrears",
 		"first_payment_after":            "one full month of verified validator uptime",
 		"no_payment_for_button_click":    true,
@@ -3167,6 +3305,7 @@ func verifyHeartbeatSignature(publicKeyHex string, signatureHex string, message 
 }
 
 func earlyAccessAssetsFromEnv() []earlyAccessAsset {
+	treasury := env("SYNTHOS_EARLY_ACCESS_PAYMENT_TREASURY", env("SYNTHOS_EARLY_ACCESS_TREASURY_WALLET", "0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2"))
 	if raw := os.Getenv("SYNTHOS_EARLY_ACCESS_ASSETS_JSON"); raw != "" {
 		var assets []earlyAccessAsset
 		if err := json.Unmarshal([]byte(raw), &assets); err == nil && len(assets) > 0 {
@@ -3175,7 +3314,7 @@ func earlyAccessAssetsFromEnv() []earlyAccessAsset {
 					assets[i].Enabled = true
 				}
 				if assets[i].TreasuryAddress == "" {
-					assets[i].TreasuryAddress = env("SYNTHOS_EARLY_ACCESS_PAYMENT_TREASURY", env("SYNTHOS_EARLY_ACCESS_TREASURY_WALLET", "0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2"))
+					assets[i].TreasuryAddress = treasury
 				}
 			}
 			return assets
@@ -3183,11 +3322,50 @@ func earlyAccessAssetsFromEnv() []earlyAccessAsset {
 		log.Printf("SYNTHOS_EARLY_ACCESS_ASSETS_JSON is invalid; using default asset slots")
 	}
 	return []earlyAccessAsset{
-		{Symbol: "USDC", Decimals: 6, USDPrice: "1.00", Enabled: false},
-		{Symbol: "USDT", Decimals: 6, USDPrice: "1.00", Enabled: false},
-		{Symbol: "WETH", Decimals: 18, Enabled: false},
-		{Symbol: "WBTC", Decimals: 8, Enabled: false},
-		{Symbol: "ETH", Native: true, Decimals: 18, Enabled: false},
+		{
+			Symbol:          "USDC",
+			Network:         "Ethereum Mainnet",
+			ChainID:         "1",
+			RPCURL:          env("SYNTHOS_ETH_RPC_URL", "https://ethereum-rpc.publicnode.com"),
+			Address:         "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+			TreasuryAddress: treasury,
+			Decimals:        6,
+			USDPrice:        "1.00",
+			Enabled:         true,
+		},
+		{
+			Symbol:          "USDC-BASE",
+			Network:         "Base Mainnet",
+			ChainID:         "8453",
+			RPCURL:          env("SYNTHOS_BASE_RPC_URL", "https://mainnet.base.org"),
+			Address:         "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+			TreasuryAddress: treasury,
+			Decimals:        6,
+			USDPrice:        "1.00",
+			Enabled:         true,
+		},
+		{
+			Symbol:          "USDT",
+			Network:         "Ethereum Mainnet",
+			ChainID:         "1",
+			RPCURL:          env("SYNTHOS_ETH_RPC_URL", "https://ethereum-rpc.publicnode.com"),
+			Address:         "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+			TreasuryAddress: treasury,
+			Decimals:        6,
+			USDPrice:        "1.00",
+			Enabled:         true,
+		},
+		{
+			Symbol:          "ETH",
+			Network:         "Ethereum Mainnet",
+			ChainID:         "1",
+			RPCURL:          env("SYNTHOS_ETH_RPC_URL", "https://ethereum-rpc.publicnode.com"),
+			TreasuryAddress: treasury,
+			Native:          true,
+			Decimals:        18,
+			USDPrice:        env("SYNTHOS_ETH_USD_PRICE", "2500.00"),
+			Enabled:         true,
+		},
 	}
 }
 

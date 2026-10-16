@@ -33,29 +33,31 @@
   ];
 
   const defaultConfig = {
+    apiURL: "https://82-29-54-7.sslip.io",
     chainId: null,
     chainName: "SYNTHOS",
-    rpcUrls: ["https://rpc.ishamwilliamsblockchains.com"],
+    rpcUrls: ["https://82-29-54-7.sslip.io"],
     saleContract: "",
     complianceRegistry: "",
     treasuryWallet: TREASURY_WALLET,
     tokenPriceUsd: "0.10",
     activeTrancheSyn: "250,000,000",
     maxTrancheUsd: "$25,000,000",
+    minimumValidatorBondSyn: 10000,
     communitySourceBucket: "COMMUNITY_EARLY_ADOPTER_CAMPAIGNS",
-    saleOpen: false,
-    saleStatus: "closed — public testnet, sale on hold",
+    saleOpen: true,
+    saleStatus: "open — early adopter tranche & validator staking active",
     walletOnboarding: true,
-    paymentRails: false,
+    paymentRails: true,
     paymentIntentUrl: "/api/early-access/payment-intents",
+    validatorStakeUrl: "/api/validators/stake",
     disclosureText: "SYNTHOS early access disclosure v1",
     jurisdictionCode: "US",
     assets: [
-      { symbol: "USDC", address: "", decimals: 6, usdPrice: "1.00" },
-      { symbol: "USDT", address: "", decimals: 6, usdPrice: "1.00" },
-      { symbol: "WETH", address: "", decimals: 18, usdPrice: "" },
-      { symbol: "WBTC", address: "", decimals: 8, usdPrice: "" },
-      { symbol: "ETH", native: true, decimals: 18, usdPrice: "" },
+      { symbol: "USDC", network: "Ethereum Mainnet", address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", treasuryAddress: TREASURY_WALLET, decimals: 6, usdPrice: "1.00", enabled: true },
+      { symbol: "USDC-BASE", network: "Base Mainnet", address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", treasuryAddress: TREASURY_WALLET, decimals: 6, usdPrice: "1.00", enabled: true },
+      { symbol: "USDT", network: "Ethereum Mainnet", address: "0xdAC17F958D2ee523a2206206994597C13D831ec7", treasuryAddress: TREASURY_WALLET, decimals: 6, usdPrice: "1.00", enabled: true },
+      { symbol: "ETH", network: "Ethereum Mainnet", native: true, treasuryAddress: TREASURY_WALLET, decimals: 18, usdPrice: "2500.00", enabled: true },
     ],
   };
 
@@ -201,28 +203,34 @@
     root.innerHTML = `
       <section class="synthos-early-access">
         <div>
-          <p class="synthos-eyebrow">Early Access</p>
+          <p class="synthos-eyebrow">Early Access &amp; Validator Staking</p>
           <h1>SYN early adopter tranche</h1>
           <p>${nativeWalletFlow()
-            ? "Create a SYNTHOS native wallet, save the private key, then unlock the early adopter payment flow when the sale is open."
+            ? "Create a SYNTHOS native wallet, save the private key, acquire SYN at $0.10/SYN, and bond 10,000 SYN ($1,000) to activate full Validator rewards (5,000–7,500 SYN/month)."
             : "Automatic crypto-only purchase flow. Eligible wallets receive SYN in the same on-chain transaction."}</p>
         </div>
         <dl class="synthos-sale-facts">
           <div><dt>Price</dt><dd>$${html(config.tokenPriceUsd)} per SYN</dd></div>
+          <div><dt>Validator Bond</dt><dd>${Number(config.minimumValidatorBondSyn || 10000).toLocaleString()} SYN ($1,000)</dd></div>
           <div><dt>Active Tranche</dt><dd>${html(config.activeTrancheSyn)} SYN</dd></div>
           <div><dt>Max Tranche</dt><dd>${html(config.maxTrancheUsd)}</dd></div>
-          <div><dt>Source</dt><dd>${html(config.communitySourceBucket)}</dd></div>
           <div><dt>Treasury</dt><dd>${html(config.treasuryWallet)}</dd></div>
         </dl>
         <div class="synthos-sale-box">
           <label>Payment Asset
             <select data-sale-asset>
-              ${config.assets.map((asset, index) => `<option value="${index}">${html(asset.symbol)}</option>`).join("")}
+              ${config.assets.map((asset, index) => `<option value="${index}">${html(asset.symbol)}${asset.network ? ` (${html(asset.network)})` : ""}</option>`).join("")}
             </select>
           </label>
           <label>${nativeWalletFlow() ? "USD Amount To Spend" : "Amount To Spend"}
-            <input data-sale-amount inputmode="decimal" autocomplete="off" />
+            <input data-sale-amount inputmode="decimal" autocomplete="off" placeholder="1000" value="1000" />
           </label>
+          <div class="synthos-mini-actions">
+            <button type="button" data-preset-usd="100">$100 (1,000 SYN)</button>
+            <button type="button" data-preset-usd="500">$500 (5,000 SYN)</button>
+            <button type="button" data-preset-usd="1000">$1,000 (10,000 SYN Validator Bond)</button>
+            <button type="button" data-preset-usd="5000">$5,000 (50,000 SYN)</button>
+          </div>
           ${nativeWalletFlow() ? `
           <label>SYNTHOS Wallet Address
             <input data-synthos-address autocomplete="off" placeholder="0x..." value="${html(state.synthosWallet?.address || "")}" />
@@ -233,7 +241,7 @@
             <input data-payment-tx autocomplete="off" placeholder="0x..." />
           </label>
           ` : ""}
-          <div class="synthos-sale-quote" data-sale-quote>Connect wallet for quote.</div>
+          <div class="synthos-sale-quote" data-sale-quote>10,000 SYN at $0.10 (Full Validator Bond)</div>
           <div class="synthos-sale-actions">
             ${nativeWalletFlow() ? "" : `<button type="button" data-sale-connect>Connect Wallet</button>`}
             <button type="button" data-sale-buy disabled>Create Payment Intent</button>
@@ -242,20 +250,53 @@
           </div>
           <p data-sale-status data-tone="muted">Sale contract is checking configuration.</p>
         </div>
+
+        <div class="synthos-sale-box">
+          <div>
+            <p class="synthos-eyebrow">Validator Staking Requirement</p>
+            <h2 style="margin:0 0 6px;font-size:1.55rem;text-transform:uppercase">Bond 10,000 SYN to Activate Validator</h2>
+            <p style="margin:0">Link your running SYNTHOS Node ID (<code>syn-...</code>) with your funded SYNTHOS wallet (minimum <strong>10,000 SYN</strong>) to promote your node from <code>validator_candidate</code> to active <code>validator</code> earning 5,000–7,500 SYN/month.</p>
+          </div>
+          <label>Validator Node ID
+            <input data-stake-node-id autocomplete="off" placeholder="syn-..." />
+          </label>
+          <label>Operator SYNTHOS Wallet Address (holding ≥ 10,000 SYN)
+            <input data-stake-wallet autocomplete="off" placeholder="0x..." value="${html(state.synthosWallet?.address || "")}" />
+          </label>
+          <div class="synthos-sale-actions">
+            <button type="button" data-stake-submit>Bond 10,000 SYN &amp; Activate Validator</button>
+          </div>
+          <p data-stake-status data-tone="muted">Requires at least 10,000 SYN on your SYNTHOS wallet.</p>
+        </div>
       </section>
     `;
     root.querySelector("[data-sale-connect]")?.addEventListener("click", connectWallet);
     root.querySelector("[data-sale-buy]").addEventListener("click", buySyn);
     root.querySelector("[data-sale-amount]").addEventListener("input", quote);
     root.querySelector("[data-sale-asset]").addEventListener("change", quote);
+    root.querySelectorAll("[data-preset-usd]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const input = root.querySelector("[data-sale-amount]");
+        if (input) {
+          input.value = btn.getAttribute("data-preset-usd") || "1000";
+          quote();
+        }
+      });
+    });
     root.querySelector("[data-generate-synthos-wallet]")?.addEventListener("click", generateSynthosWallet);
     root.querySelector("[data-payment-verify]")?.addEventListener("click", verifyPaymentIntent);
+    root.querySelector("[data-stake-submit]")?.addEventListener("click", stakeValidator);
     root.querySelector("[data-synthos-address]")?.addEventListener("input", () => {
+      const stakeWallet = root.querySelector("[data-stake-wallet]");
+      if (stakeWallet && !stakeWallet.value.trim()) {
+        stakeWallet.value = activeSynthosAddress();
+      }
       renderSynthosWallet();
       validateConfig();
     });
     renderSynthosWallet();
     validateConfig();
+    quote();
   }
 
   function validateConfig() {
@@ -730,19 +771,77 @@
     }
   }
 
+  function formatBaseUnits(amountStr, decimals) {
+    try {
+      const dec = Number(decimals || 0);
+      if (!dec || !amountStr) return String(amountStr || "0");
+      const padded = String(amountStr).padStart(dec + 1, "0");
+      const whole = padded.slice(0, padded.length - dec);
+      const frac = padded.slice(padded.length - dec).replace(/0+$/, "");
+      return frac ? `${Number(whole).toLocaleString()}.${frac}` : Number(whole).toLocaleString();
+    } catch (_) {
+      return String(amountStr || "0");
+    }
+  }
+
   function renderPaymentInstructions(intent) {
     const node = root.querySelector("[data-payment-instructions]");
     if (!node || !intent) return;
+    const humanAmount = formatBaseUnits(intent.paymentAmount, intent.paymentDecimals);
     node.dataset.open = "true";
     node.innerHTML = `
       <strong>Send ${html(intent.assetSymbol)} payment</strong>
-      <span>Network: ${html(intent.network || "configured payment network")}</span>
-      <span>Amount: <code>${html(intent.paymentAmount)}</code> base units</span>
-      <span>To: <code>${html(intent.paymentAddress)}</code></span>
-      <span>SYN allocation: ${html(intent.synAmount)} SYN</span>
-      <span>Status: ${html(intent.status)}</span>
+      <span>Network: ${html(intent.network || "Ethereum Mainnet")}</span>
+      <span>Amount to Send: <code>${html(humanAmount)} ${html(intent.assetSymbol)}</code> (<code>${html(intent.paymentAmount)}</code> base units)</span>
+      <span>Treasury Address: <code>${html(intent.paymentAddress)}</code></span>
+      <span>SYN Allocation: <strong>${Number(intent.synAmount || 0).toLocaleString()} SYN</strong></span>
+      <span>Status: <code>${html(intent.status)}</code></span>
       ${intent.synthosTxId ? `<span>SYNTHOS tx: <code>${html(intent.synthosTxId)}</code></span>` : ""}
     `;
+  }
+
+  function setStakeStatus(message, tone = "muted") {
+    const node = root.querySelector("[data-stake-status]");
+    if (!node) return;
+    node.textContent = message;
+    node.dataset.tone = tone;
+    node.style.color = tone === "ok" ? "#31d39f" : tone === "warn" ? "#f2c45d" : "#aeb9c8";
+  }
+
+  async function stakeValidator() {
+    const nodeId = root.querySelector("[data-stake-node-id]")?.value.trim() || "";
+    const operatorAddress = root.querySelector("[data-stake-wallet]")?.value.trim() || activeSynthosAddress();
+    if (!nodeId) {
+      setStakeStatus("Enter your registered Node ID (e.g. syn-...).", "warn");
+      return;
+    }
+    if (!validAddress(operatorAddress)) {
+      setStakeStatus("Enter a valid SYNTHOS wallet address (0x...) holding at least 10,000 SYN.", "warn");
+      return;
+    }
+    try {
+      setStakeStatus("Verifying 10,000 SYN bond and activating Validator...", "muted");
+      const response = await fetch(resolveBackendURL(config.validatorStakeUrl || "/api/validators/stake"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nodeId,
+          operatorAddress,
+          bondSyn: Number(config.minimumValidatorBondSyn || 10000),
+        }),
+      });
+      const body = await response.json();
+      if (!response.ok || body.ok === false) {
+        setStakeStatus(body.error || "Validator staking failed.", "warn");
+        return;
+      }
+      setStakeStatus(
+        `Validator Activated! Node ${body.node_id} is now an active Validator with ${Number(body.bonded_syn || 0).toLocaleString()} SYN bonded.`,
+        "ok"
+      );
+    } catch (error) {
+      setStakeStatus(error.message || "Validator staking request failed.", "warn");
+    }
   }
 
   function resolveBackendURL(path) {
