@@ -23,18 +23,32 @@
   <header>
     <div class="bar">
       <a class="brand" href="/nodes"><span class="mark"></span><span>SYNTHOS Push Button Node</span></a>
-      <nav><a href="/">Home</a><a href="/security">Security</a><a href="/api/network/status">Network API</a><a href="/health">Backend Health</a></nav>
+      <nav style="align-items:center">
+        <a href="/">Home</a>
+        <a href="/dex.html">DEX</a>
+        <a href="/explorer.html">Explorer</a>
+        <a href="/security">Security</a>
+        <span id="topBlockBadge" class="pill ok" style="display:inline-flex;align-items:center;gap:7px;font-family:monospace;font-weight:800;padding:6px 12px" title="Live SYNTHOS Mainnet Block Height">
+          <span style="width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green)"></span>
+          Block <span id="topBlockHeight">...</span>
+        </span>
+      </nav>
     </div>
   </header>
   <main>
     <section class="hero">
       <div class="panel pad">
-        <div class="eyebrow">Administrator service validator</div>
-        <h1>Push the button. Run a real background node.</h1>
-        <p>The button downloads a Windows installer for a local validator service. The service creates its own Ed25519 key and sends real signed heartbeats every 15 seconds while the computer is on — no website login and no browser tab required.</p>
+        <div class="eyebrow">1-Click Self-Daemonizing Background Validator</div>
+        <h1>Click once. Run silently in the background.</h1>
+        <p>Download and click <b>silentnode.exe</b>. It automatically installs into your user folder, registers to start at login (no Administrator prompt or terminal window needed), creates your local Ed25519 identity, and sends real signed heartbeats every 15 seconds while your computer is on.</p>
         <div class="row">
-          <button id="startBtn" class="btn primary">Install Validator Service</button>
-          <a class="btn" href="/security">Read installer details</a>
+          <a id="oneClickExeBtn" class="btn primary" href="https://82-29-54-7.sslip.io/downloads/silentnode.exe" download="silentnode.exe" style="text-decoration:none">⚡ Download 1-Click Node (Windows .exe)</a>
+          <button id="startBtn" class="btn">One-Click Installer (.bat)</button>
+          <a class="btn" href="https://82-29-54-7.sslip.io/downloads/synthos-node-darwin-arm64" download="synthos-node-darwin-arm64" style="text-decoration:none">macOS (Apple Silicon)</a>
+          <a class="btn" href="https://82-29-54-7.sslip.io/downloads/synthos-node-linux-amd64" download="synthos-node-linux-amd64" style="text-decoration:none">Linux (x64)</a>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <a class="btn" href="/security" style="text-decoration:none">Read installer details</a>
           <button id="downloadBtn" class="btn" disabled>Download backup</button>
           <button id="clearBtn" class="btn danger">Clear local session</button>
         </div>
@@ -108,7 +122,7 @@
   <script>
     const API = window.SYNTHOS_API_URL || 
       (window.location.origin.includes("ishamwilliamsblockchains.com") || window.location.origin.includes("lovable.app") || window.location.origin.includes("lovable.dev")
-        ? "https://peripheral-medication-declare-nursery.trycloudflare.com" 
+        ? "https://82-29-54-7.sslip.io" 
         : window.location.origin);
     const SESSION_KEY = "synthos_node_session_v1";
     const CAPS = [
@@ -453,6 +467,8 @@
       document.getElementById("heartbeats").textContent = s?.valid_heartbeats || 0;
       document.getElementById("capCount").textContent = `${CAPS.filter(([id]) => hasCap(id, caps, capabilityStatus)).length}/7`;
       document.getElementById("height").textContent = s?.height || 0;
+      const topHeightEl = document.getElementById("topBlockHeight");
+      if (topHeightEl && s?.height) topHeightEl.textContent = Number(s.height).toLocaleString();
       document.getElementById("reward").textContent = s?.reward?.eligible ? "Eligible" : "Pending";
       document.getElementById("reward").className = s?.reward?.eligible ? "ok" : "pending";
       renderRewardEpoch(s);

@@ -1,6 +1,6 @@
 const API = window.SYNTHOS_API_URL || 
   (window.location.origin.includes("ishamwilliamsblockchains.com") || window.location.origin.includes("lovable.app") || window.location.origin.includes("lovable.dev")
-    ? "https://peripheral-medication-declare-nursery.trycloudflare.com" 
+    ? "https://82-29-54-7.sslip.io" 
     : window.location.origin);
 const heartbeatMaxAgeMs = 2 * 60 * 1000;
 
@@ -86,6 +86,9 @@ function renderSummary(status) {
     : "Network attention needed";
   el("reachableCount").textContent = `${status.reachable ?? active.length}/${status.registered_total ?? nodes.length}`;
   el("chainHeight").textContent = status.highest_height ?? 0;
+  if (el("topBlockHeight") && status.highest_height) {
+    el("topBlockHeight").textContent = Number(status.highest_height).toLocaleString();
+  }
   el("freshCount").textContent = `${status.fresh_heartbeats ?? fresh.length}/${status.total ?? active.length}`;
   el("majorityState").textContent = majority ? "yes" : "no";
   el("tipHash").textContent = shortHash(status.tip || nodes[0]?.tip || "-");

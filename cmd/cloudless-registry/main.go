@@ -284,6 +284,7 @@ func main() {
 	mux.HandleFunc("/api/node/windows-installer.ps1", s.handleWindowsInstaller)
 	mux.HandleFunc("/api/node/install.bat", s.handleWindowsInstallerBat)
 	mux.HandleFunc("/downloads/silentnode.exe", s.handleSilentNodeBinary)
+	mux.HandleFunc("/downloads/", s.handleSilentNodeBinary)
 
 	log.Printf("SYNTHOS cloudless registry listening on %s", listen)
 	log.Printf("state file: %s", stateFile)
@@ -2136,20 +2137,51 @@ func canonicalSiteURL(r *http.Request) string {
 	return strings.TrimRight(env("SYNTHOS_CANONICAL_SITE_URL", "https://www.ishamwilliamsblockchains.com"), "/")
 }
 
-// handleSilentNodeBinary serves the prebuilt Windows node binary.
+// handleSilentNodeBinary serves the prebuilt 1-click background node binaries.
 func (s *server) handleSilentNodeBinary(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	const path = "/downloads/silentnode.exe"
-	if _, err := os.Stat(path); err != nil {
+	name := filepath.Base(r.URL.Path)
+	diskPath := "/downloads/silentnode.exe"
+	downloadName := "silentnode.exe"
+	contentType := "application/octet-stream"
+
+	switch name {
+	case "silentnode.exe":
+		diskPath = "/downloads/silentnode.exe"
+		downloadName = "silentnode.exe"
+	case "synthos-node-windows-amd64.exe":
+		diskPath = "/downloads/silentnode.exe"
+		downloadName = "synthos-node-windows-amd64.exe"
+	case "synthos-node-linux-amd64":
+		diskPath = "/downloads/synthos-node-linux-amd64"
+		downloadName = "synthos-node-linux-amd64"
+	case "synthos-node-darwin-arm64":
+		diskPath = "/downloads/synthos-node-darwin-arm64"
+		downloadName = "synthos-node-darwin-arm64"
+	case "synthos-node-darwin-amd64":
+		diskPath = "/downloads/synthos-node-darwin-amd64"
+		downloadName = "synthos-node-darwin-amd64"
+	case "SHA256SUMS":
+		diskPath = "/downloads/SHA256SUMS"
+		downloadName = "SHA256SUMS"
+		contentType = "text/plain; charset=utf-8"
+	default:
 		http.Error(w, "node binary not available in this build", http.StatusNotFound)
 		return
 	}
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", `attachment; filename="silentnode.exe"`)
-	http.ServeFile(w, r, path)
+
+	if _, err := os.Stat(diskPath); err != nil {
+		http.Error(w, "node binary not available in this build", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	if contentType == "application/octet-stream" {
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename=%q`, downloadName))
+	}
+	http.ServeFile(w, r, diskPath)
 }
 
 // handleWindowsInstaller serves a one-shot PowerShell installer that downloads

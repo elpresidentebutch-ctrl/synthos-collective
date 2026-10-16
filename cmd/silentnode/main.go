@@ -25,8 +25,8 @@ import (
 	"time"
 )
 
-const defaultRelayURLs = "http://82.29.54.7:8090"
-const defaultChainRPC = "http://82.29.54.7:8080"
+const defaultRelayURLs = "https://82-29-54-7.sslip.io"
+const defaultChainRPC = "https://82-29-54-7.sslip.io"
 const heartbeatEvery = 15 * time.Second
 
 var coreCapabilities = []string{

