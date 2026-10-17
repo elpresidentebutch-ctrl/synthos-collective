@@ -1568,6 +1568,10 @@ func (s *Server) CatchUpOnce() error {
 	return nil
 }
 
+func (s *Server) PushBlockToPeers(block *chain.Block) {
+	s.pushBlockToPeers(block)
+}
+
 func (s *Server) pushBlockToPeers(block *chain.Block) {
 	if block == nil || len(s.PeerURLs) == 0 {
 		return

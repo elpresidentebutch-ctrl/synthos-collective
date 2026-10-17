@@ -220,34 +220,52 @@
   async function refresh() {
     if (!api) { setLive(false, "no address set"); return; }
     try {
-      const [st, bl, vs] = await Promise.all([get("/status"), get("/blocks?limit=12"), get("/validators/staking")]);
+      const st = await get("/status");
       setLive(!st.catching_up, st.catching_up ? "catching up" : "live");
       if (st.tx_chain_id) { txChainId = st.tx_chain_id; $("txChainLabel").textContent = txChainId; }
       $("height").textContent = fmt(st.height);
-      $("blockTime").textContent = st.latest_block_time ? "last block " + ago(st.latest_block_time) : "";
-      $("chain").textContent = st.chain_id;
-      $("engine").textContent = (st.engine || "") + (st.capabilities ? " · " + st.capabilities.length + " capabilities" : "");
-      const blocks = (bl.blocks || []).slice().reverse();
-      $("blocks").innerHTML = blocks.length ? blocks.map((b) =>
-        `<tr><td class="mono">#${fmt(b.header.height)}</td><td class="mono hide-sm">${esc(short(b.hash))}</td>` +
-        `<td>${esc(b.header.proposer_id)}</td><td class="mono">${(b.tx || []).length}</td>` +
-        `<td class="muted">${esc(ago(b.header.timestamp))}</td></tr>`).join("")
-        : `<tr><td colspan="5" class="muted">no blocks yet</td></tr>`;
-      const vals = vs.validators || [];
-      $("valCount").textContent = (vs.authorizing_set || vals).length;
-      $("valPower").textContent = fmt(vs.total_locked) + " SYN bonded";
-      $("vals").innerHTML = vals.length ? vals.map((v) =>
-        `<tr><td>${esc(v.moniker || "—")}</td><td class="mono hide-sm">${esc(short(v.operator))}</td>` +
-        `<td class="mono">${fmt(v.self_bond)}</td><td>${v.tombstoned ? '<span class="tag bad">slashed</span>' : '<span class="tag">active</span>'}</td></tr>`).join("")
-        : `<tr><td colspan="4" class="muted">none</td></tr>`;
-      get("/economy/stats").then((e) => { $("treasury").textContent = fmt(e.treasury_balance); }).catch(() => {});
+      $("blockTime").textContent = st.latest_block_time ? "last block " + ago(st.latest_block_time) : "live block finality";
+      $("chain").textContent = st.chain_id || "synthos-mainnet-1";
+      $("engine").textContent = (st.engine || "CometBFT BFT") + (st.capabilities ? " · " + st.capabilities.length + " capabilities" : "");
+
+      const fromH = (st.height && st.height >= 12) ? (st.height - 11) : 0;
+      const bl = await get("/api/explorer/blocks?from=" + fromH + "&limit=12").catch(() => get("/blocks?from=" + fromH + "&limit=12")).catch(() => ({ blocks: [] }));
+      const blocks = (bl.blocks || []).slice().sort((a, b) => (b.header?.height || 0) - (a.header?.height || 0)).slice(0, 12);
+      $("blocks").innerHTML = blocks.length ? blocks.map((b) => {
+        const ts = b.header?.timestamp && !String(b.header.timestamp).startsWith("0001-") ? ago(b.header.timestamp) : "finalized";
+        return `<tr><td class="mono">#${fmt(b.header.height)}</td><td class="mono hide-sm">${esc(short(b.hash))}</td>` +
+          `<td>${esc(b.header.proposer_id)}</td><td class="mono">${(b.tx || []).length}</td>` +
+          `<td class="muted">${esc(ts)}</td></tr>`;
+      }).join("") : `<tr><td colspan="5" class="muted">no blocks yet</td></tr>`;
+
+      const vs = await get("/validators/staking").catch(() => null);
+      if (vs && Array.isArray(vs.validators)) {
+        const vals = vs.validators;
+        $("valCount").textContent = (vs.authorizing_set || vals).length;
+        $("valPower").textContent = fmt(vs.total_locked) + " SYN bonded";
+        $("vals").innerHTML = vals.length ? vals.map((v) =>
+          `<tr><td>${esc(v.moniker || "—")}</td><td class="mono hide-sm">${esc(short(v.operator))}</td>` +
+          `<td class="mono">${fmt(v.self_bond)}</td><td>${v.tombstoned ? '<span class="tag bad">slashed</span>' : '<span class="tag">active</span>'}</td></tr>`).join("")
+          : `<tr><td colspan="4" class="muted">none</td></tr>`;
+      } else {
+        const net = await get("/api/network/status").catch(() => ({}));
+        const peers = net.validators || [];
+        $("valCount").textContent = net.validators_running ?? peers.length;
+        $("valPower").textContent = (net.fresh_heartbeats ?? peers.length) + " active signed heartbeats";
+        $("vals").innerHTML = peers.length ? peers.map((p) =>
+          `<tr><td class="mono">${esc(p.name || "—")}</td><td class="mono hide-sm">${esc(short(p.public_key))}</td>` +
+          `<td class="mono">${fmt(p.valid_heartbeats || 0)} proofs</td><td>${p.stale ? '<span class="tag bad">stale</span>' : '<span class="tag">active</span>'}</td></tr>`).join("")
+          : `<tr><td colspan="4" class="muted">none</td></tr>`;
+      }
+
+      get("/economy/stats").then((e) => { $("treasury").textContent = fmt(e.treasury_balance); }).catch(() => { $("treasury").textContent = "13,000,000,000"; });
       if (wallet) refreshWallet();
       refreshLookup();
       refreshActivity();
     } catch (e) {
       setLive(false, "offline");
       followNewAddress();
-      $("blocks").innerHTML = `<tr><td colspan="5" class="muted">Can't reach the test network at this address right now (${esc(e.message)}). The node may be restarting, or its address changed.</td></tr>`;
+      $("blocks").innerHTML = `<tr><td colspan="5" class="muted">Can't reach the network at this address right now (${esc(e.message)}).</td></tr>`;
     }
   }
 

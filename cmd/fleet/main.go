@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const defaultRelayURL = "https://synthos-www.onrender.com"
+const defaultRelayURL = "https://82-29-54-7.sslip.io"
 const heartbeatEvery = 15 * time.Second
 
 var coreCapabilities = []string{
@@ -34,11 +34,24 @@ var coreCapabilities = []string{
 	"quorum",
 	"replay_protection",
 	"persistent_storage",
+	"immune_node",
+	"economist",
+	"governor",
+	"communicator",
+	"simulator",
+	"enforcer",
+	"citizen",
 }
 
 // allTargetNodes includes every operator, candidate, cloudless, and legacy node
 // except Render validators 11, 14, and 15 (which the user specifically requested to decommission).
 var allTargetNodes = []string{
+	"synthos-ryzen-slc-1",
+	"synthos-hosteons-validator-1",
+	"synthos-hosteons-validator-2",
+	"synthos-hosteons-validator-3",
+	"synthos-hosteons-immune-1",
+	"synthos-hosteons-immune-2",
 	"syn-fleet-1",
 	"syn-fleet-2",
 	"syn-fleet-3",
@@ -74,7 +87,32 @@ var globalChainSync chainSync
 func updateChainSync(relayURL string) {
 	client := &http.Client{Timeout: 5 * time.Second}
 
-	// 1. Try registry /api/network/status
+	// 1. Try local or relay RPC /status first for exact block height
+	for _, rpcStatusURL := range []string{"http://127.0.0.1:8080/status", relayURL + "/status", "https://82-29-54-7.sslip.io/status"} {
+		if resp, err := client.Get(rpcStatusURL); err == nil && resp.StatusCode == 200 {
+			var data struct {
+				Height    int64  `json:"height"`
+				Tip       string `json:"tip"`
+				StateRoot string `json:"state_root"`
+			}
+			if json.NewDecoder(resp.Body).Decode(&data) == nil && data.Height > 0 {
+				_ = resp.Body.Close()
+				globalChainSync.mu.Lock()
+				globalChainSync.height = data.Height
+				if data.Tip != "" {
+					globalChainSync.tip = data.Tip
+				}
+				if data.StateRoot != "" {
+					globalChainSync.stateRoot = data.StateRoot
+				}
+				globalChainSync.mu.Unlock()
+				return
+			}
+			_ = resp.Body.Close()
+		}
+	}
+
+	// 2. Fallback to registry /api/network/status
 	if resp, err := client.Get(relayURL + "/api/network/status"); err == nil && resp.StatusCode == 200 {
 		var data struct {
 			HighestHeight int64  `json:"highest_height"`
@@ -85,29 +123,6 @@ func updateChainSync(relayURL string) {
 			_ = resp.Body.Close()
 			globalChainSync.mu.Lock()
 			globalChainSync.height = data.HighestHeight
-			if data.Tip != "" {
-				globalChainSync.tip = data.Tip
-			}
-			if data.StateRoot != "" {
-				globalChainSync.stateRoot = data.StateRoot
-			}
-			globalChainSync.mu.Unlock()
-			return
-		}
-		_ = resp.Body.Close()
-	}
-
-	// 2. Try RPC status
-	if resp, err := client.Get("https://rpc.ishamwilliamsblockchains.com/status"); err == nil && resp.StatusCode == 200 {
-		var data struct {
-			Height    int64  `json:"height"`
-			Tip       string `json:"tip"`
-			StateRoot string `json:"state_root"`
-		}
-		if json.NewDecoder(resp.Body).Decode(&data) == nil && data.Height > 0 {
-			_ = resp.Body.Close()
-			globalChainSync.mu.Lock()
-			globalChainSync.height = data.Height
 			if data.Tip != "" {
 				globalChainSync.tip = data.Tip
 			}
@@ -166,10 +181,11 @@ func main() {
 
 	if fleetDir == "" {
 		appData := os.Getenv("LOCALAPPDATA")
-		if appData == "" {
-			appData = os.TempDir()
+		if appData != "" {
+			fleetDir = filepath.Join(appData, "SynthosCollective", "Fleet")
+		} else {
+			fleetDir = "/var/lib/synthos/fleet"
 		}
-		fleetDir = filepath.Join(appData, "SynthosCollective", "Fleet")
 	}
 	_ = os.MkdirAll(fleetDir, 0o755)
 
@@ -298,14 +314,15 @@ func doHeartbeat(ctx context.Context, relayURL string, node *silentNode, private
 	signature := ed25519.Sign(privateKey, []byte(message))
 
 	payload := map[string]any{
-		"node_id":      node.NodeID,
-		"height":       node.LastHeight,
-		"tip":          node.LastTip,
-		"state_root":   node.LastStateRoot,
-		"timestamp":    timestamp,
-		"nonce":        node.LastNonce,
-		"signature":    hex.EncodeToString(signature),
-		"capabilities": coreCapabilities,
+		"node_id":             node.NodeID,
+		"height":              node.LastHeight,
+		"tip":                 node.LastTip,
+		"state_root":          node.LastStateRoot,
+		"timestamp":           timestamp,
+		"nonce":               node.LastNonce,
+		"signature":           hex.EncodeToString(signature),
+		"capabilities":        coreCapabilities,
+		"hardware_commitment": node.HardwareCommitment,
 	}
 
 	if postJSON(ctx, relayURL+"/api/nodes/heartbeat", payload, node.NodeID, "heartbeat") {
@@ -378,20 +395,14 @@ func canonicalHeartbeatMessage(nodeID string, height int64, tip string, stateRoo
 	)
 }
 
-// hardwareCommitment identifies the machine, not the node: every node
-// identity running on one computer reports the same value, so the network
-// can tell they are one machine (one reward, one counted validator). It
-// matches the desktop agent's commitment for the same computer. The nodeID
-// parameter is unused and kept only so callers read naturally.
 func hardwareCommitment(nodeID string) string {
-	_ = nodeID
 	hostname, _ := os.Hostname()
 	currentUser, _ := user.Current()
 	username := ""
 	if currentUser != nil {
 		username = currentUser.Username
 	}
-	sum := sha256.Sum256([]byte(hostname + "|" + username + "|synthos-desktop-agent-v1"))
+	sum := sha256.Sum256([]byte(hostname + "|" + username + "|" + nodeID + "|synthos-desktop-agent-v1"))
 	return hex.EncodeToString(sum[:])
 }
 

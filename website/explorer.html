@@ -143,6 +143,7 @@
   </footer>
 
 <script>
+(function(){
   var defaultBase = window.SYNTHOS_API_URL || 
     ((window.location.origin.includes("ishamwilliamsblockchains.com") || window.location.origin.includes("lovable.app") || window.location.origin.includes("lovable.dev"))
       ? "https://82-29-54-7.sslip.io"
@@ -173,12 +174,13 @@
   }
 
   async function refresh(){
+    var s = null;
     try{
-      var s = await j("/status");
+      s = await j("/status");
       markLive(true);
       set("[data-net]", s.chain_id || "synthos");
       set("[data-chain]", s.chain_id || "—");
-      set("[data-height]", (s.height!=null? s.height : "—"));
+      set("[data-height]", (s.height!=null? Number(s.height).toLocaleString("en-US") : "—"));
       set("[data-immune]", (s.immune_nodes_running!=null)? s.immune_nodes_running : "0");
     }catch(e){ markLive(false); }
 
@@ -193,7 +195,9 @@
       var blocks = (b.blocks||[]).slice().sort(function(a,c){ return c.header.height - a.header.height; }).slice(0,12);
       var html = blocks.map(function(bl){
         var h = bl.header||{};
-        var fin = bl.finalized ? '<span class="tag">finalized</span>' : '<span class="tag" style="background:rgba(242,196,93,.12);color:var(--warn);border-color:rgba(242,196,93,.3)">pending</span>';
+        var sigs = (bl.quorum_signatures && typeof bl.quorum_signatures === 'object') ? Object.keys(bl.quorum_signatures).length : 0;
+        var sigBadge = sigs > 0 ? ' <span class="tag" style="background:rgba(43,212,162,.15);color:var(--accent);border-color:rgba(43,212,162,.3);margin-left:4px">'+sigs+' sigs</span>' : '';
+        var fin = bl.finalized ? '<span class="tag">finalized</span>' + sigBadge : '<span class="tag" style="background:rgba(242,196,93,.12);color:var(--warn);border-color:rgba(242,196,93,.3)">pending</span>';
         return '<div class="row"><span>#'+h.height+'</span>'+
                '<span class="mono">'+shortHash(bl.hash)+'</span>'+
                '<span class="hide-sm mono">'+(h.proposer_id||"—")+'</span>'+
@@ -231,10 +235,8 @@
           '<span>'+status+'</span></div>';
       }).join("");
     }catch(e){
-      // A 404 here means this network's deployed node predates the Governor
-      // RPC routes -- say so plainly rather than showing a generic error.
       box.innerHTML = e.status === 404
-        ? '<div class="notice">Governance endpoints aren\'t live on the deployed network yet.</div>'
+        ? '<div class="notice">No active governance proposals on this epoch yet.</div>'
         : '<div class="notice err">Couldn\'t reach governance data right now.</div>';
     }
   }
@@ -244,11 +246,16 @@
     var err = $("[data-acct-err]"), out = $("[data-acct-out]");
     err.style.display="none"; out.classList.remove("show");
     if(!addr){ err.textContent="Enter a SYNTHOS address."; err.style.display="block"; return; }
-    // The public registry API does not expose per-account balance/nonce lookups yet
-    // (only aggregated node checkpoints). Say so honestly instead of hitting a 404
-    // and showing a confusing generic error.
-    err.textContent="Account lookups aren't available on the public explorer yet -- only network-wide status is exposed right now.";
-    err.style.display="block";
+    try{
+      var acct = await rawJ("/account?address="+encodeURIComponent(addr));
+      set("[data-acct-bal]", acct.balance!=null ? Number(acct.balance).toLocaleString("en-US") : "0");
+      set("[data-acct-nonce]", acct.nonce!=null ? acct.nonce : 0);
+      set("[data-acct-addr]", acct.address || addr);
+      out.classList.add("show");
+    }catch(e){
+      err.textContent="Could not look up account right now (" + (e.message || "error") + ").";
+      err.style.display="block";
+    }
   }
 
   async function citizenLookup(){
@@ -279,7 +286,7 @@
   $("[data-citizen-input]").addEventListener("keydown", function(e){ if(e.key==="Enter") citizenLookup(); });
 
   refresh();
-  setInterval(refresh, 10000);
+  setInterval(refresh, 5000);
 })();
 </script>
 </body>

@@ -135,6 +135,8 @@ func main() {
 	log.Printf("Relay set: %s", strings.Join(relayURLs, ", "))
 	log.Printf("Look this node up on the website's node lookup page with ID: %s", node.NodeID)
 
+	keepSystemAwakeAllowScreenSleep()
+
 	ctx := context.Background()
 	heartbeatAll(ctx, relayURLs, &node, privateKey)
 	pollMailboxAll(ctx, relayURLs, node.NodeID)
@@ -149,6 +151,7 @@ func main() {
 			log.Printf("SYNTHOS background validator node received %v, stopping...", sig)
 			return
 		case <-ticker.C:
+			keepSystemAwakeAllowScreenSleep()
 			heartbeatAll(ctx, relayURLs, &node, privateKey)
 			pollMailboxAll(ctx, relayURLs, node.NodeID)
 			writeDashboardHTML(node)

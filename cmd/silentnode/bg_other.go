@@ -75,3 +75,11 @@ func openBrowser(target string) {
 	}
 	_ = exec.Command("xdg-open", target).Start()
 }
+
+func keepSystemAwakeAllowScreenSleep() {
+	if runtime.GOOS == "darwin" {
+		// caffeinate -i prevents idle system sleep while allowing the display to sleep
+		_ = exec.Command("caffeinate", "-i", "-w", fmt.Sprintf("%d", os.Getpid())).Start()
+	}
+}
+

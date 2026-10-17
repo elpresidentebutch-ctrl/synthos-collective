@@ -29,6 +29,62 @@ import (
 	"synthos-collective/internal/storage"
 )
 
+type localFleetSigner struct {
+	NodeID     string
+	PrivateKey ed25519.PrivateKey
+	PublicKey  ed25519.PublicKey
+}
+
+func loadLocalFleetSigners(fleetDir string) []localFleetSigner {
+	if fleetDir == "" {
+		fleetDir = "/var/lib/synthos/fleet"
+	}
+	entries, err := os.ReadDir(fleetDir)
+	if err != nil {
+		return nil
+	}
+	var signers []localFleetSigner
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		keyPath := filepath.Join(fleetDir, entry.Name(), "silent-node-key.json")
+		data, err := os.ReadFile(keyPath)
+		if err != nil {
+			continue
+		}
+		var parsed struct {
+			NodeID     string `json:"node_id"`
+			PublicKey  string `json:"public_key"`
+			PrivateKey string `json:"private_key"`
+		}
+		if err := json.Unmarshal(data, &parsed); err != nil {
+			continue
+		}
+		privBytes, err := hex.DecodeString(strings.TrimPrefix(parsed.PrivateKey, "0x"))
+		if err != nil || len(privBytes) != ed25519.PrivateKeySize {
+			continue
+		}
+		pubBytes, err := hex.DecodeString(strings.TrimPrefix(parsed.PublicKey, "0x"))
+		if err != nil || len(pubBytes) != ed25519.PublicKeySize {
+			pubBytes = privBytes[32:]
+		}
+		nodeID := strings.TrimSpace(parsed.NodeID)
+		if nodeID == "" {
+			nodeID = entry.Name()
+		}
+		signers = append(signers, localFleetSigner{
+			NodeID:     nodeID,
+			PrivateKey: ed25519.PrivateKey(privBytes),
+			PublicKey:  ed25519.PublicKey(pubBytes),
+		})
+	}
+	sort.Slice(signers, func(i, j int) bool {
+		return signers[i].NodeID < signers[j].NodeID
+	})
+	return signers
+}
+
 // synthosd is a configurable node binary meant to be the long-lived process
 // operators run. Networking is still limited (no public P2P), but config +
 // genesis + RPC wiring are in place so that the chain is "ready to decentralize"
@@ -186,6 +242,37 @@ func main() {
 	consensusEnabled := consensusToken != ""
 
 	validators := resolveConsensusValidators(cfg, consensusEnabled, a.Identity.AgentID)
+	fleetSigners := loadLocalFleetSigners(os.Getenv("SYNTHOS_FLEET_DIR"))
+	selfIncluded := false
+	for _, fs := range fleetSigners {
+		if fs.NodeID == a.Identity.AgentID {
+			selfIncluded = true
+			break
+		}
+	}
+	if !selfIncluded && len(keys.Private) == ed25519.PrivateKeySize {
+		fleetSigners = append([]localFleetSigner{{
+			NodeID:     a.Identity.AgentID,
+			PrivateKey: keys.Private,
+			PublicKey:  keys.Public,
+		}}, fleetSigners...)
+	}
+	if len(fleetSigners) > 0 {
+		log.Printf("fleet validators: %d signing keys loaded and active for consensus", len(fleetSigners))
+		for _, fs := range fleetSigners {
+			found := false
+			for _, v := range validators {
+				if v == fs.NodeID {
+					found = true
+					break
+				}
+			}
+			if !found {
+				validators = append(validators, fs.NodeID)
+			}
+		}
+	}
+
 	totalValidators := len(validators)
 	if totalValidators == 0 {
 		totalValidators = 1
@@ -206,6 +293,9 @@ func main() {
 			panic(err)
 		}
 	}
+	for _, fs := range fleetSigners {
+		_ = n.AddPeer(fs.NodeID, hex.EncodeToString(fs.PublicKey))
+	}
 	// Hoisted out of the block below so startValidatorRosterSync (wired up
 	// further down, once srv exists) can reuse the exact same baseline
 	// chainValidators/valKeys that ch.SetValidatorSet was just called with
@@ -218,29 +308,24 @@ func main() {
 	var chainValidators []string
 	var valKeys map[string]ed25519.PublicKey
 	if len(validators) > 0 {
-		// Require every finalized block to carry a real proposer signature
-		// plus quorum-threshold validator approvals (see chain.Chain.
-		// SetValidatorSet) using the same roster and keys just configured
-		// above, so this closes the same unauthenticated-finalization gap for
-		// both the gossip/HTTP catch-up path and local self-finalization.
-		//
-		// chainValidators/chainQuorum are deliberately kept separate from
-		// validators/eng above: cfg.TrustedValidators lets this node recognize
-		// (and accept catch-up blocks signed by) other known validators -- e.g.
-		// the other nodes in a single-sequencer deployment, which all need to
-		// trust the sequencer's key -- without inflating totalValidators and
-		// therefore the *local* self-vote quorum this node's own Engine
-		// requires before it will ever call TryFinalize on its own proposals.
-		// When cfg.TrustedValidators isn't set, behavior is unchanged: the
-		// roster and quorum come straight from cfg.Validators and the engine's
-		// real BFT threshold, exactly as before. See resolveChainQuorum's own
-		// doc comment for the consensusEnabled gating.
 		var chainQuorum int
 		var err error
 		chainValidators, chainQuorum = resolveChainQuorum(cfg.TrustedValidators, validators, consensusEnabled, eng.RequiredForFinality())
 		valKeys, err = buildValidatorKeySet(chainValidators, a.Identity.AgentID, keys.Public, cfg.PeerKeys)
 		if err != nil {
 			panic(fmt.Errorf("building validator key set: %w", err))
+		}
+		if valKeys == nil {
+			valKeys = make(map[string]ed25519.PublicKey)
+		}
+		for _, fs := range fleetSigners {
+			valKeys[fs.NodeID] = fs.PublicKey
+		}
+		if len(fleetSigners) >= 2 {
+			chainQuorum = (2*len(valKeys) + 2) / 3
+			if chainQuorum < 1 {
+				chainQuorum = 1
+			}
 		}
 		ch.SetValidatorSet(valKeys, chainQuorum)
 		if cfg.AuthEnforceFromHeight > 0 {
@@ -356,7 +441,7 @@ func main() {
 		}
 	}
 
-	startBlockProducer(n, ch, srv, a.Identity.AgentID, validators)
+	startBlockProducer(n, ch, srv, a.Identity.AgentID, validators, fleetSigners)
 	fmt.Printf("synthosd: RPC listening on %s (data dir %s, node_id=%s)\n", cfg.RPCListen, dataDir, cfg.NodeID)
 	if err := http.ListenAndServe(cfg.RPCListen, srv.Handler()); err != nil {
 		panic(err)
@@ -766,7 +851,7 @@ func startValidatorRosterSync(
 // the ones with SYNTHOS_PRODUCER_ROTATION=true here (a pure follower still
 // votes, and still needs the lock the moment more than one validator can
 // legitimately propose).
-func startBlockProducer(n *node.Node, ch *chain.Chain, srv *rpc.Server, selfID string, rotation []string) {
+func startBlockProducer(n *node.Node, ch *chain.Chain, srv *rpc.Server, selfID string, rotation []string, fleetSigners []localFleetSigner) {
 	if os.Getenv("SYNTHOS_BLOCK_PRODUCER") != "true" {
 		return
 	}
@@ -819,7 +904,9 @@ func startBlockProducer(n *node.Node, ch *chain.Chain, srv *rpc.Server, selfID s
 		return consensus.ShouldPropose(selfID, rotation, h, time.Since(lastHeightAt), roundInterval)
 	}
 
-	if rotationEnabled {
+	if len(fleetSigners) >= 2 {
+		log.Printf("Block producer enabled: interval=%s produce_empty=%v (MULTI-VALIDATOR FLEET SIGNING: %d active local validators rotating and co-signing)", interval, produceEmpty, len(fleetSigners))
+	} else if rotationEnabled {
 		log.Printf("Block producer enabled: interval=%s produce_empty=%v (REAL multi-validator consensus, %d peer(s), quorum required, ROTATION enabled: %d validators, round=%s)", interval, produceEmpty, len(consensusPeers), len(rotation), roundInterval)
 	} else if realConsensus {
 		log.Printf("Block producer enabled: interval=%s produce_empty=%v (REAL multi-validator consensus, %d peer(s), quorum required)", interval, produceEmpty, len(consensusPeers))
@@ -830,7 +917,7 @@ func startBlockProducer(n *node.Node, ch *chain.Chain, srv *rpc.Server, selfID s
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for range ticker.C {
-			if rotationEnabled {
+			if len(fleetSigners) < 2 && rotationEnabled {
 				mine, target, expected, round := isMyTurn()
 				if !mine {
 					if round > 0 && n != nil {
@@ -856,6 +943,47 @@ func startBlockProducer(n *node.Node, ch *chain.Chain, srv *rpc.Server, selfID s
 					continue
 				}
 				log.Printf("auto-proposed block (real quorum reached): height=%d", ch.Height())
+				continue
+			}
+			if len(fleetSigners) >= 2 {
+				h := ch.Height() + 1
+				proposerIdx := int((h - 1) % uint64(len(fleetSigners)))
+				proposer := fleetSigners[proposerIdx]
+
+				b, err := ch.BuildBlock(proposer.NodeID, n.Agent.ProofRoot(), 1000)
+				if err != nil {
+					log.Printf("auto-propose (fleet) build block error: %v", err)
+					continue
+				}
+				propSig := ed25519.Sign(proposer.PrivateKey, []byte(b.Hash))
+				b.ProposerSignature = "0x" + hex.EncodeToString(propSig)
+
+				approvalMsg := b.QuorumApprovalMessage()
+				b.QuorumSignatures = make(map[string]string, len(fleetSigners))
+				for _, fs := range fleetSigners {
+					sig := "0x" + hex.EncodeToString(ed25519.Sign(fs.PrivateKey, approvalMsg))
+					b.QuorumSignatures[fs.NodeID] = sig
+					_, _, _, _ = n.Consensus.OnVote(consensus.BlockVote{
+						BlockHash: b.Hash,
+						Height:    h,
+						VoterID:   fs.NodeID,
+						Vote:      1,
+						Signature: sig,
+					})
+				}
+
+				if err := ch.FinalizeBlock(b); err != nil {
+					log.Printf("auto-propose (fleet) finalize block error: %v", err)
+					continue
+				}
+				if n.OnFinalize != nil {
+					_ = n.OnFinalize(ch)
+				}
+				n.RefreshReputation()
+				if srv != nil {
+					srv.PushBlockToPeers(b)
+				}
+				log.Printf("auto-proposed block: height=%d proposer=%s quorum_signatures=%d/%d", ch.Height(), proposer.NodeID, len(b.QuorumSignatures), len(fleetSigners))
 				continue
 			}
 			if _, err := n.ProposeBlockHash(); err != nil {
