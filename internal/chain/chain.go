@@ -675,6 +675,7 @@ func (c *Chain) BuildBlock(proposerID string, proposerPoCRoot string, maxTx int)
 	}
 
 	parent := c.tipLocked()
+	c.applyIrregularStateCorrectionsLocked(tmp, parent.Header.Height+1)
 	b := &Block{
 		Header: BlockHeader{
 			Height:          parent.Header.Height + 1,
