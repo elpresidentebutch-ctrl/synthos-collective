@@ -2,7 +2,7 @@
 # Default: early access website/API backend (persists under SYNTHOS_DATA_DIR, default /data).
 FROM golang:1.25-alpine AS build
 WORKDIR /src
-COPY go.mod ./
+COPY go.mod go.sum* ./
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 ENV CGO_ENABLED=0
