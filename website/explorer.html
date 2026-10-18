@@ -39,7 +39,7 @@
   section{border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:18px 18px 6px;margin-bottom:20px}
   section h2{margin:0 0 4px;font-size:1.05rem}
   section .sec-sub{margin:0 0 12px;color:var(--muted);font-size:.82rem}
-  .row-head,.row{display:grid;grid-template-columns:90px 1fr 1fr 130px;gap:12px;padding:10px 8px;align-items:center}
+  .row-head,.row{display:grid;grid-template-columns:85px 1.1fr 1fr 90px 135px;gap:12px;padding:10px 8px;align-items:center}
   .row-head{color:var(--muted);font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;
     border-bottom:1px solid var(--line)}
   .row{border-bottom:1px solid rgba(255,255,255,.06);font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.85rem}
@@ -131,7 +131,7 @@
     <section>
       <h2>Latest Blocks</h2>
       <div class="row-head">
-        <span>Height</span><span>Hash</span><span class="hide-sm">Proposer</span><span>Status</span>
+        <span>Height</span><span>Hash</span><span class="hide-sm">Proposer</span><span class="hide-sm">Age</span><span>Status</span>
       </div>
       <div data-blocks><div class="row"><span>—</span><span>loading…</span><span class="hide-sm"></span><span></span></div></div>
     </section>
@@ -154,6 +154,14 @@
   var $ = function(s){ return document.querySelector(s); };
   function set(sel,v){ var n=document.querySelector(sel); if(n) n.textContent=v; }
   function shortHash(h){ if(!h) return "—"; h=String(h); return h.length>16 ? h.slice(0,10)+"…"+h.slice(-6) : h; }
+  function timeAgo(iso){
+    if(!iso || String(iso).startsWith("0001-") || String(iso).startsWith("1970-")) return "—";
+    var diff = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+    if(diff < 60) return diff + "s ago";
+    if(diff < 3600) return Math.floor(diff/60) + "m ago";
+    if(diff < 86400) return Math.floor(diff/3600) + "h ago";
+    return Math.floor(diff/86400) + "d ago";
+  }
   document.querySelector("[data-rpc]").textContent = RPC.replace(/^https?:\/\//,"");
 
   function markLive(ok){
@@ -198,9 +206,11 @@
         var sigs = (bl.quorum_signatures && typeof bl.quorum_signatures === 'object') ? Object.keys(bl.quorum_signatures).length : 0;
         var sigBadge = sigs > 0 ? ' <span class="tag" style="background:rgba(43,212,162,.15);color:var(--accent);border-color:rgba(43,212,162,.3);margin-left:4px">'+sigs+' sigs</span>' : '';
         var fin = bl.finalized ? '<span class="tag">finalized</span>' + sigBadge : '<span class="tag" style="background:rgba(242,196,93,.12);color:var(--warn);border-color:rgba(242,196,93,.3)">pending</span>';
+        var age = timeAgo(h.timestamp);
         return '<div class="row"><span>#'+h.height+'</span>'+
                '<span class="mono">'+shortHash(bl.hash)+'</span>'+
                '<span class="hide-sm mono">'+(h.proposer_id||"—")+'</span>'+
+               '<span class="hide-sm" style="color:var(--muted);font-size:.82rem">'+age+'</span>'+
                '<span>'+fin+'</span></div>';
       }).join("");
       var box=$("[data-blocks]"); if(box) box.innerHTML = html || '<div class="row"><span>—</span><span>no blocks</span><span class="hide-sm"></span><span></span></div>';

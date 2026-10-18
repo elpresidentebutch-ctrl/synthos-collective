@@ -352,15 +352,19 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	// verified figure.
 	immune := s.Chain.State.ImmuneStatus()
 	live := s.liveStatusSnapshot()
+	tip := s.Chain.Tip()
 	body := map[string]any{
 		"chain_id":    s.Chain.ChainID,
 		"tx_chain_id": s.Chain.TxChainID,
 		"height":      s.Chain.Height(),
-		"tip":         s.Chain.Tip().Hash,
+		"tip":         tip.Hash,
 		"state_root":  s.Chain.State.Root(),
 		"immune":      immune,
 		"peers":       s.PeerURLs,
 		"live":        live,
+	}
+	if tip != nil && !tip.Header.Timestamp.IsZero() {
+		body["latest_block_time"] = tip.Header.Timestamp.Format(time.RFC3339)
 	}
 	if s.Node != nil && s.Node.Agent != nil {
 		body["agent"] = map[string]any{

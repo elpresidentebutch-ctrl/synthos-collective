@@ -680,7 +680,7 @@ func (c *Chain) BuildBlock(proposerID string, proposerPoCRoot string, maxTx int)
 		Header: BlockHeader{
 			Height:          parent.Header.Height + 1,
 			ParentHash:      parent.Hash,
-			Timestamp:       time.Time{},
+			Timestamp:       time.Now().UTC().Truncate(time.Second),
 			ProposerID:      proposerID,
 			TxMerkleRoot:    txRoot,
 			StateRoot:       tmp.Root(),
@@ -733,8 +733,13 @@ func (c *Chain) validateBlockLocked(b *Block, requireQuorum bool) error {
 	if b.Header.ParentHash != tip.Hash || b.Header.Height != tip.Header.Height+1 {
 		return ErrBadBlock
 	}
-	if b.Header.Height > 0 && !b.Header.Timestamp.IsZero() {
-		return ErrBadBlock
+	if !b.Header.Timestamp.IsZero() {
+		if !tip.Header.Timestamp.IsZero() && b.Header.Timestamp.Before(tip.Header.Timestamp) {
+			return fmt.Errorf("%w: block timestamp %v is before parent timestamp %v", ErrBadBlock, b.Header.Timestamp, tip.Header.Timestamp)
+		}
+		if b.Header.Timestamp.After(time.Now().Add(5 * time.Minute)) {
+			return fmt.Errorf("%w: block timestamp %v exceeds future drift limit", ErrBadBlock, b.Header.Timestamp)
+		}
 	}
 	if b.Header.Height > 0 && len(c.validatorKeys) > 0 && b.Header.Height >= c.authEnforceFromHeight {
 		if err := c.verifyBlockAuthorizationLocked(b, requireQuorum); err != nil {
