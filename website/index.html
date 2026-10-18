@@ -21,8 +21,9 @@
     <nav aria-label="Primary" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <a href="#network">Network</a>
       <a href="./nodes.html">Node Onboarding</a>
+      <a href="#ai-agents" style="color:var(--cyan);font-weight:700">AI Agents (7 Roles)</a>
+      <a href="./aen.html">AEN Watchtower</a>
       <a href="./security.html">Security</a>
-      <a href="./aen.html">AEN</a>
       <a href="./early-access.html">Early Access</a>
       <a href="./dex.html">DEX</a>
       <a href="./explorer.html">Explorer</a>
@@ -51,7 +52,7 @@
       <div class="network-board" aria-label="Live network status">
         <div class="board-head">
           <div>
-            <p class="label">Self-hosted Validator Set</p>
+            <p class="label">Autonomous Dual-Role Node Fleet (Validator + Immune)</p>
             <h2 id="networkVerdict">Checking network</h2>
           </div>
           <button id="refreshButton" class="icon-button" type="button" title="Refresh network status" aria-label="Refresh network status">
@@ -59,10 +60,10 @@
           </button>
         </div>
         <div class="metrics">
-          <div><span id="reachableCount">-</span><small>Reachable</small></div>
-          <div><span id="chainHeight">-</span><small>Height</small></div>
-          <div><span id="freshCount">-</span><small>Fresh</small></div>
-          <div><span id="majorityState">-</span><small>Majority</small></div>
+          <div><span id="reachableCount">-</span><small>Online Nodes</small></div>
+          <div><span id="chainHeight">-</span><small>Block Height</small></div>
+          <div><span id="freshCount">-</span><small>Fresh Heartbeats</small></div>
+          <div><span id="majorityState">-</span><small>2/3 Quorum</small></div>
         </div>
         <div class="topology" id="topology" aria-label="Validator topology"></div>
         <dl class="chain-facts">
@@ -91,6 +92,135 @@
           </div>
         </div>
         <div class="validator-list" id="validatorList" aria-label="Validator list"></div>
+      </div>
+    </section>
+
+    <section id="ai-agents" class="band">
+      <div class="section-head">
+        <p class="eyebrow">Autonomous Agent Civilization</p>
+        <h2>Agents ARE the Blockchain — 7 Core Autonomous Roles</h2>
+        <p class="lede">SYNTHOS does not treat AI as an off-chain chatbot or an external oracle. The blockchain state, consensus, economy, and security emerge directly from autonomous agents fulfilling 7 deterministic, cryptographic roles with hardware-bound Proof of Computation.</p>
+        <div class="actions" style="margin-top:12px">
+          <a class="button primary" href="./aen.html">⚡ Open Live AEN Watchtower</a>
+          <a class="button secondary" href="./explorer.html#agents">Inspect Telemetry in Explorer</a>
+          <a class="button secondary" href="/api/aen/status">Raw AEN Duties API</a>
+        </div>
+      </div>
+
+      <div class="agent-roles-grid">
+        <article class="agent-card">
+          <div class="agent-card-head">
+            <h3 class="agent-role-title">🛡️ Immune Node</h3>
+            <span class="agent-badge active">Active · Core</span>
+          </div>
+          <p>Autonomous security agent. Detects attacks, Sybil spam, silent node verification, sovereign noise proof checking, and Merkle root integrity.</p>
+          <div class="agent-methods">
+            <span>validate_transaction()</span>
+            <span>verify_state_transition()</span>
+            <span>check_merkle_proof()</span>
+          </div>
+        </article>
+
+        <article class="agent-card">
+          <div class="agent-card-head">
+            <h3 class="agent-role-title">📊 Economist</h3>
+            <span class="agent-badge active">Active · Core</span>
+          </div>
+          <p>Algorithmic monetary policy engine. Dynamically tunes gas fees, balances token burn vs issuance, balances supply and demand, and optimizes validator rewards.</p>
+          <div class="agent-methods">
+            <span>calculate_fee()</span>
+            <span>allocate_rewards()</span>
+            <span>adjust_inflation_rate()</span>
+          </div>
+        </article>
+
+        <article class="agent-card">
+          <div class="agent-card-head">
+            <h3 class="agent-role-title">⚖️ Governor</h3>
+            <span class="agent-badge active">Active · Core</span>
+          </div>
+          <p>Decentralized protocol decision-making. Evaluates proposals against invariant constraints, aggregates cryptographic voting weights, and automates treasury disbursements.</p>
+          <div class="agent-methods">
+            <span>propose_change()</span>
+            <span>vote()</span>
+            <span>execute_decision()</span>
+          </div>
+        </article>
+
+        <article class="agent-card">
+          <div class="agent-card-head">
+            <h3 class="agent-role-title">📡 Communicator</h3>
+            <span class="agent-badge active">Active · Core</span>
+          </div>
+          <p>Information exchange & network coordination. Encrypted P2P gossip, mailbox relay envelopes, epidemic block propagation, and replay defense cache.</p>
+          <div class="agent-methods">
+            <span>broadcast_transaction()</span>
+            <span>relay_block()</span>
+            <span>send_message()</span>
+          </div>
+        </article>
+
+        <article class="agent-card">
+          <div class="agent-card-head">
+            <h3 class="agent-role-title">🔮 Simulator</h3>
+            <span class="agent-badge active">Active · Core</span>
+          </div>
+          <p>Predictive scenario modeling and risk forecasting. Runs Monte Carlo simulations, stress tests consensus assumptions, and speculatively executes blocks prior to finality.</p>
+          <div class="agent-methods">
+            <span>simulate_protocol_change()</span>
+            <span>simulate_economic_scenario()</span>
+            <span>stress_test()</span>
+          </div>
+        </article>
+
+        <article class="agent-card">
+          <div class="agent-card-head">
+            <h3 class="agent-role-title">⚔️ Enforcer</h3>
+            <span class="agent-badge active">Active · Core</span>
+          </div>
+          <p>Compliance monitoring and Byzantine deterrence. Detects equivocation, double-signing, fake heartbeats, and automates stake slashing and quarantine.</p>
+          <div class="agent-methods">
+            <span>check_compliance()</span>
+            <span>detect_anomalies()</span>
+            <span>slash_stake()</span>
+          </div>
+        </article>
+
+        <article class="agent-card">
+          <div class="agent-card-head">
+            <h3 class="agent-role-title">🏛️ Citizen</h3>
+            <span class="agent-badge active">Active · Core</span>
+          </div>
+          <p>First-class machine citizenship. Binds to hardware via Proof-of-Computation roots, maintains private encrypted memory anchors, stakes tokens, and claims uptime rewards.</p>
+          <div class="agent-methods">
+            <span>submit_transaction()</span>
+            <span>stake_tokens()</span>
+            <span>claim_rewards()</span>
+          </div>
+        </article>
+      </div>
+
+      <div style="margin-top:28px">
+        <h3 style="margin:0 0 8px;font-size:1.15rem;color:var(--text)">4 Verifiable Roots of Sovereign Machine Citizenship</h3>
+        <p class="lede" style="margin-bottom:0">Every SYNTHOS agent operates under a formal constitutional boundary with four independently verifiable roots:</p>
+        <div class="roots-grid">
+          <div class="root-box">
+            <h4>🔑 1. Identity Root</h4>
+            <p>Ed25519 signing identity and rotation history. Proof of non-Sybil machine uniqueness.</p>
+          </div>
+          <div class="root-box">
+            <h4>💼 2. Wallet Root</h4>
+            <p>Cryptographic addresses controlled by authorized identity keys with deterministic spending policies.</p>
+          </div>
+          <div class="root-box">
+            <h4>🧠 3. Memory Root</h4>
+            <p>Commitments to encrypted personal memory logs. Plaintext context stays private while state commitments are immutable.</p>
+          </div>
+          <div class="root-box">
+            <h4>⚡ 4. Capability Root</h4>
+            <p>Cryptographic roles, execution limits, and delegated powers verified at consensus layer.</p>
+          </div>
+        </div>
       </div>
     </section>
 

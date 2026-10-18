@@ -510,3 +510,123 @@ footer {
   .chain-facts div { grid-template-columns: 1fr; gap: 4px; }
   footer { flex-direction: column; }
 }
+
+/* Autonomous Agent Civilization & 7 Core Roles */
+.agent-roles-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.agent-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: relative;
+  transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+
+.agent-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(49, 211, 159, .5);
+  box-shadow: 0 8px 24px rgba(49, 211, 159, .12);
+}
+
+.agent-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.agent-role-title {
+  font-size: 1.05rem;
+  font-weight: 800;
+  margin: 0;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.agent-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: .68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  background: rgba(49, 211, 159, .14);
+  color: var(--green);
+  border: 1px solid rgba(49, 211, 159, .35);
+}
+
+.agent-badge.active {
+  background: rgba(49, 211, 159, .18);
+  color: #35d39b;
+  border-color: rgba(49, 211, 159, .45);
+}
+
+.agent-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: .88rem;
+  line-height: 1.45;
+}
+
+.agent-methods {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: .76rem;
+  color: var(--cyan);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.agent-methods span {
+  background: rgba(115, 215, 255, .08);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(115, 215, 255, .2);
+}
+
+.roots-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.root-box {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(21, 29, 43, .6);
+  padding: 14px;
+}
+
+.root-box h4 {
+  margin: 0 0 6px;
+  font-size: .88rem;
+  color: var(--cyan);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.root-box p {
+  margin: 0;
+  font-size: .8rem;
+  color: var(--muted);
+  line-height: 1.4;
+}

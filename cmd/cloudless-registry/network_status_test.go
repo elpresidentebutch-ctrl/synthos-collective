@@ -123,3 +123,73 @@ func TestNetworkStatus_FallsBackToSelfReportedWhenRPCUnreachable(t *testing.T) {
 		t.Errorf("highest_height = %v, want %v (fallback to self-reported max when RPC unreachable)", got, want)
 	}
 }
+
+func TestNetworkStatus_PrunesInactivePeersAndComputesAccurateMajority(t *testing.T) {
+	now := time.Now()
+	s := &server{
+		state: registryState{
+			Peers: map[string]peer{
+				"active-validator-1": {
+					Name:         "active-validator-1",
+					Kind:         "validator",
+					Status:       "running",
+					RegisteredAt: now.Add(-10 * time.Minute).UnixMilli(),
+					LastSeen:     now.UnixMilli(),
+					Height:       100,
+					Capabilities: []string{"immune_node", "validator"},
+				},
+				"active-validator-2": {
+					Name:         "active-validator-2",
+					Kind:         "validator",
+					Status:       "running",
+					RegisteredAt: now.Add(-10 * time.Minute).UnixMilli(),
+					LastSeen:     now.UnixMilli(),
+					Height:       100,
+					Capabilities: []string{"immune_node", "validator"},
+				},
+				// Stale inactive peer that hasn't heartbeated in 1 hour
+				"ghost-test-candidate": {
+					Name:         "ghost-test-candidate",
+					Kind:         "validator",
+					Status:       "stale",
+					RegisteredAt: now.Add(-2 * time.Hour).UnixMilli(),
+					LastSeen:     now.Add(-time.Hour).UnixMilli(),
+					Height:       0,
+				},
+			},
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/network/status", nil)
+	rec := httptest.NewRecorder()
+	s.handleAPINetworkStatus(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+
+	var out map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	// Ghost peer should have been pruned from registry state
+	if len(s.state.Peers) != 2 {
+		t.Errorf("expected 2 active peers remaining after pruning, got %d", len(s.state.Peers))
+	}
+	if _, exists := s.state.Peers["ghost-test-candidate"]; exists {
+		t.Errorf("expected ghost-test-candidate to be deleted from registry state")
+	}
+
+	// Metrics should accurately report active nodes and 100% majority
+	if got, want := int(out["total"].(float64)), 2; got != want {
+		t.Errorf("total = %d, want %d", got, want)
+	}
+	if got, want := int(out["reachable"].(float64)), 2; got != want {
+		t.Errorf("reachable = %d, want %d", got, want)
+	}
+	if got, want := out["majority_reachable"].(bool), true; got != want {
+		t.Errorf("majority_reachable = %v, want %v", got, want)
+	}
+}
+

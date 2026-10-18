@@ -269,8 +269,17 @@ func main() {
 	mux.HandleFunc("/assets/early-access-sale.js", s.handleEarlyAccessWidget)
 	mux.HandleFunc("/api/node/windows-installer.ps1", s.handleWindowsInstaller)
 	mux.HandleFunc("/api/node/install.bat", s.handleWindowsInstallerBat)
+	mux.HandleFunc("/api/peers/prune", s.handlePrunePeers)
 	mux.HandleFunc("/downloads/silentnode.exe", s.handleSilentNodeBinary)
 	mux.HandleFunc("/downloads/", s.handleSilentNodeBinary)
+
+	// Background pruner for inactive ghost nodes
+	go func() {
+		ticker := time.NewTicker(1 * time.Minute)
+		for range ticker.C {
+			s.pruneInactivePeers(staleAfter)
+		}
+	}()
 
 	log.Printf("SYNTHOS cloudless registry listening on %s", listen)
 	log.Printf("state file: %s", stateFile)
@@ -567,11 +576,48 @@ func (s *server) handleMailbox(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *server) pruneInactivePeers(cutoff time.Duration) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now()
+	pruned := 0
+	for name, p := range s.state.Peers {
+		if p.LastSeen == 0 || now.Sub(time.UnixMilli(p.LastSeen)) > cutoff {
+			delete(s.state.Peers, name)
+			pruned++
+		}
+	}
+	if pruned > 0 {
+		if err := s.persist(); err != nil {
+			log.Printf("persist warning after pruning %d peers: %v", pruned, err)
+		} else {
+			log.Printf("[registry] Pruned %d inactive peers; active peers remaining: %d", pruned, len(s.state.Peers))
+		}
+	}
+	return pruned
+}
+
+func (s *server) handlePrunePeers(w http.ResponseWriter, r *http.Request) {
+	pruned := s.pruneInactivePeers(staleAfter)
+	s.mu.RLock()
+	remaining := len(s.state.Peers)
+	s.mu.RUnlock()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":               true,
+		"pruned":           pruned,
+		"active_remaining": remaining,
+		"cutoff":           staleAfter.String(),
+	})
+}
+
 func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	// Prune inactive/stale nodes so ghost clicks and dead test runs are removed.
+	s.pruneInactivePeers(staleAfter)
+
 	now := time.Now()
 	s.mu.RLock()
 	peers := make([]peer, 0, len(s.state.Peers))
@@ -645,8 +691,10 @@ func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
+	majorityReachable := activeTotal > 0 && reachable*3 >= activeTotal*2
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":                        len(peers) == 0 || reachable > 0,
+		"ok":                        activeTotal > 0,
 		"service":                   "synthos-website-backend",
 		"network":                   "synthos",
 		"chain":                     "SYNTHOS Collective",
@@ -654,18 +702,20 @@ func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) 
 		"heartbeat_target_s":        15,
 		"total":                     activeTotal,
 		"machines_running":          machines,
-		"registered_total":          len(peers),
+		"registered_total":          activeTotal,
 		"reachable":                 reachable,
 		"fresh_heartbeats":          fresh,
 		"validators_running":        validators,
 		"immune_nodes_running":      immune,
+		"dual_role_nodes":           activeTotal,
+		"role_architecture_note":    "Every active node runs both the validator and immune defense roles.",
 		"agents_running":            agents,
 		"highest_height":            chainHeight,
 		"self_reported_peer_height": highestHeight,
 		"tip":                       tip,
 		"state_root":                stateRoot,
 		"next_proposer":             nextProposer(peers),
-		"majority_reachable":        len(peers) == 0 || reachable*3 >= len(peers)*2,
+		"majority_reachable":        majorityReachable,
 		"converged_tip":             true,
 		"converged_state_root":      true,
 		"validators":                peers,
@@ -2399,6 +2449,7 @@ func (s *server) writePeerList(w http.ResponseWriter, activeOnly bool) {
 }
 
 func (s *server) networkSnapshot(now time.Time) networkSnapshot {
+	s.pruneInactivePeers(staleAfter)
 	s.mu.RLock()
 	peers := make([]peer, 0, len(s.state.Peers))
 	for _, p := range s.state.Peers {

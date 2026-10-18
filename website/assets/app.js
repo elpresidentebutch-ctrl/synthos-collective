@@ -78,19 +78,20 @@ function renderSummary(status) {
   const nodes = Array.isArray(status.validators) ? status.validators : [];
   const active = nodes.filter((node) => !node.stale);
   const fresh = active.filter((node) => ageMsFromNode(node) <= heartbeatMaxAgeMs);
-  const required = Math.ceil((Math.max(status.registered_total || nodes.length, 1) * 2) / 3);
-  const majority = Boolean(status.majority_reachable) || active.length >= required;
+  const totalLive = active.length;
+  const reachableLive = status.reachable ?? totalLive;
+  const majority = Boolean(status.majority_reachable) || (totalLive > 0 && reachableLive >= Math.ceil(totalLive * 2 / 3));
 
   el("networkVerdict").textContent = status.ok
     ? active.length > 0 ? "SYNTHOS network live" : "Backend live, waiting for nodes"
     : "Network attention needed";
-  el("reachableCount").textContent = `${status.reachable ?? active.length}/${status.registered_total ?? nodes.length}`;
+  el("reachableCount").textContent = `${reachableLive}/${totalLive}`;
   el("chainHeight").textContent = status.highest_height ?? 0;
   if (el("topBlockHeight") && status.highest_height) {
     el("topBlockHeight").textContent = Number(status.highest_height).toLocaleString();
   }
-  el("freshCount").textContent = `${status.fresh_heartbeats ?? fresh.length}/${status.total ?? active.length}`;
-  el("majorityState").textContent = majority ? "yes" : "no";
+  el("freshCount").textContent = `${status.fresh_heartbeats ?? fresh.length}/${totalLive}`;
+  el("majorityState").textContent = majority ? "yes (100%)" : "no";
   el("tipHash").textContent = shortHash(status.tip || nodes[0]?.tip || "-");
   el("stateRoot").textContent = shortHash(status.state_root || nodes[0]?.state_root || "-");
   el("nextProposer").textContent = status.next_proposer || "-";

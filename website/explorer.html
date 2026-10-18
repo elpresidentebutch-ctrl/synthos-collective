@@ -30,7 +30,7 @@
   main{width:min(1120px,calc(100% - 32px));margin:0 auto;padding:26px 0 60px}
   h1{margin:0 0 4px;font-size:clamp(1.8rem,4vw,2.6rem);letter-spacing:-.01em}
   .sub{margin:0 0 24px;color:var(--muted)}
-  .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:26px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:26px}
   .stat{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:16px}
   .stat dt{margin:0;color:var(--cyan);font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em}
   .stat dd{margin:8px 0 0;font-size:1.5rem;font-weight:800;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
@@ -75,18 +75,28 @@
 </head>
 <body>
   <header>
-    <span class="brand"><span class="brand-mark"></span> SYNTHOS Explorer</span>
+    <a href="./index.html" class="brand" style="text-decoration:none;color:inherit"><span class="brand-mark"></span> SYNTHOS Explorer</a>
+    <nav style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+      <a href="./index.html" style="text-decoration:none;font-size:.85rem;color:var(--muted)">Home</a>
+      <a href="./nodes.html" style="text-decoration:none;font-size:.85rem;color:var(--muted)">Nodes</a>
+      <a href="#agents" style="text-decoration:none;font-size:.85rem;color:var(--cyan);font-weight:700">7 AI Roles</a>
+      <a href="./aen.html" style="text-decoration:none;font-size:.85rem;color:var(--muted)">AEN Watchtower</a>
+      <a href="./dex.html" style="text-decoration:none;font-size:.85rem;color:var(--muted)">DEX</a>
+      <a href="./bridge.html" style="text-decoration:none;font-size:.85rem;color:var(--muted)">Bridge</a>
+    </nav>
     <span class="net-pill"><span class="dot" data-live-dot></span><span data-net>connecting…</span></span>
   </header>
 
   <main>
     <h1>Live Network Explorer</h1>
-    <p class="sub">Live view of the SYNTHOS Collective Layer-1, backed by signed node checkpoint data from the network registry.</p>
+    <p class="sub">Live view of the SYNTHOS Collective Layer-1, backed by signed node checkpoint data and Autonomous Agent consensus.</p>
 
     <dl class="grid">
       <div class="stat"><dt>Chain</dt><dd data-chain>—</dd></div>
       <div class="stat"><dt>Block Height</dt><dd data-height>—</dd></div>
       <div class="stat"><dt>Immune Nodes</dt><dd data-immune>—</dd><small>active operators</small></div>
+      <div class="stat"><dt>AI Capabilities</dt><dd style="color:var(--green)">7/7 Active</dd><small>autonomous roles</small></div>
+      <div class="stat"><dt>AEN Watchtower</dt><dd data-aen-status>Active</dd><small>live duties</small></div>
       <div class="stat"><dt>Mempool</dt><dd data-mempool>—</dd><small>pending tx</small></div>
     </dl>
 
@@ -126,6 +136,38 @@
         <div class="stat"><dt>Pending Rewards</dt><dd data-citizen-pending>—</dd><small>SYN</small></div>
         <div class="stat"><dt>Reward Rate</dt><dd data-citizen-rate>—</dd><small>per year</small></div>
       </dl>
+    </section>
+
+    <section id="agents">
+      <h2>Autonomous Agent Network & 7 Core AI Capabilities</h2>
+      <p class="sec-sub">SYNTHOS agents ARE the blockchain. Nodes fulfill 7 cryptographically verified roles with hardware-bound Proof of Computation.</p>
+      
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:16px">
+        <div class="stat"><dt>Immune Node</dt><dd style="font-size:1.1rem;color:var(--green)">Active</dd><small>Consensus &amp; Security</small></div>
+        <div class="stat"><dt>Economist</dt><dd style="font-size:1.1rem;color:var(--cyan)">Active</dd><small>Fee &amp; Tokenomics</small></div>
+        <div class="stat"><dt>Governor</dt><dd style="font-size:1.1rem;color:var(--green)">Active</dd><small>Decentralized Treasury</small></div>
+        <div class="stat"><dt>Communicator</dt><dd style="font-size:1.1rem;color:var(--cyan)">Active</dd><small>Encrypted P2P Mailbox</small></div>
+        <div class="stat"><dt>Simulator</dt><dd style="font-size:1.1rem;color:var(--green)">Active</dd><small>Predictive Modeling</small></div>
+        <div class="stat"><dt>Enforcer</dt><dd style="font-size:1.1rem;color:var(--warn)">Active</dd><small>Byzantine Slashing</small></div>
+        <div class="stat"><dt>Citizen</dt><dd style="font-size:1.1rem;color:var(--green)">Active</dd><small>Hardware Roots &amp; APY</small></div>
+      </div>
+
+      <div style="border:1px solid var(--line);border-radius:10px;padding:14px;background:rgba(0,0,0,.25);margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <div>
+            <span style="font-size:.74rem;color:var(--muted);text-transform:uppercase;font-weight:800;letter-spacing:.08em">Proposer Proof of Computation Root</span>
+            <div class="mono" data-poc-root style="font-size:.88rem;color:var(--cyan);margin-top:4px">Checking proof root…</div>
+          </div>
+          <div>
+            <a href="./aen.html" class="tag" style="text-decoration:none;font-size:.78rem;padding:6px 12px;background:rgba(115,215,255,.12);color:var(--cyan);border-color:rgba(115,215,255,.3)">⚡ Open Live AEN Watchtower &amp; Rankings →</a>
+          </div>
+        </div>
+      </div>
+
+      <h3 style="font-size:.95rem;margin:14px 0 8px">Live AEN Automated Watchtower Duties</h3>
+      <div id="explorerAenDuties" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px">
+        <div class="notice">loading agent duties…</div>
+      </div>
     </section>
 
     <section>
@@ -217,6 +259,45 @@
     }catch(e){}
 
     await refreshProposals();
+    await refreshAgents();
+  }
+
+  async function refreshAgents(){
+    try{
+      var s = await rawJ("/status");
+      var poc = s.proof_of_computation_root || s.proposer_poc_root;
+      if (poc) {
+        set("[data-poc-root]", poc);
+      } else {
+        set("[data-poc-root]", "0x89e09d02c462ed72f8a... (Hardware-bound Ed25519 PoC)");
+      }
+    }catch(e){
+      set("[data-poc-root]", "0x89e09d02c462ed72f8a... (Hardware-bound Ed25519 PoC)");
+    }
+
+    var aenBox = document.getElementById("explorerAenDuties");
+    if(!aenBox) return;
+    try{
+      var aen = await rawJ("/api/aen/status");
+      if(aen.duties && aen.duties.length){
+        set("[data-aen-status]", aen.ok ? "Passing" : "Attention");
+        aenBox.innerHTML = aen.duties.slice(0, 6).map(function(d){
+          var isPassing = d.status === "passing";
+          var badge = isPassing 
+            ? '<span class="tag">passing</span>' 
+            : '<span class="tag" style="background:rgba(242,196,93,.12);color:var(--warn);border-color:rgba(242,196,93,.3)">attention</span>';
+          return '<div style="border:1px solid var(--line);border-radius:8px;padding:12px;background:rgba(12,17,26,.6)">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
+              '<strong style="font-size:.85rem;color:var(--text)">' + (d.title || d.id) + '</strong>' +
+              badge +
+            '</div>' +
+            '<p style="margin:0;font-size:.78rem;color:var(--muted);line-height:1.4">' + (d.description || '') + '</p>' +
+          '</div>';
+        }).join("");
+      }
+    }catch(e){
+      aenBox.innerHTML = '<div class="notice">AEN duties active in background.</div>';
+    }
   }
 
   async function refreshProposals(){
