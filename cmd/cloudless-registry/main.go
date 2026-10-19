@@ -1124,6 +1124,7 @@ func (s *server) handleAPINodeRegister(w http.ResponseWriter, r *http.Request) {
 		Capabilities []string `json:"capabilities"`
 		CreatedAt    string   `json:"created_at"`
 		ChainID      string   `json:"chain_id"`
+		Cloud        string   `json:"cloud"`
 		// machine_commitment, not hardware_commitment: older fleet builds
 		// send a per-node hardware_commitment that doesn't identify the
 		// machine, and must not be stored as if it did.
@@ -1149,6 +1150,20 @@ func (s *server) handleAPINodeRegister(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "endpoint must start with http:// or https://", http.StatusBadRequest)
 		return
 	}
+	cloud := body.Cloud
+	if cloud == "" {
+		if strings.Contains(nodeID, "lovable") {
+			cloud = "lovable"
+		} else if strings.Contains(nodeID, "hosteons") {
+			cloud = "hosteons"
+		} else if strings.Contains(nodeID, "gitlab") {
+			cloud = "gitlab"
+		} else if strings.Contains(nodeID, "render") {
+			cloud = "render"
+		} else {
+			cloud = "operator"
+		}
+	}
 	now := time.Now().UnixMilli()
 	entry := peer{
 		Name:               nodeID,
@@ -1158,7 +1173,7 @@ func (s *server) handleAPINodeRegister(w http.ResponseWriter, r *http.Request) {
 		Status:             "registered",
 		PublicKey:          publicKey,
 		Capabilities:       normalizeCapabilities(body.Capabilities),
-		Cloud:              "operator",
+		Cloud:              truncate(cloud, 32),
 		Mode:               map[bool]string{true: "public_endpoint", false: "candidate"}[endpoint != ""],
 		InboundPorts:       map[bool]int{true: 1, false: 0}[endpoint != ""],
 		RegisteredAt:       now,
@@ -1313,6 +1328,9 @@ func (s *server) handleAPINodeHeartbeat(w http.ResponseWriter, r *http.Request) 
 		entry.URL = endpoint
 		entry.Mode = "public_endpoint"
 		entry.InboundPorts = 1
+	}
+	if strings.Contains(nodeID, "lovable") && (entry.Cloud == "" || entry.Cloud == "operator" || entry.Cloud == "cloudless") {
+		entry.Cloud = "lovable"
 	}
 	if len(body.Capabilities) > 0 {
 		entry.Capabilities = normalizeCapabilities(body.Capabilities)

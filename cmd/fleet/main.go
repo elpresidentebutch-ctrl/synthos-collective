@@ -90,6 +90,7 @@ var allTargetNodes = []string{
 	"syn-gitlab-cloud-2",
 	"synthos-render-validator-1-test",
 	"syn-6821379290e2",
+	"synthos-lovable-validator-1",
 }
 
 type chainSync struct {
@@ -341,6 +342,9 @@ func doHeartbeat(ctx context.Context, relayURL string, node *silentNode, private
 		"capabilities":        coreCapabilities,
 		"hardware_commitment": node.HardwareCommitment,
 	}
+	if strings.Contains(node.NodeID, "lovable") {
+		payload["endpoint"] = "https://www.ishamwilliamsblockchains.com"
+	}
 
 	if postJSON(ctx, relayURL+"/api/nodes/heartbeat", payload, node.NodeID, "heartbeat") {
 		node.LastRelayOK = []string{relayURL}
@@ -353,17 +357,31 @@ func doHeartbeat(ctx context.Context, relayURL string, node *silentNode, private
 }
 
 func register(ctx context.Context, relayURL string, node silentNode) bool {
+	endpoint := ""
+	cloud := "fleet"
+	if strings.Contains(node.NodeID, "lovable") {
+		endpoint = "https://www.ishamwilliamsblockchains.com"
+		cloud = "lovable"
+	} else if strings.Contains(node.NodeID, "hosteons") {
+		cloud = "hosteons"
+	} else if strings.Contains(node.NodeID, "gitlab") {
+		cloud = "gitlab"
+	} else if strings.Contains(node.NodeID, "render") {
+		cloud = "render"
+	}
+
 	payload := map[string]any{
 		"publicId":            node.NodeID,
 		"public_key":          node.PublicKey,
 		"mode":                "public-validator",
 		"role":                "validator_candidate",
 		"network":             "mainnet",
-		"endpoint":            "",
+		"endpoint":            endpoint,
 		"capabilities":        coreCapabilities,
 		"background":          true,
 		"hardware_commitment": node.HardwareCommitment,
 		"machine_commitment":  node.HardwareCommitment,
+		"cloud":               cloud,
 	}
 	if !postJSON(ctx, relayURL+"/api/nodes/register", payload, node.NodeID, "register") {
 		clearStalePeer(ctx, relayURL, node.NodeID)
