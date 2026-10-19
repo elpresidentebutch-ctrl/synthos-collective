@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const defaultRelayURL = "https://82-29-54-7.sslip.io"
+const defaultRelayURL = "https://82-29-54-7.sslip.io,http://127.0.0.1:8085"
 const heartbeatEvery = 15 * time.Second
 
 var coreCapabilities = []string{
@@ -333,6 +333,7 @@ func doHeartbeat(ctx context.Context, relayURL string, node *silentNode, private
 
 	payload := map[string]any{
 		"node_id":             node.NodeID,
+		"public_key":          node.PublicKey,
 		"height":              node.LastHeight,
 		"tip":                 node.LastTip,
 		"state_root":          node.LastStateRoot,
@@ -346,13 +347,22 @@ func doHeartbeat(ctx context.Context, relayURL string, node *silentNode, private
 		payload["endpoint"] = "https://www.ishamwilliamsblockchains.com"
 	}
 
-	if postJSON(ctx, relayURL+"/api/nodes/heartbeat", payload, node.NodeID, "heartbeat") {
-		node.LastRelayOK = []string{relayURL}
-		node.LastRelayFailed = nil
-	} else {
-		node.LastRelayOK = nil
-		node.LastRelayFailed = []string{relayURL}
+	relays := strings.Split(relayURL, ",")
+	var okRelays []string
+	var failedRelays []string
+	for _, r := range relays {
+		r = strings.TrimSpace(r)
+		if r == "" {
+			continue
+		}
+		if postJSON(ctx, r+"/api/nodes/heartbeat", payload, node.NodeID, "heartbeat") {
+			okRelays = append(okRelays, r)
+		} else {
+			failedRelays = append(failedRelays, r)
+		}
 	}
+	node.LastRelayOK = okRelays
+	node.LastRelayFailed = failedRelays
 	writeStatus(*node)
 }
 
@@ -383,11 +393,24 @@ func register(ctx context.Context, relayURL string, node silentNode) bool {
 		"machine_commitment":  node.HardwareCommitment,
 		"cloud":               cloud,
 	}
-	if !postJSON(ctx, relayURL+"/api/nodes/register", payload, node.NodeID, "register") {
-		clearStalePeer(ctx, relayURL, node.NodeID)
-		return postJSON(ctx, relayURL+"/api/nodes/register", payload, node.NodeID, "register-retry")
+
+	relays := strings.Split(relayURL, ",")
+	anyOK := false
+	for _, r := range relays {
+		r = strings.TrimSpace(r)
+		if r == "" {
+			continue
+		}
+		if postJSON(ctx, r+"/api/nodes/register", payload, node.NodeID, "register") {
+			anyOK = true
+		} else {
+			clearStalePeer(ctx, r, node.NodeID)
+			if postJSON(ctx, r+"/api/nodes/register", payload, node.NodeID, "register-retry") {
+				anyOK = true
+			}
+		}
 	}
-	return true
+	return anyOK
 }
 
 func pollMailbox(ctx context.Context, relayURL string, nodeID string) {

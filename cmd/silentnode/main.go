@@ -25,7 +25,7 @@ import (
 	"time"
 )
 
-const defaultRelayURLs = "https://82-29-54-7.sslip.io"
+const defaultRelayURLs = "https://82-29-54-7.sslip.io,http://127.0.0.1:8085"
 const defaultChainRPC = "https://82-29-54-7.sslip.io"
 const heartbeatEvery = 15 * time.Second
 

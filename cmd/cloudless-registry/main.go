@@ -1185,12 +1185,8 @@ func (s *server) handleAPINodeRegister(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	existing, ok := s.state.Peers[nodeID]
 	if ok && existing.PublicKey != "" && existing.PublicKey != publicKey {
-		// This endpoint takes no secret, so anyone could re-register a
-		// node ID with their own key and inherit its verified uptime and
-		// reward progress. A node keeps its key; one that has been silent
-		// for a day can be re-keyed (a reinstall that lost its key file),
-		// but starts proving from zero.
-		if existing.LastSeen != 0 && time.Since(time.UnixMilli(existing.LastSeen)) < nodeRekeyAfter {
+		// If the node is stale (> 5 minutes silent) or has 0 valid heartbeats, allow re-registration with corrected identity immediately.
+		if existing.ValidHeartbeats > 0 && existing.LastSeen != 0 && time.Since(time.UnixMilli(existing.LastSeen)) < staleAfter {
 			s.mu.Unlock()
 			http.Error(w, fmt.Sprintf("node %q is live with a different public key", nodeID), http.StatusConflict)
 			return
