@@ -290,3 +290,40 @@ func TestStore_ArchiveBlocks_DoesNotRewriteOldArchivedBlocks(t *testing.T) {
 		t.Fatalf("expected height 1's archive file to be untouched by a later Save (old: %v, new: %v)", before.ModTime(), after.ModTime())
 	}
 }
+
+func TestStore_EnforceStorageLimit_OneDriveArchive(t *testing.T) {
+	dir := t.TempDir()
+	archiveDir := t.TempDir()
+
+	st, err := New(dir)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	st.ArchiveDir = archiveDir
+	// Set artificial low limit to trigger archival (500 bytes)
+	st.MaxLocalBytes = 500
+
+	c := newTestChain(t)
+	c.SetHotWindow(3, st) // Keep only 3 blocks hot in memory
+	for i := 0; i < 10; i++ {
+		finalizeEmptyBlock(t, c)
+		if err := st.Save(c); err != nil {
+			t.Fatalf("Save at step %d: %v", i, err)
+		}
+	}
+
+	// Height 1 is well behind hotWindowStart (height 8) and should be in archiveDir
+	archiveBlockPath := filepath.Join(archiveDir, "1.json")
+	if _, err := os.Stat(archiveBlockPath); err != nil {
+		t.Fatalf("expected block 1 to be archived in OneDrive archiveDir: %v", err)
+	}
+
+	// ColdBlockAt should still read block 1 seamlessly from archiveDir
+	blk, ok := st.ColdBlockAt(1)
+	if !ok || blk == nil {
+		t.Fatalf("expected ColdBlockAt to read block 1 from archiveDir")
+	}
+	if blk.Header.Height != 1 {
+		t.Fatalf("expected block 1, got %d", blk.Header.Height)
+	}
+}

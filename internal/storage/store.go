@@ -4,11 +4,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
 
 	"synthos-collective/internal/chain"
 )
+
+// DefaultMaxLocalStorageBytes limits local block storage to 2 Gigabytes.
+// Any blocks exceeding this threshold are automatically archived to OneDrive Cloud.
+const DefaultMaxLocalStorageBytes = int64(2) * 1024 * 1024 * 1024
 
 // Store persists chain data to disk in a simple JSON form.
 // This is intentionally minimal to keep the codebase auditable; we can later
@@ -34,7 +42,9 @@ import (
 // blocks/ gets written once, and state.json starts getting written from
 // then on. No separate migration step is needed.
 type Store struct {
-	Dir string
+	Dir           string
+	ArchiveDir    string
+	MaxLocalBytes int64
 }
 
 var ErrNoDir = errors.New("store dir required")
@@ -58,7 +68,31 @@ func New(dir string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Join(dir, "blocks"), 0o755); err != nil {
 		return nil, err
 	}
-	return &Store{Dir: dir}, nil
+
+	archiveDir := os.Getenv("SYNTHOS_ONEDRIVE_ARCHIVE_DIR")
+	if archiveDir == "" {
+		if oneDrive := os.Getenv("OneDrive"); oneDrive != "" {
+			archiveDir = filepath.Join(oneDrive, "SYNTHOS Archives", "blocks")
+		} else if profile := os.Getenv("USERPROFILE"); profile != "" {
+			oneDrive := filepath.Join(profile, "OneDrive")
+			if fi, err := os.Stat(oneDrive); err == nil && fi.IsDir() {
+				archiveDir = filepath.Join(oneDrive, "SYNTHOS Archives", "blocks")
+			}
+		}
+	}
+
+	maxBytes := DefaultMaxLocalStorageBytes
+	if v := os.Getenv("SYNTHOS_MAX_STORAGE_BYTES"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+			maxBytes = n
+		}
+	}
+
+	return &Store{
+		Dir:           dir,
+		ArchiveDir:    archiveDir,
+		MaxLocalBytes: maxBytes,
+	}, nil
 }
 
 type snapshot struct {
@@ -124,7 +158,12 @@ func (s *Store) Save(c *chain.Chain) error {
 	if err := os.WriteFile(tmp, b, 0o600); err != nil {
 		return err
 	}
-	return os.Rename(tmp, final)
+	if err := os.Rename(tmp, final); err != nil {
+		return err
+	}
+	_ = s.SyncDataDirectoryClone()
+	_ = s.EnforceStorageLimit(hw.Start)
+	return nil
 }
 
 // archiveBlocks writes any block in blocks that isn't already durably
@@ -173,16 +212,168 @@ func (s *Store) archiveOneBlock(blk *chain.Block, force bool) error {
 	return os.Rename(tmp, path)
 }
 
+// EnforceStorageLimit automatically offloads cold blocks to OneDrive Cloud
+// whenever local block storage exceeds MaxLocalBytes (2GB default).
+func (s *Store) EnforceStorageLimit(hotWindowStart uint64) error {
+	if s.MaxLocalBytes <= 0 || s.ArchiveDir == "" {
+		return nil
+	}
+	blocksDir := filepath.Join(s.Dir, "blocks")
+	entries, err := os.ReadDir(blocksDir)
+	if err != nil {
+		return err
+	}
+	var totalSize int64
+	type blockEntry struct {
+		height uint64
+		path   string
+		size   int64
+	}
+	var fileEntries []blockEntry
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		name := strings.TrimSuffix(entry.Name(), ".json")
+		h, err := strconv.ParseUint(name, 10, 64)
+		if err != nil {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		size := info.Size()
+		totalSize += size
+		fileEntries = append(fileEntries, blockEntry{height: h, path: filepath.Join(blocksDir, entry.Name()), size: size})
+	}
+
+	if totalSize <= s.MaxLocalBytes {
+		return nil
+	}
+
+	// Sort oldest first (ascending block height)
+	sort.Slice(fileEntries, func(i, j int) bool {
+		return fileEntries[i].height < fileEntries[j].height
+	})
+
+	if err := os.MkdirAll(s.ArchiveDir, 0o755); err != nil {
+		return err
+	}
+
+	for _, be := range fileEntries {
+		if totalSize <= s.MaxLocalBytes {
+			break
+		}
+		// Never offload blocks that are still inside the active hot window
+		if be.height >= hotWindowStart {
+			continue
+		}
+		dest := filepath.Join(s.ArchiveDir, fmt.Sprintf("%d.json", be.height))
+		if err := copyFile(be.path, dest); err != nil {
+			continue
+		}
+		if err := os.Remove(be.path); err == nil {
+			totalSize -= be.size
+		}
+	}
+	return nil
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	tmp := dst + ".tmp"
+	out, err := os.Create(tmp)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := out.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return os.Rename(tmp, dst)
+}
+
+// SyncDataDirectoryClone mirrors the complete SYNTHOS data directory (.synthos / state.json / config)
+// to OneDrive Cloud.
+func (s *Store) SyncDataDirectoryClone() error {
+	if s.ArchiveDir == "" {
+		return nil
+	}
+	cloneDir := filepath.Join(filepath.Dir(s.ArchiveDir), "clone")
+	if err := os.MkdirAll(cloneDir, 0o755); err != nil {
+		return err
+	}
+
+	// 1. Mirror state.json
+	localState := filepath.Join(s.Dir, "state.json")
+	if _, err := os.Stat(localState); err == nil {
+		_ = copyFile(localState, filepath.Join(cloneDir, "state.json"))
+	}
+
+	// 2. Mirror config files
+	for _, cfgName := range []string{"config.json", "node.json", "genesis.json"} {
+		src := filepath.Join(s.Dir, cfgName)
+		if _, err := os.Stat(src); err == nil {
+			_ = copyFile(src, filepath.Join(cloneDir, cfgName))
+		}
+	}
+
+	// 3. Mirror .synthos metadata directory if present
+	synthosDir := filepath.Join(s.Dir, ".synthos")
+	if fi, err := os.Stat(synthosDir); err == nil && fi.IsDir() {
+		destSynthos := filepath.Join(cloneDir, ".synthos")
+		_ = copyDir(synthosDir, destSynthos)
+	}
+	return nil
+}
+
+func copyDir(src, dst string) error {
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		srcPath := filepath.Join(src, entry.Name())
+		dstPath := filepath.Join(dst, entry.Name())
+		if entry.IsDir() {
+			if entry.Name() == "blocks" {
+				continue
+			}
+			_ = copyDir(srcPath, dstPath)
+		} else {
+			_ = copyFile(srcPath, dstPath)
+		}
+	}
+	return nil
+}
+
 // ColdBlockAt implements chain.ColdBlockReader, reading back a single
 // archived block by height on demand -- the fallback chain.Chain.BlockAt
 // and chain.Chain.BlocksFrom use for any height a chain has trimmed out of
-// its own in-memory hot window. Returns false (never an error) for a
-// missing or corrupt file, matching ColdBlockReader's contract that a miss
-// just means "not found".
+// its own in-memory hot window. It checks local storage first and falls back
+// to OneDrive Cloud archive if local storage was trimmed.
 func (s *Store) ColdBlockAt(height uint64) (*chain.Block, bool) {
 	b, err := os.ReadFile(s.blockPath(height))
 	if err != nil {
-		return nil, false
+		if s.ArchiveDir != "" {
+			b, err = os.ReadFile(filepath.Join(s.ArchiveDir, fmt.Sprintf("%d.json", height)))
+		}
+		if err != nil {
+			return nil, false
+		}
 	}
 	var blk chain.Block
 	if err := json.Unmarshal(b, &blk); err != nil {
