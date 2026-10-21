@@ -11,8 +11,9 @@ if (!(Test-Path $exe)) {
 }
 
 if (!$env:SYNTHOS_RELAY_URLS -and !$env:SYNTHOS_REGISTRY_URL) {
-  $env:SYNTHOS_RELAY_URLS = "http://127.0.0.1:8090"
+  $env:SYNTHOS_RELAY_URLS = "https://82-29-54-7.sslip.io"
 }
+
 
 Write-Host "Starting SYNTHOS silent node. No ports will be opened."
 Write-Host "Relay set: $($env:SYNTHOS_RELAY_URLS)"

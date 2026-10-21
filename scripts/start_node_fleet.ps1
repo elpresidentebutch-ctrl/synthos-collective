@@ -1,6 +1,7 @@
 param(
-  [string]$RelayUrl = "https://synthos-www.onrender.com"
+  [string]$RelayUrl = "https://82-29-54-7.sslip.io"
 )
+
 
 $ErrorActionPreference = "Stop"
 

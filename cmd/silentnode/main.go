@@ -85,7 +85,12 @@ func main() {
 	flag.BoolVar(&cliForeground, "foreground", false, "run directly in the current foreground process")
 	flag.Parse()
 
+	if cliNodeID == "" {
+		cliNodeID = os.Getenv("SYNTHOS_NODE_ID")
+	}
+
 	key, privateKey, created, err := loadOrCreateNodeKey()
+
 	if err != nil {
 		log.Fatalf("node key error: %v", err)
 	}
@@ -279,8 +284,12 @@ func loadOrCreateNodeKey() (nodeKey, ed25519.PrivateKey, bool, error) {
 		if key.NodeID == "" || key.PublicKey == "" {
 			return nodeKey{}, nil, false, fmt.Errorf("stored key is missing node_id or public_key")
 		}
+		if cliNodeID != "" {
+			key.NodeID = cliNodeID
+		}
 		return key, privateKey, false, nil
 	}
+
 
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -389,7 +398,8 @@ func heartbeatAll(ctx context.Context, relayURLs []string, node *silentNode, pri
 	node.LastNonce = fmt.Sprintf("%019d-%08d", time.Now().UnixMilli(), node.HeartbeatCount)
 
 	for _, relayURL := range relayURLs {
-		if register(ctx, relayURL, *node) && heartbeat(ctx, relayURL, node, privateKey) {
+		register(ctx, relayURL, *node)
+		if heartbeat(ctx, relayURL, node, privateKey) {
 			node.LastRelayOK = append(node.LastRelayOK, relayURL)
 		} else {
 			node.LastRelayFailed = append(node.LastRelayFailed, relayURL)
@@ -397,6 +407,7 @@ func heartbeatAll(ctx context.Context, relayURLs []string, node *silentNode, pri
 	}
 	writeStatus(*node)
 }
+
 
 func register(ctx context.Context, relayURL string, node silentNode) bool {
 	payload := map[string]any{
@@ -447,6 +458,10 @@ func postJSON(ctx context.Context, endpoint string, payload map[string]any, node
 		return false
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusConflict && label == "register" {
+		log.Printf("%s node %s already registered via %s", label, nodeID, endpoint)
+		return true
+	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		log.Printf("%s rejected for %s on %s: %s", label, nodeID, endpoint, resp.Status)
 		return false
@@ -454,6 +469,7 @@ func postJSON(ctx context.Context, endpoint string, payload map[string]any, node
 	log.Printf("%s accepted for %s via %s", label, nodeID, endpoint)
 	return true
 }
+
 
 func canonicalHeartbeatMessage(nodeID string, height int64, tip string, stateRoot string, timestamp string, nonce string) string {
 	return fmt.Sprintf(

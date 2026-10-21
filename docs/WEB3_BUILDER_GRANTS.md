@@ -15,10 +15,11 @@
 - **Project Name:** SYNTHOS Collective
 - **One-Line Pitch:** An agent-native, cloudless Layer 1 blockchain and decentralized mesh network with autonomous self-healing immune nodes and multi-chain settlement.
 - **Short Description (50 words):**  
-  SYNTHOS Collective is an open-source, agent-native blockchain engineered in pure Go. It introduces an Adaptive Execution Network (AEN) where autonomous validator agents perform consensus, self-healing immune defense, and cross-chain settlement with Base and Ethereum, operating seamlessly on distributed consumer and server hardware without cloud vendor lock-in.
+  SYNTHOS Collective is an open-source, agent-native blockchain engineered in pure Go. It introduces an Adaptive Execution Network (AEN) where autonomous validator agents perform consensus, self-healing immune defense, and planned Layer 2 settlement with Base, operating seamlessly on distributed consumer and server hardware without cloud vendor lock-in.
 - **Long Description (150 words):**  
-  Traditional blockchain networks suffer from cloud centralization, where over 65% of validator nodes run on AWS or Hetzner, creating single points of systemic failure. SYNTHOS Collective solves this by pioneering a "cloudless" peer-to-peer architecture. Built with zero external dependencies in Go, SYNTHOS enables background daemon nodes (`silentnode`) to securely verify hardware commitments, participate in ed25519-signed consensus, and coordinate through specialized agent roles (Immune Nodes, Economists, Governors, and Enforcers). By integrating native multi-chain payment and verification rails across Base and Ethereum, SYNTHOS creates an autonomous, self-defending mesh economy capable of continuous operation even under hostile partition attacks.
+  Traditional blockchain networks suffer from cloud centralization, where over 65% of validator nodes run on AWS or Hetzner, creating single points of systemic failure. SYNTHOS Collective solves this by pioneering a "cloudless" peer-to-peer architecture. Built with zero external dependencies in Go, SYNTHOS enables background daemon nodes (`silentnode`) to securely verify hardware commitments, participate in ed25519-signed consensus, and coordinate through specialized agent roles (Immune Nodes, Economists, Governors, and Enforcers). By architecting native settlement and validator staking rails into Base, SYNTHOS creates an autonomous, self-defending mesh economy capable of continuous operation even under hostile partition attacks.
 - **Category Tags:** `Infrastructure`, `DePIN`, `AI Agents`, `Peer-to-Peer`, `Cross-Chain`, `Layer 1`, `Public Goods`
+
 
 ---
 
@@ -39,21 +40,24 @@
 ### A. Base Builder Grants Application
 
 **1. What are you building?**
-> We are building SYNTHOS Collective, an agent-native blockchain and cloudless P2P mesh network that integrates Base as its primary Layer 2 settlement and liquidity rail. Our nodes execute decentralized consensus and autonomous AEN (Adaptive Execution Network) agent routines while settling treasury, staking, and asset transfers directly on Base via native Base USDC integration.
+> We are building SYNTHOS Collective, an open-source, agent-native Layer 1 blockchain and consumer DePIN network written in pure Go. We are applying to Base Builder Grants to build our Layer 2 settlement and validator bonding rail directly on Base, allowing residential node operators to bond stakes via Base USDC and anchoring SYNTHOS state roots to Base L2 security.
 
 **2. How does your project contribute to the Base ecosystem?**
-> SYNTHOS bridges high-frequency distributed agent consensus and consumer hardware DePIN networks directly into Base. We utilize Base Mainnet RPC and Base USDC contract (`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`) for validator bonding, onboarding, and multi-chain liquidity. Every node operator joining our decentralized fleet interacts with Base, driving sustained contract interactions, volume, and verified wallet activity to the Base network.
+> By establishing Base as our primary settlement and staking layer, every consumer node joining our decentralized network will interact directly with Base smart contracts for validator bonding and reward distribution. This brings real DePIN hardware participation, sustained contract interactions, and USDC transaction volume directly to Base.
 
 **3. What is the current traction & live proof of work?**
-> - **Codebase:** Fully open source under Apache 2.0 across GitHub and GitLab with 8 cross-platform binaries published.
-> - **Live Fleet:** 27 live validator, immune, and AEN agent nodes reporting active cryptographic heartbeats 24/7 on our live network.
-> - **Gateways:** Production RPC and Explorer live at `https://82-29-54-7.sslip.io` and `https://www.ishamwilliamsblockchains.com`.
-> - **Base Integration:** On-chain Base USDC payment verification engine operational in our backend registry.
+> - **Codebase:** Fully open source under Apache 2.0 across GitHub and GitLab with zero external CGO dependencies in pure Go.
+> - **Live Block Execution:** Primary seed validator actively running and producing canonical blocks exceeding Height 74,300+ on public infrastructure (`82.29.54.7:8080`).
+> - **Remote Residential Client:** `silentnode` consumer daemon running outbound-only on Windows PC with zero open inbound ports, actively transmitting verified Ed25519-signed heartbeats (6,000+ verified) to the network.
+> - **Bounded 2GB Interval Storage:** Local storage engine strictly bounds disk consumption to 2GB intervals, offloading cold blocks automatically to cloud/external drives (e.g. Microsoft OneDrive) to ensure consumer hardware never runs out of space.
+> - **Public Gateways:** Seed JSON-RPC interface and explorer live at `https://82-29-54-7.sslip.io` and public portal at `https://www.ishamwilliamsblockchains.com`.
 
 **4. How will grant funds be used?**
-> 1. Complete an automated smart contract bridge between Base and the SYNTHOS L1 state root ($5,000).
-> 2. Subsidize hardware onboarding gas for the first 500 consumer Base validator nodes ($5,000).
-> 3. Security audit of the EVM bridge and Base payment intake contracts ($10,000).
+> 1. Implement libp2p GossipSub and Discv5 peer discovery to replace HTTPS seed polling with true P2P gossip and NAT traversal ($10,000).
+> 2. Onboard and incentivize 50 external independent community validator operators on consumer hardware ($7,000).
+> 3. Deploy and audit the first EVM validator bonding and cryptographic state root verification smart contracts on Base ($8,000).
+
+
 
 ---
 
