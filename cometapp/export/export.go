@@ -12,6 +12,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
+	"strings"
+
 
 	abcitypes "github.com/cometbft/cometbft/abci/types"
 
@@ -89,26 +92,38 @@ func newestBlock(dir string) (*chain.Block, bool) {
 	if err != nil {
 		return nil, false
 	}
-	var best *chain.Block
+	var maxH uint64
+	var bestName string
+	var found bool
 	for _, e := range entries {
 		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
 			continue
 		}
-		raw, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		name := strings.TrimSuffix(e.Name(), ".json")
+		h, err := strconv.ParseUint(name, 10, 64)
 		if err != nil {
 			continue
 		}
-		var b chain.Block
-		if json.Unmarshal(raw, &b) != nil {
-			continue
-		}
-		if best == nil || b.Header.Height > best.Header.Height {
-			bb := b
-			best = &bb
+		if !found || h > maxH {
+			maxH = h
+			bestName = e.Name()
+			found = true
 		}
 	}
-	return best, best != nil
+	if !found {
+		return nil, false
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, bestName))
+	if err != nil {
+		return nil, false
+	}
+	var b chain.Block
+	if err := json.Unmarshal(raw, &b); err != nil {
+		return nil, false
+	}
+	return &b, true
 }
+
 
 // Totals summarizes where every SYN in a state is.
 type Totals struct {
