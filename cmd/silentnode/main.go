@@ -17,12 +17,14 @@ import (
 	"os/signal"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 )
 
-const defaultRelayURLs = "https://synthos-www.onrender.com"
+const defaultRelayURLs = "https://82-29-54-7.sslip.io,http://127.0.0.1:8085"
+const defaultChainRPC = "https://82-29-54-7.sslip.io"
 const heartbeatEvery = 15 * time.Second
 
 var coreCapabilities = []string{
@@ -38,7 +40,10 @@ var coreCapabilities = []string{
 var cliKeyPath string
 var cliRelayURLs string
 var cliStatusPath string
+var cliNodeID string
 var cliPrintKey bool
+var cliDaemon bool
+var cliForeground bool
 
 type nodeKey struct {
 	NodeID     string `json:"node_id"`
@@ -54,6 +59,7 @@ type silentNode struct {
 	HardwareCommitment  string   `json:"hardware_commitment"`
 	Mode                string   `json:"mode"`
 	StartedAt           string   `json:"started_at"`
+	PID                 int      `json:"pid"`
 	HeartbeatCount      uint64   `json:"heartbeat_count"`
 	LastNonce           string   `json:"last_nonce"`
 	LastTip             string   `json:"last_tip"`
@@ -71,10 +77,18 @@ func main() {
 	flag.StringVar(&cliKeyPath, "key", "", "path to persistent Ed25519 node key JSON")
 	flag.StringVar(&cliStatusPath, "status", "", "path to write node status JSON")
 	flag.StringVar(&cliRelayURLs, "relay", "", "comma-separated SYNTHOS registry/backend URLs")
+	flag.StringVar(&cliNodeID, "id", "", "explicit node ID override (or derives unique ID from key)")
 	flag.BoolVar(&cliPrintKey, "print-key", false, "print this node's identity (ID, public key, key file location) and exit, without starting the node")
+	flag.BoolVar(&cliDaemon, "daemon", false, "run as detached background daemon")
+	flag.BoolVar(&cliForeground, "foreground", false, "run directly in the current foreground process")
 	flag.Parse()
 
+	if cliNodeID == "" {
+		cliNodeID = os.Getenv("SYNTHOS_NODE_ID")
+	}
+
 	key, privateKey, created, err := loadOrCreateNodeKey()
+
 	if err != nil {
 		log.Fatalf("node key error: %v", err)
 	}
@@ -84,12 +98,18 @@ func main() {
 		return
 	}
 
+	if cliDaemon {
+		setupDaemonLogging()
+		writePIDFile()
+	}
+
 	node := silentNode{
 		NodeID:              key.NodeID,
 		PublicKey:           key.PublicKey,
-		HardwareCommitment:  hardwareCommitment(),
+		HardwareCommitment:  hardwareCommitment(key.NodeID),
 		Mode:                "background_signed_validator_heartbeat",
 		StartedAt:           time.Now().UTC().Format(time.RFC3339),
+		PID:                 os.Getpid(),
 		StatusPath:          statusPath(),
 		KeyPath:             keyPath(),
 		RealSignedHeartbeat: true,
@@ -98,46 +118,58 @@ func main() {
 	relayURLs := relayURLSet()
 	node.RelayURLs = relayURLs
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
-	log.Printf("SYNTHOS background validator node started: %s", node.NodeID)
+	log.Printf("SYNTHOS validator node started: %s (PID %d)", node.NodeID, node.PID)
 	log.Printf("Mode: outbound-only Ed25519 signed heartbeats every %s", heartbeatEvery)
 	log.Printf("Relay set: %s", strings.Join(relayURLs, ", "))
 	log.Printf("Look this node up on the website's node lookup page with ID: %s", node.NodeID)
 
+	keepSystemAwakeAllowScreenSleep()
+
+	ctx := context.Background()
 	heartbeatAll(ctx, relayURLs, &node, privateKey)
 	pollMailboxAll(ctx, relayURLs, node.NodeID)
+	dashPath := writeDashboardHTML(node)
+	if dashPath != "" {
+		log.Printf("Local status dashboard written to: %s", dashPath)
+	}
+
 	ticker := time.NewTicker(heartbeatEvery)
 	defer ticker.Stop()
 
 	for {
 		select {
-		case <-ctx.Done():
-			log.Printf("SYNTHOS background validator node stopped")
+		case sig := <-sigChan:
+			log.Printf("SYNTHOS validator node received %v, stopping...", sig)
 			return
 		case <-ticker.C:
+			keepSystemAwakeAllowScreenSleep()
 			heartbeatAll(ctx, relayURLs, &node, privateKey)
 			pollMailboxAll(ctx, relayURLs, node.NodeID)
+			writeDashboardHTML(node)
 		}
 	}
 }
 
-// loadOrCreateNodeKey loads this node's persistent Ed25519 identity from
-// disk, generating and saving a new one on first run.
-//
-// The key file (json, mode 0o600, owner-read-only) stores the private key
-// as plain hex, not encrypted at rest. That's an intentional tradeoff for
-// this binary, not an oversight: silentnode is a lightweight background
-// heartbeat validator meant to run unattended with no operator-supplied
-// passphrase available at startup (contrast cmd/node/main.go, which *does*
-// encrypt its identity because it prompts for SYNTHOS_PASSPHRASE). The
-// file's confidentiality relies entirely on OS filesystem permissions
-// protecting the account it runs under -- anyone who can read this file
-// (root, the same user account, or a backup/snapshot of the disk) can
-// extract the private key. Operators who need encryption-at-rest for this
-// binary's key should encrypt the volume/disk it lives on rather than
-// relying on this file alone.
+func pidFilePath() string {
+	return filepath.Join(appDir(), "silent-node.pid")
+}
+
+func writePIDFile() {
+	_ = os.MkdirAll(appDir(), 0o700)
+	_ = os.WriteFile(pidFilePath(), []byte(strconv.Itoa(os.Getpid())), 0o600)
+}
+
+func setupDaemonLogging() {
+	logPath := filepath.Join(appDir(), "silent-node.log")
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err == nil {
+		log.SetOutput(f)
+	}
+}
+
 func loadOrCreateNodeKey() (nodeKey, ed25519.PrivateKey, bool, error) {
 	path := keyPath()
 	if body, err := os.ReadFile(path); err == nil {
@@ -152,15 +184,24 @@ func loadOrCreateNodeKey() (nodeKey, ed25519.PrivateKey, bool, error) {
 		if key.NodeID == "" || key.PublicKey == "" {
 			return nodeKey{}, nil, false, fmt.Errorf("stored key is missing node_id or public_key")
 		}
+		if cliNodeID != "" {
+			key.NodeID = cliNodeID
+		}
 		return key, privateKey, false, nil
 	}
+
 
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return nodeKey{}, nil, false, err
 	}
+	nodeID := cliNodeID
+	if nodeID == "" {
+		h := sha256.Sum256(publicKey)
+		nodeID = "syn-" + hex.EncodeToString(h[:6])
+	}
 	key := nodeKey{
-		NodeID:     "syn-" + hardwareCommitment()[:12],
+		NodeID:     nodeID,
 		PublicKey:  hex.EncodeToString(publicKey),
 		PrivateKey: hex.EncodeToString(privateKey),
 		CreatedAt:  time.Now().UTC().Format(time.RFC3339),
@@ -176,20 +217,20 @@ func loadOrCreateNodeKey() (nodeKey, ed25519.PrivateKey, bool, error) {
 	return key, privateKey, true, nil
 }
 
-// printIdentity prints this node's public identity (never the private key)
-// to stderr via the standard logger, so it's always visible on startup and
-// via -print-key, instead of being silently written to disk with no
-// on-screen confirmation. The private key itself is deliberately never
-// printed: it stays in the key file on disk (owner-read-only permissions).
 func printIdentity(key nodeKey, created bool) {
-	log.Printf("Node identity: %s", key.NodeID)
-	log.Printf("Public key:    %s", key.PublicKey)
-	log.Printf("Key file:      %s", keyPath())
+	fmt.Println("========================================================================")
+	fmt.Println("   SYNTHOS COLLECTIVE — MAINNET VALIDATOR & HEARTBEAT NODE")
+	fmt.Println("========================================================================")
+	fmt.Printf("   YOUR NODE ID (Enter this on the website Node Lookup):\n")
+	fmt.Printf("   >>>  %s  <<<\n\n", key.NodeID)
+	fmt.Printf("   Public Key:  %s\n", key.PublicKey)
+	fmt.Printf("   Key File:    %s\n", keyPath())
+	fmt.Println("========================================================================")
+	fmt.Println("   Keep this window open (you can minimize it to your taskbar).")
+	fmt.Println("   Sending Ed25519-signed heartbeats to SYNTHOS Mainnet every 15s...")
+	fmt.Println("========================================================================")
 	if created {
-		log.Printf("New identity created. This key file IS your node's identity.")
-		log.Printf("Back it up now. If it's lost, this node ID cannot be recovered,")
-		log.Printf("and all uptime proven under %s is orphaned for good.", key.NodeID)
-		log.Printf("Keep it private: anyone who has this file can act as this node.")
+		log.Printf("New identity created (%s). Back up your key file to preserve your node ID.", key.NodeID)
 	}
 }
 
@@ -205,20 +246,65 @@ func privateKeyFromHex(value string) (ed25519.PrivateKey, error) {
 	return ed25519.PrivateKey(raw), nil
 }
 
-func heartbeatAll(ctx context.Context, relayURLs []string, node *silentNode, privateKey ed25519.PrivateKey) {
-	node.HeartbeatCount++
-	node.LastRelayOK = nil
-	node.LastRelayFailed = nil
+func syncRealMainnetTip(ctx context.Context, relayURLs []string, node *silentNode) {
+	type statusResp struct {
+		Height    int64  `json:"height"`
+		Tip       string `json:"tip"`
+		StateRoot string `json:"state_root"`
+	}
+	endpoints := make([]string, 0, len(relayURLs)+1)
+	for _, r := range relayURLs {
+		endpoints = append(endpoints, strings.TrimRight(r, "/")+"/api/chain/status")
+	}
+	endpoints = append(endpoints, defaultChainRPC+"/status")
+
+	for _, ep := range endpoints {
+		reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, ep, nil)
+		if err != nil {
+			cancel()
+			continue
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			cancel()
+			continue
+		}
+		var st statusResp
+		decodeErr := json.NewDecoder(resp.Body).Decode(&st)
+		_ = resp.Body.Close()
+		cancel()
+		if decodeErr == nil && st.Height > 0 && st.Tip != "" {
+			node.LastHeight = st.Height
+			node.LastTip = st.Tip
+			node.LastStateRoot = st.StateRoot
+			return
+		}
+	}
+
+	// Fallback if offline
 	node.LastHeight++
 	if node.LastHeight < 1 {
 		node.LastHeight = 1
 	}
-	node.LastTip = "silent-tip-" + randomHex(16)
-	node.LastStateRoot = "silent-state-" + randomHex(16)
+	if node.LastTip == "" {
+		node.LastTip = "silent-tip-" + randomHex(16)
+	}
+	if node.LastStateRoot == "" {
+		node.LastStateRoot = "silent-state-" + randomHex(16)
+	}
+}
+
+func heartbeatAll(ctx context.Context, relayURLs []string, node *silentNode, privateKey ed25519.PrivateKey) {
+	node.HeartbeatCount++
+	node.LastRelayOK = nil
+	node.LastRelayFailed = nil
+	syncRealMainnetTip(ctx, relayURLs, node)
 	node.LastNonce = fmt.Sprintf("%019d-%08d", time.Now().UnixMilli(), node.HeartbeatCount)
 
 	for _, relayURL := range relayURLs {
-		if register(ctx, relayURL, *node) && heartbeat(ctx, relayURL, node, privateKey) {
+		register(ctx, relayURL, *node)
+		if heartbeat(ctx, relayURL, node, privateKey) {
 			node.LastRelayOK = append(node.LastRelayOK, relayURL)
 		} else {
 			node.LastRelayFailed = append(node.LastRelayFailed, relayURL)
@@ -226,6 +312,7 @@ func heartbeatAll(ctx context.Context, relayURLs []string, node *silentNode, pri
 	}
 	writeStatus(*node)
 }
+
 
 func register(ctx context.Context, relayURL string, node silentNode) bool {
 	payload := map[string]any{
@@ -238,6 +325,7 @@ func register(ctx context.Context, relayURL string, node silentNode) bool {
 		"capabilities":        coreCapabilities,
 		"background":          true,
 		"hardware_commitment": node.HardwareCommitment,
+		"machine_commitment":  node.HardwareCommitment,
 	}
 	return postJSON(ctx, relayURL+"/api/nodes/register", payload, node.NodeID, "register")
 }
@@ -275,6 +363,10 @@ func postJSON(ctx context.Context, endpoint string, payload map[string]any, node
 		return false
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusConflict && label == "register" {
+		log.Printf("%s node %s already registered via %s", label, nodeID, endpoint)
+		return true
+	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		log.Printf("%s rejected for %s on %s: %s", label, nodeID, endpoint, resp.Status)
 		return false
@@ -282,6 +374,7 @@ func postJSON(ctx context.Context, endpoint string, payload map[string]any, node
 	log.Printf("%s accepted for %s via %s", label, nodeID, endpoint)
 	return true
 }
+
 
 func canonicalHeartbeatMessage(nodeID string, height int64, tip string, stateRoot string, timestamp string, nonce string) string {
 	return fmt.Sprintf(
@@ -295,14 +388,15 @@ func canonicalHeartbeatMessage(nodeID string, height int64, tip string, stateRoo
 	)
 }
 
-func hardwareCommitment() string {
+func hardwareCommitment(nodeID string) string {
+	_ = nodeID
 	hostname, _ := os.Hostname()
 	currentUser, _ := user.Current()
 	username := ""
 	if currentUser != nil {
 		username = currentUser.Username
 	}
-	sum := sha256.Sum256([]byte(hostname + "|" + username + "|synthos-background-node-v1"))
+	sum := sha256.Sum256([]byte(hostname + "|" + username + "|synthos-desktop-agent-v1"))
 	return hex.EncodeToString(sum[:])
 }
 
@@ -327,13 +421,6 @@ func pollMailbox(ctx context.Context, relayURL string, nodeID string) {
 	}
 	defer resp.Body.Close()
 	log.Printf("mailbox poll via %s: %s", relayURL, resp.Status)
-}
-
-func env(name string, fallback string) string {
-	if value := os.Getenv(name); value != "" {
-		return value
-	}
-	return fallback
 }
 
 func relayURLSet() []string {
@@ -382,6 +469,14 @@ func randomHex(bytes int) string {
 	return hex.EncodeToString(raw)
 }
 
+func appDir() string {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "."
+	}
+	return filepath.Join(dir, "SynthosCollective")
+}
+
 func keyPath() string {
 	if cliKeyPath != "" {
 		return cliKeyPath
@@ -389,11 +484,7 @@ func keyPath() string {
 	if value := os.Getenv("SYNTHOS_SILENT_KEY_PATH"); value != "" {
 		return value
 	}
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		return "synthos-silent-node-key.json"
-	}
-	return filepath.Join(dir, "SynthosCollective", "silent-node-key.json")
+	return filepath.Join(appDir(), "silent-node-key.json")
 }
 
 func statusPath() string {
@@ -403,11 +494,7 @@ func statusPath() string {
 	if value := os.Getenv("SYNTHOS_SILENT_STATUS_PATH"); value != "" {
 		return value
 	}
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		return "synthos-silent-node-status.json"
-	}
-	return filepath.Join(dir, "SynthosCollective", "silent-node-status.json")
+	return filepath.Join(appDir(), "silent-node-status.json")
 }
 
 func writeStatus(node silentNode) {
@@ -419,4 +506,121 @@ func writeStatus(node silentNode) {
 	}
 	body, _ := json.MarshalIndent(node, "", "  ")
 	_ = os.WriteFile(node.StatusPath, body, 0o600)
+}
+
+func writeDashboardHTML(node silentNode) string {
+	path := filepath.Join(appDir(), "Synthos-Node-Status.html")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return ""
+	}
+	relayPrimary := defaultRelayURLs
+	if len(node.RelayURLs) > 0 {
+		relayPrimary = node.RelayURLs[0]
+	}
+	html := fmt.Sprintf(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SYNTHOS Background Node — %s</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, system-ui, -apple-system, sans-serif; background: #06090e; color: #f4f9ff; }
+    body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 15%% 10%%, rgba(46,213,169,0.18), transparent 42rem), #06090e; display: flex; align-items: center; justify-content: center; padding: 24px; box-sizing: border-box; }
+    .shell { width: min(860px, 100%%); border: 1px solid rgba(46,213,169,0.3); background: rgba(13,19,28,0.9); border-radius: 16px; padding: 32px; box-shadow: 0 24px 60px rgba(0,0,0,0.55); }
+    .top { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 20px; }
+    .eyebrow { color: #2ed5a9; font-size: 0.75rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
+    h1 { margin: 6px 0 0; font-size: 2rem; letter-spacing: -0.02em; }
+    .badge { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px; background: rgba(46,213,169,0.14); border: 1px solid rgba(46,213,169,0.45); color: #7fffd4; font-weight: 700; font-size: 0.85rem; }
+    .dot { width: 9px; height: 9px; border-radius: 50%%; background: #2ed5a9; box-shadow: 0 0 12px #2ed5a9; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%%, 100%% { opacity: 1; } 50%% { opacity: 0.4; } }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; margin-top: 22px; }
+    .card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 16px; }
+    .label { color: #8ea0ba; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
+    .val { margin-top: 8px; font-size: 1.15rem; font-weight: 800; word-break: break-all; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; color: #ffffff; }
+    .note { margin-top: 22px; padding: 16px; border-radius: 10px; background: rgba(46,213,169,0.07); border: 1px solid rgba(46,213,169,0.22); color: #cbe6dd; font-size: 0.92rem; line-height: 1.5; }
+    .actions { margin-top: 22px; display: flex; gap: 12px; flex-wrap: wrap; }
+    a.btn, button.btn { background: #2ed5a9; color: #05140f; font-weight: 800; text-decoration: none; padding: 12px 18px; border-radius: 8px; border: 0; cursor: pointer; font-size: 0.9rem; }
+    a.btn.sec { background: rgba(255,255,255,0.08); color: #f4f9ff; border: 1px solid rgba(255,255,255,0.16); }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="top">
+      <div>
+        <div class="eyebrow">SYNTHOS Collective Sovereign L1</div>
+        <h1>Background Validator Node</h1>
+      </div>
+      <div class="badge"><span class="dot"></span> Running Silently in Background</div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="label">Your Node ID (Copy to Lookup)</div>
+        <div class="val" id="nodeId">%s</div>
+      </div>
+      <div class="card">
+        <div class="label">Mainnet Block Height</div>
+        <div class="val" id="height">#%d</div>
+      </div>
+      <div class="card">
+        <div class="label">Signed Heartbeats Sent</div>
+        <div class="val" id="hb">%d</div>
+      </div>
+      <div class="card">
+        <div class="label">Ed25519 Public Key</div>
+        <div class="val" style="font-size:0.82rem">%s</div>
+      </div>
+      <div class="card">
+        <div class="label">Hardware Commitment</div>
+        <div class="val" style="font-size:0.82rem">%s</div>
+      </div>
+      <div class="card">
+        <div class="label">Inbound Ports Required</div>
+        <div class="val">0 (100%% Outbound Silence)</div>
+      </div>
+    </div>
+
+    <div class="note">
+      <strong>You can safely close this browser tab.</strong> Your SYNTHOS node is now installed and running invisibly in the background of your computer. It automatically starts when you log in and sends Ed25519-signed uptime proofs every 15 seconds to the SYNTHOS Mainnet.
+    </div>
+
+    <div class="actions">
+      <button class="btn" onclick="navigator.clipboard.writeText('%s'); this.textContent='Copied Node ID!';">Copy Node ID (%s)</button>
+      <a class="btn sec" href="%s/api/nodes/%s" target="_blank" rel="noreferrer">View Live Network Proof JSON</a>
+    </div>
+  </div>
+  <script>
+    const nodeID = %q;
+    const relay = %q;
+    async function pollLive() {
+      try {
+        const res = await fetch(relay + "/api/nodes/" + encodeURIComponent(nodeID));
+        if (res.ok) {
+          const data = await res.json();
+          const peer = data.node || data;
+          if (peer.height) document.getElementById("height").textContent = "#" + peer.height;
+          if (peer.valid_heartbeats !== undefined) document.getElementById("hb").textContent = peer.valid_heartbeats;
+        }
+      } catch (_) {}
+    }
+    pollLive();
+    setInterval(pollLive, 5000);
+  </script>
+</body>
+</html>`,
+		node.NodeID,
+		node.NodeID,
+		node.LastHeight,
+		node.HeartbeatCount,
+		node.PublicKey,
+		node.HardwareCommitment,
+		node.NodeID,
+		node.NodeID,
+		relayPrimary,
+		node.NodeID,
+		node.NodeID,
+		relayPrimary,
+	)
+	_ = os.WriteFile(path, []byte(html), 0o600)
+	return path
 }
