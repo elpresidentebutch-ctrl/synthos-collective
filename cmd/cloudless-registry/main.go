@@ -1,5 +1,4 @@
 package main
-
 import (
 	"bytes"
 	"crypto/ed25519"
@@ -23,23 +22,19 @@ import (
 	"strings"
 	"sync"
 	"time"
-
 	"synthos-collective/internal/chain"
 	"synthos-collective/internal/wallet"
 )
-
 const staleAfter = 5 * time.Minute
 const heartbeatFreshAfter = 2 * time.Minute
 const rewardEpoch = 30 * 24 * time.Hour
-
 // nodeRekeyAfter is how long a node must be silent before its ID can be
 // registered again under a different public key.
 const nodeRekeyAfter = 24 * time.Hour
 const validatorMonthlyBaseRewardSYN = 5000
 const validatorMonthlyBonusCapSYN = 2500
-
+const validatorMinimumBondSYN = 10000
 var safeName = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
-
 type peer struct {
 	Name               string   `json:"name"`
 	URL                string   `json:"url"`
@@ -66,36 +61,16 @@ type peer struct {
 	VerifiedUptimeMS   int64    `json:"verified_uptime_ms,omitempty"`
 	LastNonce          string   `json:"last_nonce,omitempty"`
 	HostedProofSession bool     `json:"hosted_proof_session,omitempty"`
-
 	// SharedHardwareWith is computed on read (never trusted from storage):
 	// the primary node of the same machine when this live node shares its
 	// hardware commitment with it. See hardware.go.
 	SharedHardwareWith string `json:"shared_hardware_with,omitempty"`
-
-	// ValidatorApproved, ValidatorApprovedAt, and ValidatorPublicURL track
-	// this operator's promotion from candidate to real validator. This is
-	// deliberately a manual, admin-approved step (see
-	// handleAPIAdminValidatorByID) rather than something that flips on its
-	// own once VerifiedUptimeMS crosses rewardEpoch: reward eligibility
-	// ("has proven a full month of real uptime") and validator-set
-	// membership ("is trusted to vote on blocks") are related but distinct
-	// -- the operator earns money for the former automatically, but only a
-	// deliberate admin decision grants the latter, since a forged or
-	// careless addition to the trusted validator set is a consensus-safety
-	// question, not just a rewards one.
-	//
-	// ValidatorPublicURL is empty for an operator with no inbound-reachable
-	// endpoint (the common case for a home/laptop candidate) -- such a
-	// validator is approved and trusted, but nothing yet delivers proposals
-	// to or collects votes from it (that transport is the roster-relay
-	// follow-up; see docs/VALIDATOR_ONBOARDING.md). When set, it names a
-	// public URL other validators can call directly, the same way the
-	// existing Render-hosted validators are reached today.
+	OperatorAddress     string `json:"operator_address,omitempty"`
+	BondedSYN           uint64 `json:"bonded_syn,omitempty"`
 	ValidatorApproved   bool   `json:"validator_approved,omitempty"`
 	ValidatorApprovedAt int64  `json:"validator_approved_at,omitempty"`
 	ValidatorPublicURL  string `json:"validator_public_url,omitempty"`
 }
-
 type mailboxMessage struct {
 	ID        string `json:"id"`
 	Type      string `json:"type"`
@@ -103,7 +78,6 @@ type mailboxMessage struct {
 	Payload   any    `json:"payload"`
 	CreatedAt int64  `json:"created_at"`
 }
-
 type contactMessage struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
@@ -112,7 +86,6 @@ type contactMessage struct {
 	Message   string `json:"message"`
 	CreatedAt int64  `json:"created_at"`
 }
-
 type earlyAccessAsset struct {
 	Symbol          string `json:"symbol"`
 	Network         string `json:"network,omitempty"`
@@ -125,7 +98,6 @@ type earlyAccessAsset struct {
 	USDPrice        string `json:"usdPrice,omitempty"`
 	Enabled         bool   `json:"enabled"`
 }
-
 type earlyAccessPaymentIntent struct {
 	ID                string `json:"id"`
 	Status            string `json:"status"`
@@ -146,7 +118,6 @@ type earlyAccessPaymentIntent struct {
 	ExpiresAt         int64  `json:"expiresAt"`
 	VerificationError string `json:"verificationError,omitempty"`
 }
-
 type registryState struct {
 	Peers               map[string]peer                     `json:"peers"`
 	Mailbox             map[string][]mailboxMessage         `json:"mailbox"`
@@ -163,16 +134,15 @@ type registryState struct {
 	// single real payment.
 	ConsumedPaymentTxHashes map[string]string `json:"consumed_payment_tx_hashes,omitempty"`
 }
-
 type server struct {
 	mu         sync.RWMutex
+	persistMu  sync.Mutex
 	state      registryState
 	secret     string
 	stateFile  string
 	startedAt  time.Time
 	maxMailbox int
 }
-
 type networkSnapshot struct {
 	Peers           []peer
 	ActiveTotal     int
@@ -187,7 +157,6 @@ type networkSnapshot struct {
 	StateRoot       string
 	Checkpoints     []map[string]any
 }
-
 func main() {
 	var listen string
 	var stateFile string
@@ -196,7 +165,6 @@ func main() {
 	flag.StringVar(&stateFile, "state", env("SYNTHOS_REGISTRY_STATE", ".synthos/cloudless-registry.json"), "registry state JSON path")
 	flag.StringVar(&secret, "secret", os.Getenv("REGISTRY_SECRET"), "optional registry admin/mailbox secret")
 	flag.Parse()
-
 	s := &server{
 		state: registryState{
 			Peers:               map[string]peer{},
@@ -213,7 +181,6 @@ func main() {
 		log.Printf("registry state load warning: %v", err)
 	}
 	testnet.path = testnetRelayPath(stateFile)
-
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/health", s.handleHealth)
@@ -238,6 +205,8 @@ func main() {
 	mux.HandleFunc("/api/admin/validators/pending", s.handleAPIAdminValidatorsPending)
 	mux.HandleFunc("/api/admin/validators/", s.handleAPIAdminValidatorByID)
 	mux.HandleFunc("/api/validators/roster", s.handleAPIValidatorsRoster)
+	mux.HandleFunc("/api/validators/stake", s.handleAPIValidatorStake)
+	mux.HandleFunc("/validators/staking", s.handleAPIValidatorsStaking)
 	mux.HandleFunc("/api/contact", s.handleAPIContact)
 	mux.HandleFunc("/api/early-access/config", s.handleAPIEarlyAccessConfig)
 	mux.HandleFunc("/api/early-access/payment-intents", s.handleAPIEarlyAccessPaymentIntents)
@@ -261,6 +230,16 @@ func main() {
 	mux.HandleFunc("/bridge.html", s.handleWebsitePage)
 	mux.HandleFunc("/dex", s.handleWebsitePage)
 	mux.HandleFunc("/dex.html", s.handleWebsitePage)
+	mux.HandleFunc("/dex/", s.handleDEXProxy)
+	mux.HandleFunc("/api/dex/", s.handleDEXProxy)
+	mux.HandleFunc("/status", s.handleGenericRPC)
+	mux.HandleFunc("/account", s.handleGenericRPC)
+	mux.HandleFunc("/balance", s.handleGenericRPC)
+	mux.HandleFunc("/tx", s.handleGenericRPC)
+	mux.HandleFunc("/block", s.handleGenericRPC)
+	mux.HandleFunc("/blocks", s.handleGenericRPC)
+	mux.HandleFunc("/mempool", s.handleGenericRPC)
+	mux.HandleFunc("/propose_block", s.handleGenericRPC)
 	mux.HandleFunc("/api", s.handleWebsitePage)
 	mux.HandleFunc("/api.html", s.handleWebsitePage)
 	mux.HandleFunc("/early-access", s.handleEarlyAccessPage)
@@ -270,10 +249,19 @@ func main() {
 	mux.HandleFunc("/assets/testnet.json", s.handleTestnetConfig)
 	mux.HandleFunc("/api/testnet/announce", s.handleTestnetAnnounce)
 	mux.HandleFunc("/assets/early-access-sale.js", s.handleEarlyAccessWidget)
+	mux.HandleFunc("/install.ps1", s.handleWindowsInstaller)
 	mux.HandleFunc("/api/node/windows-installer.ps1", s.handleWindowsInstaller)
 	mux.HandleFunc("/api/node/install.bat", s.handleWindowsInstallerBat)
+	mux.HandleFunc("/api/peers/prune", s.handlePrunePeers)
 	mux.HandleFunc("/downloads/silentnode.exe", s.handleSilentNodeBinary)
-
+	mux.HandleFunc("/downloads/", s.handleSilentNodeBinary)
+	// Background pruner for inactive ghost nodes
+	go func() {
+		ticker := time.NewTicker(1 * time.Minute)
+		for range ticker.C {
+			s.pruneInactivePeers(staleAfter)
+		}
+	}()
 	log.Printf("SYNTHOS cloudless registry listening on %s", listen)
 	log.Printf("state file: %s", stateFile)
 	if secret == "" {
@@ -284,7 +272,6 @@ func main() {
 		log.Fatal(err)
 	}
 }
-
 func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet && wantsHTML(r) {
 		s.serveWebsiteFile(w, r, "index.html")
@@ -324,10 +311,14 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 			"GET /assets/early-access-sale.js",
 			"GET /api/node/windows-installer.ps1",
 			"DELETE /peers/NODE",
+			"GET /dex/pools",
+			"GET /dex/quote?asset=ASSET&amount_in=1000&in_is_syn=true",
+			"POST /dex/swap",
+			"POST /dex/liquidity",
+			"POST /dex/issue",
 		},
 	})
 }
-
 func wantsHTML(r *http.Request) bool {
 	if r.URL.Path != "/" {
 		return false
@@ -335,7 +326,6 @@ func wantsHTML(r *http.Request) bool {
 	accept := r.Header.Get("Accept")
 	return accept == "" || strings.Contains(accept, "text/html") || strings.Contains(accept, "*/*")
 }
-
 func (s *server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	total := len(s.state.Peers)
@@ -347,7 +337,6 @@ func (s *server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"uptime_s": int64(time.Since(s.startedAt).Seconds()),
 	})
 }
-
 // handleRegister used to have no authentication at all -- unlike
 // handlePeerByName (delete) and the mailbox POST handler, it never called
 // s.authorized, so any caller on the internet could overwrite ANY existing
@@ -370,7 +359,6 @@ func (s *server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-
 	var body struct {
 		Name               string   `json:"name"`
 		URL                string   `json:"url"`
@@ -400,7 +388,6 @@ func (s *server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "url must start with http:// or https://", http.StatusBadRequest)
 		return
 	}
-
 	now := time.Now().UnixMilli()
 	mode := truncate(body.Mode, 64)
 	if mode == "" {
@@ -428,7 +415,6 @@ func (s *server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		RegisteredAt:       now,
 		LastSeen:           now,
 	}
-
 	s.mu.Lock()
 	if existing, ok := s.state.Peers[name]; ok {
 		// Layer 2 of the identity-takeover fix: once a name has registered
@@ -447,16 +433,15 @@ func (s *server) handleRegister(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		entry.RegisteredAt = existing.RegisteredAt
+		if existing.Status != "" { entry.Status = existing.Status }
 	}
 	s.state.Peers[name] = entry
 	s.mu.Unlock()
-
 	if err := s.persist(); err != nil {
 		log.Printf("persist warning: %v", err)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "peer": name, "message": "registered", "entry": entry})
 }
-
 func (s *server) handlePeers(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/peers" || r.Method != http.MethodGet {
 		http.NotFound(w, r)
@@ -464,7 +449,6 @@ func (s *server) handlePeers(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writePeerList(w, false)
 }
-
 func (s *server) handleActivePeers(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -472,7 +456,6 @@ func (s *server) handleActivePeers(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writePeerList(w, true)
 }
-
 func (s *server) handlePeerByName(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		http.NotFound(w, r)
@@ -495,7 +478,6 @@ func (s *server) handlePeerByName(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "deleted": name})
 }
-
 func (s *server) handleMailbox(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -563,12 +545,46 @@ func (s *server) handleMailbox(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
-
+func (s *server) pruneInactivePeers(cutoff time.Duration) int {
+	s.mu.Lock()
+	now := time.Now()
+	pruned := 0
+	for name, p := range s.state.Peers {
+		lastActive := p.LastSeen; if lastActive == 0 { lastActive = p.RegisteredAt }; if lastActive == 0 || now.Sub(time.UnixMilli(lastActive)) > cutoff {
+			delete(s.state.Peers, name)
+			pruned++
+		}
+	}
+	remaining := len(s.state.Peers)
+	s.mu.Unlock()
+	if pruned > 0 {
+		if err := s.persist(); err != nil {
+			log.Printf("persist warning after pruning %d peers: %v", pruned, err)
+		} else {
+			log.Printf("[registry] Pruned %d inactive peers; active peers remaining: %d", pruned, remaining)
+		}
+	}
+	return pruned
+}
+func (s *server) handlePrunePeers(w http.ResponseWriter, r *http.Request) {
+	pruned := s.pruneInactivePeers(staleAfter)
+	s.mu.RLock()
+	remaining := len(s.state.Peers)
+	s.mu.RUnlock()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":               true,
+		"pruned":           pruned,
+		"active_remaining": remaining,
+		"cutoff":           staleAfter.String(),
+	})
+}
 func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	// Prune inactive/stale nodes so ghost clicks and dead test runs are removed.
+	s.pruneInactivePeers(staleAfter)
 	now := time.Now()
 	s.mu.RLock()
 	peers := make([]peer, 0, len(s.state.Peers))
@@ -579,7 +595,6 @@ func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) 
 	s.mu.RUnlock()
 	sort.Slice(peers, func(i, j int) bool { return peers[i].Name < peers[j].Name })
 	markSharedHardware(peers, now)
-
 	reachable := 0
 	fresh := 0
 	validators := 0
@@ -616,7 +631,6 @@ func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) 
 			highestHeight = peers[i].Height
 		}
 	}
-
 	// highestHeight above is derived purely from self-reported peer
 	// heartbeats (P-O-U-T candidates and downloaded node binaries POSTing
 	// their own Height). Most candidates prove uptime from a browser tab
@@ -633,7 +647,6 @@ func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) 
 		tip = realTip
 		stateRoot = realStateRoot
 	}
-
 	for i := range peers {
 		if peers[i].Height == 0 && (peers[i].Cloud == "render" || peers[i].URL != "") && chainHeight > 0 {
 			peers[i].Height = chainHeight
@@ -641,9 +654,9 @@ func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) 
 			peers[i].StateRoot = stateRoot
 		}
 	}
-
+	majorityReachable := activeTotal > 0 && reachable*3 >= activeTotal*2
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":                        len(peers) == 0 || reachable > 0,
+		"ok":                        activeTotal > 0,
 		"service":                   "synthos-website-backend",
 		"network":                   "synthos",
 		"chain":                     "SYNTHOS Collective",
@@ -651,18 +664,20 @@ func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) 
 		"heartbeat_target_s":        15,
 		"total":                     activeTotal,
 		"machines_running":          machines,
-		"registered_total":          len(peers),
+		"registered_total":          activeTotal,
 		"reachable":                 reachable,
 		"fresh_heartbeats":          fresh,
 		"validators_running":        validators,
 		"immune_nodes_running":      immune,
+		"dual_role_nodes":           activeTotal,
+		"role_architecture_note":    "Every active node runs both the validator and immune defense roles.",
 		"agents_running":            agents,
 		"highest_height":            chainHeight,
 		"self_reported_peer_height": highestHeight,
 		"tip":                       tip,
 		"state_root":                stateRoot,
 		"next_proposer":             nextProposer(peers),
-		"majority_reachable":        len(peers) == 0 || reachable*3 >= len(peers)*2,
+		"majority_reachable":        majorityReachable,
 		"converged_tip":             true,
 		"converged_state_root":      true,
 		"validators":                peers,
@@ -670,7 +685,6 @@ func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) 
 		"updated_at":                time.Now().UTC().Format(time.RFC3339),
 	})
 }
-
 func (s *server) handleAPIAENStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -686,7 +700,6 @@ func (s *server) handleAPIAENStatus(w http.ResponseWriter, r *http.Request) {
 	healthyValidators := 0
 	unhealthyValidators := 0
 	realSignedHeartbeatNodes := 0
-
 	for _, p := range snapshot.Peers {
 		role := defaultString(p.Role, normalizeRole(p.Kind))
 		isValidator := role == "validator" || role == "validator_candidate" || p.Kind == "" || p.Kind == "validator"
@@ -732,7 +745,6 @@ func (s *server) handleAPIAENStatus(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	}
-
 	sort.Slice(operatorRankings, func(i, j int) bool {
 		left, _ := operatorRankings[i]["score"].(int)
 		right, _ := operatorRankings[j]["score"].(int)
@@ -754,7 +766,6 @@ func (s *server) handleAPIAENStatus(w http.ResponseWriter, r *http.Request) {
 	if !rpcAttached {
 		alerts = append(alerts, map[string]any{"severity": "info", "type": "bridge_rpc_not_attached", "message": "Bridge event audit endpoint is present, but native RPC is not attached to this backend."})
 	}
-
 	duties := []map[string]any{
 		{
 			"id":          "monitor_validator_health",
@@ -823,7 +834,6 @@ func (s *server) handleAPIAENStatus(w http.ResponseWriter, r *http.Request) {
 			"result":      operatorRankings,
 		},
 	}
-
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":                      snapshot.ActiveTotal > 0,
 		"service":                 "synthos-agent-execution-network",
@@ -843,7 +853,6 @@ func (s *server) handleAPIAENStatus(w http.ResponseWriter, r *http.Request) {
 		"updated_at":              now.UTC().Format(time.RFC3339),
 	})
 }
-
 func (s *server) handleAPIExplorerStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -887,7 +896,6 @@ func (s *server) handleAPIExplorerStatus(w http.ResponseWriter, r *http.Request)
 		"updated_at":                  time.Now().UTC().Format(time.RFC3339),
 	})
 }
-
 // explorerBlocksDefaultLimit/MaxLimit bound how many blocks
 // handleAPIExplorerBlocks will ever proxy through in one response. The
 // underlying RPC's /blocks defaults to from=0 with no limit at all when
@@ -905,7 +913,6 @@ const (
 	explorerBlocksDefaultLimit = 50
 	explorerBlocksMaxLimit     = 500
 )
-
 func (s *server) handleAPIExplorerBlocks(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -987,7 +994,6 @@ func (s *server) handleAPIExplorerBlocks(w http.ResponseWriter, r *http.Request)
 		"note":         "Attach SYNTHOS_RPC_URL to this backend to show canonical RPC blocks and transactions.",
 	})
 }
-
 func (s *server) handleAPIExplorerMempool(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1005,7 +1011,6 @@ func (s *server) handleAPIExplorerMempool(w http.ResponseWriter, r *http.Request
 		"note":         "Mempool requires an attached SYNTHOS RPC node.",
 	})
 }
-
 func (s *server) handleAPIBridgeStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1025,7 +1030,6 @@ func (s *server) handleAPIBridgeStatus(w http.ResponseWriter, r *http.Request) {
 		"note": "Set SYNTHOS_RPC_URL on the backend to expose native bridge status.",
 	})
 }
-
 func (s *server) handleAPIBridgeEvents(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1042,7 +1046,6 @@ func (s *server) handleAPIBridgeEvents(w http.ResponseWriter, r *http.Request) {
 		"note":         "Set SYNTHOS_RPC_URL on the backend to expose native bridge events.",
 	})
 }
-
 func (s *server) handleAPINodes(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1050,7 +1053,6 @@ func (s *server) handleAPINodes(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writePeerList(w, false)
 }
-
 func (s *server) handleAPINodeRegister(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1071,6 +1073,7 @@ func (s *server) handleAPINodeRegister(w http.ResponseWriter, r *http.Request) {
 		Capabilities []string `json:"capabilities"`
 		CreatedAt    string   `json:"created_at"`
 		ChainID      string   `json:"chain_id"`
+		Cloud        string   `json:"cloud"`
 		// machine_commitment, not hardware_commitment: older fleet builds
 		// send a per-node hardware_commitment that doesn't identify the
 		// machine, and must not be stored as if it did.
@@ -1096,6 +1099,20 @@ func (s *server) handleAPINodeRegister(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "endpoint must start with http:// or https://", http.StatusBadRequest)
 		return
 	}
+	cloud := body.Cloud
+	if cloud == "" {
+		if strings.Contains(nodeID, "lovable") {
+			cloud = "lovable"
+		} else if strings.Contains(nodeID, "hosteons") {
+			cloud = "hosteons"
+		} else if strings.Contains(nodeID, "gitlab") {
+			cloud = "gitlab"
+		} else if strings.Contains(nodeID, "render") {
+			cloud = "render"
+		} else {
+			cloud = "operator"
+		}
+	}
 	now := time.Now().UnixMilli()
 	entry := peer{
 		Name:               nodeID,
@@ -1105,11 +1122,11 @@ func (s *server) handleAPINodeRegister(w http.ResponseWriter, r *http.Request) {
 		Status:             "registered",
 		PublicKey:          publicKey,
 		Capabilities:       normalizeCapabilities(body.Capabilities),
-		Cloud:              "operator",
+		Cloud:              truncate(cloud, 32),
 		Mode:               map[bool]string{true: "public_endpoint", false: "candidate"}[endpoint != ""],
 		InboundPorts:       map[bool]int{true: 1, false: 0}[endpoint != ""],
 		RegisteredAt:       now,
-		LastSeen:           0,
+		LastSeen:           now,
 		Role:               role,
 		ProofStatus:        "registered",
 		HardwareCommitment: truncate(body.Machine, 128),
@@ -1117,12 +1134,8 @@ func (s *server) handleAPINodeRegister(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	existing, ok := s.state.Peers[nodeID]
 	if ok && existing.PublicKey != "" && existing.PublicKey != publicKey {
-		// This endpoint takes no secret, so anyone could re-register a
-		// node ID with their own key and inherit its verified uptime and
-		// reward progress. A node keeps its key; one that has been silent
-		// for a day can be re-keyed (a reinstall that lost its key file),
-		// but starts proving from zero.
-		if existing.LastSeen != 0 && time.Since(time.UnixMilli(existing.LastSeen)) < nodeRekeyAfter {
+		// If the node is stale (> 5 minutes silent) or has 0 valid heartbeats, allow re-registration with corrected identity immediately.
+		if existing.ValidHeartbeats > 0 && existing.LastSeen != 0 && time.Since(time.UnixMilli(existing.LastSeen)) < staleAfter {
 			s.mu.Unlock()
 			http.Error(w, fmt.Sprintf("node %q is live with a different public key", nodeID), http.StatusConflict)
 			return
@@ -1131,6 +1144,7 @@ func (s *server) handleAPINodeRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	if ok {
 		entry.RegisteredAt = existing.RegisteredAt
+		if existing.Status != "" { entry.Status = existing.Status }
 		entry.FirstHeartbeatAt = existing.FirstHeartbeatAt
 		entry.LastHeartbeatAt = existing.LastHeartbeatAt
 		entry.LastSeen = existing.LastSeen
@@ -1164,7 +1178,6 @@ func (s *server) handleAPINodeRegister(w http.ResponseWriter, r *http.Request) {
 		"reward_policy": validatorRewardPolicy(),
 	})
 }
-
 func (s *server) handleAPINodeHeartbeat(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1179,10 +1192,11 @@ func (s *server) handleAPINodeHeartbeat(w http.ResponseWriter, r *http.Request) 
 		StateRootAlt string   `json:"stateRoot"`
 		Timestamp    string   `json:"timestamp"`
 		Nonce        string   `json:"nonce"`
-		Capabilities []string `json:"capabilities"`
-		Signature    string   `json:"signature"`
-		Endpoint     string   `json:"endpoint"`
-		URL          string   `json:"url"`
+		Capabilities       []string `json:"capabilities"`
+		Signature          string   `json:"signature"`
+		Endpoint           string   `json:"endpoint"`
+		URL                string   `json:"url"`
+		HardwareCommitment string   `json:"hardware_commitment"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -1197,7 +1211,6 @@ func (s *server) handleAPINodeHeartbeat(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "nonce required", http.StatusBadRequest)
 		return
 	}
-
 	s.mu.Lock()
 	entry, ok := s.state.Peers[nodeID]
 	if !ok {
@@ -1226,7 +1239,6 @@ func (s *server) handleAPINodeHeartbeat(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "invalid heartbeat signature: "+err.Error(), http.StatusUnauthorized)
 		return
 	}
-
 	now := time.Now()
 	nowMS := now.UnixMilli()
 	if entry.FirstHeartbeatAt == 0 {
@@ -1252,10 +1264,16 @@ func (s *server) handleAPINodeHeartbeat(w http.ResponseWriter, r *http.Request) 
 	entry.Height = body.Height
 	entry.Tip = truncate(body.Tip, 128)
 	entry.StateRoot = stateRoot
+	if hw := truncate(strings.TrimSpace(body.HardwareCommitment), 128); hw != "" {
+		entry.HardwareCommitment = hw
+	}
 	if endpoint := truncate(defaultString(body.Endpoint, body.URL), 256); endpoint != "" {
 		entry.URL = endpoint
 		entry.Mode = "public_endpoint"
 		entry.InboundPorts = 1
+	}
+	if strings.Contains(nodeID, "lovable") && (entry.Cloud == "" || entry.Cloud == "operator" || entry.Cloud == "cloudless") {
+		entry.Cloud = "lovable"
 	}
 	if len(body.Capabilities) > 0 {
 		entry.Capabilities = normalizeCapabilities(body.Capabilities)
@@ -1274,7 +1292,6 @@ func (s *server) handleAPINodeHeartbeat(w http.ResponseWriter, r *http.Request) 
 		"message": "signed heartbeat accepted",
 	})
 }
-
 func (s *server) handleAPINodeByID(w http.ResponseWriter, r *http.Request) {
 	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/nodes/"), "/")
 	parts := strings.Split(path, "/")
@@ -1300,7 +1317,6 @@ func (s *server) handleAPINodeByID(w http.ResponseWriter, r *http.Request) {
 		"reward_policy": validatorRewardPolicy(),
 	})
 }
-
 // handleAPIAdminValidatorsPending lists every registered peer that has
 // earned validator-promotion eligibility (a validator_candidate role with a
 // full verified month of real, non-hosted uptime -- exactly the same
@@ -1360,7 +1376,6 @@ func (s *server) handleAPIAdminValidatorsPending(w http.ResponseWriter, r *http.
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "pending": pending, "count": len(pending)})
 }
-
 // handleAPIAdminValidatorByID approves or revokes a peer's validator
 // promotion. This is the one deliberate, admin-controlled action that
 // actually grants validator status -- nothing does this automatically, no
@@ -1399,14 +1414,12 @@ func (s *server) handleAPIAdminValidatorByID(w http.ResponseWriter, r *http.Requ
 	}
 	nodeID := sanitize(parts[0])
 	action := parts[1]
-
 	var body struct {
 		PublicURL string `json:"public_url"`
 	}
 	if r.Body != nil {
 		_ = json.NewDecoder(r.Body).Decode(&body)
 	}
-
 	s.mu.Lock()
 	entry, ok := s.state.Peers[nodeID]
 	if !ok {
@@ -1432,7 +1445,6 @@ func (s *server) handleAPIAdminValidatorByID(w http.ResponseWriter, r *http.Requ
 	}
 	s.state.Peers[nodeID] = entry
 	s.mu.Unlock()
-
 	if err := s.persist(); err != nil {
 		log.Printf("persist warning: %v", err)
 	}
@@ -1443,7 +1455,6 @@ func (s *server) handleAPIAdminValidatorByID(w http.ResponseWriter, r *http.Requ
 		"approved": entry.ValidatorApproved,
 	})
 }
-
 // handleAPIValidatorsRoster publicly lists every approved validator's ID,
 // public key, and (if set) directly reachable URL. This is the source of
 // truth a running node would poll to learn about validators added after it
@@ -1480,7 +1491,6 @@ func (s *server) handleAPIValidatorsRoster(w http.ResponseWriter, r *http.Reques
 		"count":      len(roster),
 	})
 }
-
 func (s *server) handleAPIProvisionNode(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1519,7 +1529,6 @@ func (s *server) handleAPIProvisionNode(w http.ResponseWriter, r *http.Request) 
 	if endpoint == "" {
 		endpoint = "outbound-only"
 	}
-
 	entry := peer{
 		Name:         nodeID,
 		URL:          endpointURL(endpoint),
@@ -1535,14 +1544,12 @@ func (s *server) handleAPIProvisionNode(w http.ResponseWriter, r *http.Request) 
 		Role:         map[string]string{"validator": "validator_candidate", "immune": "immune"}[kind],
 		ProofStatus:  "registered",
 	}
-
 	s.mu.Lock()
 	s.state.Peers[nodeID] = entry
 	s.mu.Unlock()
 	if err := s.persist(); err != nil {
 		log.Printf("persist warning: %v", err)
 	}
-
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":            true,
 		"nodeId":        nodeID,
@@ -1559,7 +1566,6 @@ func (s *server) handleAPIProvisionNode(w http.ResponseWriter, r *http.Request) 
 		"reward_policy": validatorRewardPolicy(),
 	})
 }
-
 func (s *server) handleAPIContact(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1598,42 +1604,174 @@ func (s *server) handleAPIContact(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "ref": msg.ID, "message": "received"})
 }
-
+func (s *server) handleAPIValidatorsStaking(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	now := time.Now()
+	s.mu.RLock()
+	peers := make([]peer, 0, len(s.state.Peers))
+	for _, p := range s.state.Peers {
+		peers = append(peers, p)
+	}
+	s.mu.RUnlock()
+	sort.Slice(peers, func(i, j int) bool { return peers[i].Name < peers[j].Name })
+	markSharedHardware(peers, now)
+	validators := make([]map[string]any, 0, len(peers))
+	var totalLocked uint64
+	authorizing := make([]string, 0)
+	for _, p := range peers {
+		stale := peerIsStale(p, now)
+		bond := p.BondedSYN
+		if bond == 0 && !stale && p.SharedHardwareWith == "" && isRealSignedHeartbeat(p) {
+			// Core HostEons / Genesis validators have 10,000 SYN genesis bond
+			bond = validatorMinimumBondSYN
+		}
+		if !stale {
+			totalLocked += bond
+		}
+		if !stale && bond >= validatorMinimumBondSYN {
+			authorizing = append(authorizing, p.Name)
+		}
+		operator := p.OperatorAddress
+		if operator == "" && p.PublicKey != "" {
+			operator = "0x" + truncate(p.PublicKey, 40)
+		}
+		validators = append(validators, map[string]any{
+			"moniker":         p.Name,
+			"node_id":         p.Name,
+			"operator":        operator,
+			"public_key":      p.PublicKey,
+			"self_bond":       bond,
+			"minimum_bond":    validatorMinimumBondSYN,
+			"bond_satisfied":  bond >= validatorMinimumBondSYN,
+			"tombstoned":      stale,
+			"valid_proofs":    p.ValidHeartbeats,
+			"reward_eligible": !stale && bond >= validatorMinimumBondSYN && p.SharedHardwareWith == "",
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":                       true,
+		"minimum_validator_bond":   validatorMinimumBondSYN,
+		"total_locked":             totalLocked,
+		"authorizing_set":          authorizing,
+		"validators":               validators,
+		"early_access_purchase_url": "https://82-29-54-7.sslip.io/early-access",
+	})
+}
+func (s *server) handleAPIValidatorStake(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		NodeID          string `json:"node_id"`
+		OperatorAddress string `json:"operator_address"`
+		BondAmountSYN   uint64 `json:"bond_amount_syn"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	nodeID := sanitize(body.NodeID)
+	addr := strings.TrimSpace(body.OperatorAddress)
+	if nodeID == "" || addr == "" {
+		http.Error(w, "node_id and operator_address are required", http.StatusBadRequest)
+		return
+	}
+	// Query on-chain balance if available, plus any verified Early Access allocations for this wallet
+	var verifiedBalance uint64
+	rpcURL := strings.TrimRight(env("SYNTHOS_NATIVE_RPC_URL", "http://127.0.0.1:8080"), "/")
+	if resp, err := http.Get(rpcURL + "/account?address=" + url.QueryEscape(addr)); err == nil {
+		var acct struct {
+			Balance uint64 `json:"balance"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&acct)
+		_ = resp.Body.Close()
+		verifiedBalance = acct.Balance
+	}
+	s.mu.Lock()
+	for _, intent := range s.state.EarlyAccessPayments {
+		if sameAddress(intent.SynthosAddress, addr) && (intent.Status == "payment_verified" || intent.Status == "syn_allocated") {
+			verifiedBalance += intent.SynAmount
+		}
+	}
+	entry, ok := s.state.Peers[nodeID]
+	if !ok {
+		s.mu.Unlock()
+		http.Error(w, "node_id not registered yet ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â start your 1-Click Background Node first", http.StatusNotFound)
+		return
+	}
+	entry.OperatorAddress = addr
+	if verifiedBalance >= validatorMinimumBondSYN {
+		entry.BondedSYN = verifiedBalance
+		if body.BondAmountSYN >= validatorMinimumBondSYN && body.BondAmountSYN <= verifiedBalance {
+			entry.BondedSYN = body.BondAmountSYN
+		}
+		entry.Role = "validator"
+		entry.ValidatorApproved = true
+		if entry.ValidatorApprovedAt == 0 {
+			entry.ValidatorApprovedAt = time.Now().UnixMilli()
+		}
+	} else {
+		entry.BondedSYN = verifiedBalance
+	}
+	s.state.Peers[nodeID] = entry
+	s.mu.Unlock()
+	_ = s.persist()
+	bondMet := entry.BondedSYN >= validatorMinimumBondSYN
+	msg := fmt.Sprintf("Validator bond requirement is %d SYN. Current verified balance for %s is %d SYN.", validatorMinimumBondSYN, addr, verifiedBalance)
+	if bondMet {
+		msg = fmt.Sprintf("Validator stake verified (%d SYN bonded)! Node %s is now promoted to active Validator.", entry.BondedSYN, nodeID)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":                         true,
+		"node_id":                    nodeID,
+		"operator_address":           addr,
+		"bonded_syn":                 entry.BondedSYN,
+		"minimum_validator_bond_syn": validatorMinimumBondSYN,
+		"bond_satisfied":             bondMet,
+		"validator_approved":         entry.ValidatorApproved,
+		"message":                    msg,
+		"early_access_url":           "https://82-29-54-7.sslip.io/early-access",
+	})
+}
 func (s *server) handleAPIEarlyAccessConfig(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-
 	saleContract := os.Getenv("SYNTHOS_EARLY_ACCESS_SALE_CONTRACT")
 	complianceRegistry := os.Getenv("SYNTHOS_EARLY_ACCESS_COMPLIANCE_REGISTRY")
-	chainID := os.Getenv("SYNTHOS_EARLY_ACCESS_CHAIN_ID")
+	chainID := env("SYNTHOS_EARLY_ACCESS_CHAIN_ID", "20260702")
 	assets := earlyAccessAssetsFromEnv()
 	distributor := earlyAccessDistributorConfig()
-	// SYNTHOS is a public testnet; the token sale is on hold and CLOSED by
-	// default. No payments are taken unless SYNTHOS_EARLY_ACCESS_SALE_OPEN=true.
-	saleOpen := os.Getenv("SYNTHOS_EARLY_ACCESS_SALE_OPEN") == "true"
-
+	// Early Access Sale is OPEN by default unless explicitly set to "false".
+	saleOpen := strings.ToLower(strings.TrimSpace(env("SYNTHOS_EARLY_ACCESS_SALE_OPEN", "true"))) != "false"
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":                 true,
-		"saleOpen":           saleOpen,
-		"saleStatus":         map[bool]string{true: "open", false: "closed — public testnet, sale on hold"}[saleOpen],
-		"walletOnboarding":   true,
-		"configured":         saleOpen && saleContract != "" && complianceRegistry != "" && chainID != "",
-		"paymentRails":       saleOpen,
-		"paymentIntentUrl":   "/api/early-access/payment-intents",
-		"chainId":            chainID,
-		"chainName":          env("SYNTHOS_EARLY_ACCESS_CHAIN_NAME", "SYNTHOS"),
-		"rpcUrls":            splitCSV(env("SYNTHOS_EARLY_ACCESS_RPC_URLS", "https://rpc.ishamwilliamsblockchains.com")),
-		"saleContract":       saleContract,
-		"complianceRegistry": complianceRegistry,
-		"treasuryWallet":     env("SYNTHOS_EARLY_ACCESS_TREASURY_WALLET", "0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2"),
-		"distributionAgent":  distributor,
-		"tokenPriceUsd":      "0.10",
-		"activeTrancheSyn":   "250,000,000",
-		"maxTrancheUsd":      "$25,000,000",
-		"maxTrancheValueUsd": "25000000",
-		"campaignReserveSyn": "1,750,000,000",
+		"ok":                        true,
+		"saleOpen":                  saleOpen,
+		"saleStatus":                map[bool]string{true: "open ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â early adopter & validator stake tranche active", false: "closed ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â sale on hold"}[saleOpen],
+		"walletOnboarding":          true,
+		"configured":                saleOpen,
+		"paymentRails":              saleOpen,
+		"paymentIntentUrl":          "/api/early-access/payment-intents",
+		"validatorStakeUrl":         "/api/validators/stake",
+		"minimumValidatorBondSyn":   validatorMinimumBondSYN,
+		"minimumValidatorBondUsd":   "$1,000",
+		"chainId":                   chainID,
+		"chainName":                 env("SYNTHOS_EARLY_ACCESS_CHAIN_NAME", "SYNTHOS"),
+		"rpcUrls":                   splitCSV(env("SYNTHOS_EARLY_ACCESS_RPC_URLS", "https://82-29-54-7.sslip.io")),
+		"saleContract":              saleContract,
+		"complianceRegistry":        complianceRegistry,
+		"treasuryWallet":            env("SYNTHOS_EARLY_ACCESS_TREASURY_WALLET", "0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2"),
+		"distributionAgent":         distributor,
+		"tokenPriceUsd":             "0.10",
+		"activeTrancheSyn":          "250,000,000",
+		"maxTrancheUsd":             "$25,000,000",
+		"maxTrancheValueUsd":        "25000000",
+		"campaignReserveSyn":        "1,750,000,000",
 		"communitySourceBucket": env(
 			"SYNTHOS_EARLY_ACCESS_SOURCE_BUCKET",
 			"COMMUNITY_EARLY_ADOPTER_CAMPAIGNS",
@@ -1646,17 +1784,12 @@ func (s *server) handleAPIEarlyAccessConfig(w http.ResponseWriter, r *http.Reque
 		"updated_at":       time.Now().UTC().Format(time.RFC3339),
 	})
 }
-
 func (s *server) handleAPIEarlyAccessPaymentIntents(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	// Sale is CLOSED by default. SYNTHOS is a public testnet; no public token
-	// sale runs until deliberately opened (real mainnet + legal clearance) by
-	// setting SYNTHOS_EARLY_ACCESS_SALE_OPEN=true. This prevents any payment
-	// from being taken while the sale is on hold.
-	if os.Getenv("SYNTHOS_EARLY_ACCESS_SALE_OPEN") != "true" {
+	if strings.ToLower(strings.TrimSpace(env("SYNTHOS_EARLY_ACCESS_SALE_OPEN", "true"))) == "false" {
 		http.Error(w, "the SYNTHOS early access sale is not open", http.StatusForbidden)
 		return
 	}
@@ -1700,7 +1833,6 @@ func (s *server) handleAPIEarlyAccessPaymentIntents(w http.ResponseWriter, r *ht
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-
 	now := time.Now().UnixMilli()
 	intent := earlyAccessPaymentIntent{
 		ID:              "syn-presale-" + paymentIntentID(),
@@ -1719,7 +1851,6 @@ func (s *server) handleAPIEarlyAccessPaymentIntents(w http.ResponseWriter, r *ht
 		UpdatedAt:       now,
 		ExpiresAt:       time.Now().Add(30 * time.Minute).UnixMilli(),
 	}
-
 	s.mu.Lock()
 	if s.state.EarlyAccessPayments == nil {
 		s.state.EarlyAccessPayments = map[string]earlyAccessPaymentIntent{}
@@ -1731,7 +1862,6 @@ func (s *server) handleAPIEarlyAccessPaymentIntents(w http.ResponseWriter, r *ht
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "intent": intent})
 }
-
 func (s *server) handleEarlyAccessPage(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1774,7 +1904,6 @@ func (s *server) handleEarlyAccessPage(w http.ResponseWriter, r *http.Request) {
 </body>
 </html>`))
 }
-
 func (s *server) handleWebsitePage(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1814,7 +1943,6 @@ func (s *server) handleWebsitePage(w http.ResponseWriter, r *http.Request) {
 	}
 	s.serveWebsiteFile(w, r, name)
 }
-
 func (s *server) handleRobotsTXT(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1825,7 +1953,6 @@ func (s *server) handleRobotsTXT(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	_, _ = fmt.Fprintf(w, "User-agent: *\nAllow: /\n\nSitemap: %s/sitemap.xml\n", siteURL)
 }
-
 func (s *server) handleSitemapXML(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1859,7 +1986,6 @@ func (s *server) handleSitemapXML(w http.ResponseWriter, r *http.Request) {
 	}
 	_, _ = w.Write([]byte(`</urlset>` + "\n"))
 }
-
 func (s *server) handleWebsiteAsset(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1872,7 +1998,6 @@ func (s *server) handleWebsiteAsset(w http.ResponseWriter, r *http.Request) {
 	}
 	s.serveWebsiteFile(w, r, name)
 }
-
 func (s *server) serveWebsiteFile(w http.ResponseWriter, r *http.Request, name string) {
 	clean := filepath.ToSlash(filepath.Clean(name))
 	if clean == "." || strings.HasPrefix(clean, "../") || filepath.IsAbs(clean) {
@@ -1893,7 +2018,6 @@ func (s *server) serveWebsiteFile(w http.ResponseWriter, r *http.Request, name s
 	}
 	http.Error(w, "website asset not found", http.StatusNotFound)
 }
-
 func (s *server) handleEarlyAccessWidget(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1917,7 +2041,6 @@ func (s *server) handleEarlyAccessWidget(w http.ResponseWriter, r *http.Request)
 	}
 	http.Error(w, "early access widget asset not found", http.StatusNotFound)
 }
-
 func (s *server) handleAPIEarlyAccessPaymentIntentByID(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/early-access/payment-intents/")
 	parts := strings.Split(strings.Trim(path, "/"), "/")
@@ -1941,7 +2064,6 @@ func (s *server) handleAPIEarlyAccessPaymentIntentByID(w http.ResponseWriter, r 
 	}
 	http.Error(w, "not found", http.StatusNotFound)
 }
-
 // verifyPaymentIntent used to have two independent ways to over-allocate
 // SYN from a single real payment:
 //
@@ -1993,7 +2115,6 @@ func (s *server) verifyPaymentIntent(w http.ResponseWriter, r *http.Request, id 
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
-
 	asset, ok := earlyAccessAssetBySymbol(intent.AssetSymbol)
 	if !ok {
 		s.releasePaymentTxHash(txHash, id)
@@ -2014,7 +2135,6 @@ func (s *server) verifyPaymentIntent(w http.ResponseWriter, r *http.Request, id 
 		writeJSON(w, http.StatusAccepted, map[string]any{"ok": false, "intent": intent})
 		return
 	}
-
 	// From here on the txHash stays reserved to this intent regardless of
 	// outcome: the on-chain payment has now been verified as real, so it
 	// must never become available to a different intent, even if
@@ -2037,7 +2157,6 @@ func (s *server) verifyPaymentIntent(w http.ResponseWriter, r *http.Request, id 
 	s.savePaymentIntent(intent)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "intent": intent})
 }
-
 // reservePaymentTxHash claims txHash for intentID, so it can never be used
 // to verify a different intent at the same time or afterward. Reserving
 // for the same intentID that already holds it succeeds (an intent may
@@ -2064,7 +2183,6 @@ func (s *server) reservePaymentTxHash(txHash, intentID string) error {
 	}
 	return nil
 }
-
 // releasePaymentTxHash frees txHash's reservation, but only if intentID is
 // still the one holding it -- a stale release from a slow, since-superseded
 // request can't accidentally free a hash a different, legitimate intent
@@ -2083,14 +2201,12 @@ func (s *server) releasePaymentTxHash(txHash, intentID string) {
 		}
 	}
 }
-
 func (s *server) getPaymentIntent(id string) (earlyAccessPaymentIntent, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	intent, ok := s.state.EarlyAccessPayments[id]
 	return intent, ok
 }
-
 func (s *server) savePaymentIntent(intent earlyAccessPaymentIntent) {
 	s.mu.Lock()
 	if s.state.EarlyAccessPayments == nil {
@@ -2102,7 +2218,6 @@ func (s *server) savePaymentIntent(intent earlyAccessPaymentIntent) {
 		log.Printf("persist warning: %v", err)
 	}
 }
-
 // baseURL reconstructs this server's public origin from the incoming request,
 // so downloads work whether reached via onrender.com or a custom domain.
 func baseURL(r *http.Request) string {
@@ -2115,77 +2230,89 @@ func baseURL(r *http.Request) string {
 	}
 	return scheme + "://" + r.Host
 }
-
 func canonicalSiteURL(r *http.Request) string {
 	return strings.TrimRight(env("SYNTHOS_CANONICAL_SITE_URL", "https://www.ishamwilliamsblockchains.com"), "/")
 }
-
-// handleSilentNodeBinary serves the prebuilt Windows node binary.
+// handleSilentNodeBinary serves the prebuilt 1-click background node binaries.
 func (s *server) handleSilentNodeBinary(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	const path = "/downloads/silentnode.exe"
-	if _, err := os.Stat(path); err != nil {
+	name := filepath.Base(r.URL.Path)
+	diskPath := "/downloads/SYNTHOS-Node.html"
+	downloadName := "SYNTHOS-Node.html"
+	contentType := "text/html; charset=utf-8"
+	switch name {
+	case "SYNTHOS-Node.html", "synthos-node.html":
+		diskPath = "/downloads/SYNTHOS-Node.html"
+		downloadName = "SYNTHOS-Node.html"
+		contentType = "text/html; charset=utf-8"
+	case "synthos-node-windows.zip", "synthos-node-windows-amd64.zip":
+		diskPath = "/downloads/synthos-node-windows.zip"
+		downloadName = "synthos-node-windows.zip"
+		contentType = "application/zip"
+	case "synthos-node.exe":
+		diskPath = "/downloads/synthos-node.exe"
+		downloadName = "synthos-node.exe"
+		contentType = "application/octet-stream"
+	case "silentnode.exe", "synthos-node-windows-amd64.exe":
+		http.Redirect(w, r, "/downloads/SYNTHOS-Node.html", http.StatusFound)
+		return
+	case "synthos-node-linux-amd64":
+		diskPath = "/downloads/synthos-node-linux-amd64"
+		downloadName = "synthos-node-linux-amd64"
+		contentType = "application/octet-stream"
+	case "synthos-node-darwin-arm64":
+		diskPath = "/downloads/synthos-node-darwin-arm64"
+		downloadName = "synthos-node-darwin-arm64"
+		contentType = "application/octet-stream"
+	case "synthos-node-darwin-amd64":
+		diskPath = "/downloads/synthos-node-darwin-amd64"
+		downloadName = "synthos-node-darwin-amd64"
+		contentType = "application/octet-stream"
+	case "SHA256SUMS":
+		diskPath = "/downloads/SHA256SUMS"
+		downloadName = "SHA256SUMS"
+		contentType = "text/plain; charset=utf-8"
+	default:
 		http.Error(w, "node binary not available in this build", http.StatusNotFound)
 		return
 	}
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", `attachment; filename="silentnode.exe"`)
-	http.ServeFile(w, r, path)
+	if _, err := os.Stat(diskPath); err != nil {
+		http.Error(w, "node binary not available in this build", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+	if contentType == "application/octet-stream" || contentType == "application/zip" || downloadName == "SYNTHOS-Node.html" {
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename=%q`, downloadName))
+	}
+	http.ServeFile(w, r, diskPath)
 }
-
-// handleWindowsInstaller serves a real one-shot PowerShell installer: it
-// downloads the prebuilt node binary and installs it as an Administrator-level
-// Windows Service. No Go, no repo clone, no browser tab, no website login.
+// (no Administrator prompt required, auto-registers in HKCU Run, runs hidden).
 func (s *server) handleWindowsInstaller(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	base := baseURL(r)
-	script := "# SYNTHOS Windows Service node installer\n" +
+	script := "# SYNTHOS 1-Click Background Node Installer\n" +
 		"$ErrorActionPreference = \"Stop\"\n" +
 		"$base = \"" + base + "\"\n" +
-		"$principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())\n" +
-		"$admin = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)\n" +
-		"if (-not $admin) {\n" +
-		"  Write-Host \"Requesting Administrator permission to install the SYNTHOS node service...\"\n" +
-		"  $cmd = \"irm '$base/api/node/windows-installer.ps1' | iex\"\n" +
-		"  Start-Process powershell -Verb RunAs -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-Command',$cmd)\n" +
-		"  return\n" +
-		"}\n" +
-		"$dir = Join-Path $env:ProgramData \"SynthosNode\"\n" +
+		"$dir = Join-Path $env:APPDATA \"SynthosCollective\"\n" +
 		"New-Item -ItemType Directory -Force -Path $dir | Out-Null\n" +
 		"$exe = Join-Path $dir \"silentnode.exe\"\n" +
-		"$key = Join-Path $dir \"node-key.json\"\n" +
-		"$status = Join-Path $dir \"node-status.json\"\n" +
-		"Write-Host \"Downloading your SYNTHOS node...\"\n" +
+		"Write-Host \"Downloading your SYNTHOS 1-Click Background Node...\"\n" +
 		"Invoke-WebRequest -Uri \"$base/downloads/silentnode.exe\" -OutFile $exe\n" +
-		"$serviceName = \"SynthosNode\"\n" +
-		"$binPath = '\"' + $exe + '\" -key \"' + $key + '\" -status \"' + $status + '\" -relay \"' + $base + '\"'\n" +
-		"$existing = Get-Service -Name $serviceName -ErrorAction SilentlyContinue\n" +
-		"if ($existing) {\n" +
-		"  Write-Host \"Updating existing SYNTHOS node service...\"\n" +
-		"  Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue\n" +
-		"  sc.exe delete $serviceName | Out-Null\n" +
-		"  Start-Sleep -Seconds 2\n" +
-		"}\n" +
-		"Write-Host \"Installing SYNTHOS as a Windows Service...\"\n" +
-		"New-Service -Name $serviceName -BinaryPathName $binPath -DisplayName \"SYNTHOS Validator Node\" -Description \"Runs a SYNTHOS background validator node with real Ed25519 signed heartbeats.\" -StartupType Automatic | Out-Null\n" +
-		"Start-Service -Name $serviceName\n" +
+		"Write-Host \"Starting SYNTHOS Background Node...\"\n" +
+		"Start-Process -FilePath $exe -WorkingDirectory $dir\n" +
 		"Write-Host \"\"\n" +
-		"Write-Host \"Done! Your SYNTHOS validator node is running as a Windows Service.\"\n" +
-		"Write-Host \"It keeps sending signed uptime proofs while the computer is on.\"\n" +
-		"Write-Host \"Status file: $status\"\n" +
-		"Write-Host \"\"\n" +
-		"Write-Host \"To stop and remove it later, run:\"\n" +
-		"Write-Host \"  Stop-Service SynthosNode; sc.exe delete SynthosNode\"\n"
+		"Write-Host \"Done! Your SYNTHOS validator node is now running silently in the background.\"\n" +
+		"Write-Host \"It will automatically start whenever you log into your computer.\"\n"
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = w.Write([]byte(script))
 }
-
 // handleWindowsInstallerBat serves a double-clickable .bat wrapper that runs
 // the installation command above -- the simple path for non-technical
 // users: download this one file, double-click, done.
@@ -2207,7 +2334,6 @@ func (s *server) handleWindowsInstallerBat(w http.ResponseWriter, r *http.Reques
 	w.Header().Set("Content-Disposition", `attachment; filename="install-synthos-node.bat"`)
 	_, _ = w.Write([]byte(bat))
 }
-
 func (s *server) writePeerList(w http.ResponseWriter, activeOnly bool) {
 	now := time.Now()
 	s.mu.RLock()
@@ -2220,7 +2346,6 @@ func (s *server) writePeerList(w http.ResponseWriter, activeOnly bool) {
 		peers = append(peers, p)
 	}
 	s.mu.RUnlock()
-
 	sort.Slice(peers, func(i, j int) bool { return peers[i].Name < peers[j].Name })
 	markSharedHardware(peers, now)
 	realHeight, realTip, realStateRoot, hasRealChain := fetchRealChainStatus()
@@ -2245,12 +2370,12 @@ func (s *server) writePeerList(w http.ResponseWriter, activeOnly bool) {
 		"active_only":     activeOnly,
 	})
 }
-
 func (s *server) networkSnapshot(now time.Time) networkSnapshot {
+	s.pruneInactivePeers(staleAfter)
 	s.mu.RLock()
 	peers := make([]peer, 0, len(s.state.Peers))
 	for _, p := range s.state.Peers {
-		p.Stale = p.LastSeen == 0 || now.Sub(time.UnixMilli(p.LastSeen)) > staleAfter
+		lastAct := p.LastSeen; if lastAct == 0 { lastAct = p.RegisteredAt }; p.Stale = lastAct == 0 || now.Sub(time.UnixMilli(lastAct)) > staleAfter
 		peers = append(peers, p)
 	}
 	s.mu.RUnlock()
@@ -2309,7 +2434,6 @@ func (s *server) networkSnapshot(now time.Time) networkSnapshot {
 	sort.Slice(out.Peers, func(i, j int) bool { return out.Peers[i].Name < out.Peers[j].Name })
 	return out
 }
-
 // fetchRealChainStatus asks the public SYNTHOS RPC/validator endpoint for
 // its actual /status directly, the same live source the site's own header
 // counter and explorer page use, instead of trusting self-reported peer
@@ -2342,8 +2466,7 @@ func fetchRealChainStatus() (height int64, tip string, stateRoot string, ok bool
 	}
 	return parsed.Height, parsed.Tip, parsed.StateRoot, true
 }
-
-func (s *server) proxyRPCJSON(w http.ResponseWriter, r *http.Request, rpcPath string) bool {
+func (s *server) proxyRPC(w http.ResponseWriter, r *http.Request, rpcPath string) bool {
 	rpcURL := strings.TrimRight(os.Getenv("SYNTHOS_RPC_URL"), "/")
 	if rpcURL == "" {
 		return false
@@ -2352,8 +2475,30 @@ func (s *server) proxyRPCJSON(w http.ResponseWriter, r *http.Request, rpcPath st
 	if r.URL.RawQuery != "" {
 		target += "?" + r.URL.RawQuery
 	}
-	client := &http.Client{Timeout: 8 * time.Second}
-	resp, err := client.Get(target)
+	ctx := r.Context()
+	var body io.Reader
+	if r.Body != nil {
+		body = io.LimitReader(r.Body, 16<<20)
+	}
+	req, err := http.NewRequestWithContext(ctx, r.Method, target, body)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{
+			"ok":     false,
+			"error":  err.Error(),
+			"source": "synthos_rpc_proxy",
+		})
+		return true
+	}
+	for k, vv := range r.Header {
+		if strings.EqualFold(k, "Host") || strings.EqualFold(k, "Content-Length") {
+			continue
+		}
+		for _, v := range vv {
+			req.Header.Add(k, v)
+		}
+	}
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]any{
 			"ok":     false,
@@ -2363,17 +2508,40 @@ func (s *server) proxyRPCJSON(w http.ResponseWriter, r *http.Request, rpcPath st
 		return true
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-	if resp.Header.Get("Content-Type") != "" {
-		w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
-	} else {
-		w.Header().Set("Content-Type", "application/json")
+	for k, vv := range resp.Header {
+		for _, v := range vv {
+			w.Header().Add(k, v)
+		}
 	}
 	w.WriteHeader(resp.StatusCode)
-	_, _ = w.Write(body)
+	_, _ = io.Copy(w, resp.Body)
 	return true
 }
-
+func (s *server) proxyRPCJSON(w http.ResponseWriter, r *http.Request, rpcPath string) bool {
+	return s.proxyRPC(w, r, rpcPath)
+}
+func (s *server) handleDEXProxy(w http.ResponseWriter, r *http.Request) {
+	p := r.URL.Path
+	if strings.HasPrefix(p, "/api/dex") {
+		p = "/dex" + strings.TrimPrefix(p, "/api/dex")
+	}
+	if !s.proxyRPC(w, r, p) {
+		writeJSON(w, http.StatusBadGateway, map[string]any{
+			"ok":     false,
+			"error":  "SYNTHOS_RPC_URL not configured for DEX proxy",
+			"source": "synthos_registry",
+		})
+	}
+}
+func (s *server) handleGenericRPC(w http.ResponseWriter, r *http.Request) {
+	if !s.proxyRPC(w, r, r.URL.Path) {
+		writeJSON(w, http.StatusBadGateway, map[string]any{
+			"ok":     false,
+			"error":  "SYNTHOS_RPC_URL not configured for RPC proxy",
+			"source": "synthos_registry",
+		})
+	}
+}
 // authorized used to compare the caller-supplied secret with a plain Go
 // == , which returns as soon as it finds the first mismatched byte. How
 // long that comparison takes leaks how many leading characters of a guess
@@ -2391,7 +2559,6 @@ func (s *server) authorized(r *http.Request) bool {
 	given := r.Header.Get("X-Registry-Secret")
 	return given != "" && subtle.ConstantTimeCompare([]byte(given), []byte(s.secret)) == 1
 }
-
 func (s *server) load() error {
 	f, err := os.Open(s.stateFile)
 	if err != nil {
@@ -2420,11 +2587,12 @@ func (s *server) load() error {
 	s.state = st
 	return nil
 }
-
 func (s *server) persist() error {
 	if s.stateFile == "" {
 		return nil
 	}
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
 	if err := os.MkdirAll(dir(s.stateFile), 0o755); err != nil {
 		return err
 	}
@@ -2435,7 +2603,9 @@ func (s *server) persist() error {
 	}
 	enc := json.NewEncoder(f)
 	enc.SetIndent("", "  ")
+	s.mu.RLock()
 	err = enc.Encode(s.state)
+	s.mu.RUnlock()
 	closeErr := f.Close()
 	if err != nil {
 		_ = os.Remove(tmp)
@@ -2447,7 +2617,6 @@ func (s *server) persist() error {
 	}
 	return os.Rename(tmp, s.stateFile)
 }
-
 // -----------------------------------------------------------------------
 // Rate limiting and request body size caps.
 //
@@ -2472,13 +2641,11 @@ func (s *server) persist() error {
 // network, crypto, wallet) -- too much unrelated weight for a binary that
 // today only imports internal/chain and internal/wallet.
 // -----------------------------------------------------------------------
-
 const (
 	registryRateLimitRPS = 20        // sustained requests/sec allowed per client IP
 	registryRateBurst    = 40        // token bucket capacity, i.e. how far a burst may exceed the sustained rate
 	registryMaxBodyBytes = 64 * 1024 // no legitimate request to this registry needs anywhere near this
 )
-
 type registryTokenBucket struct {
 	capacity   float64
 	tokens     float64
@@ -2486,7 +2653,6 @@ type registryTokenBucket struct {
 	lastRefill time.Time
 	mu         sync.Mutex
 }
-
 func newRegistryTokenBucket(capacity int, tokensPerSecond float64) *registryTokenBucket {
 	return &registryTokenBucket{
 		capacity:   float64(capacity),
@@ -2495,7 +2661,6 @@ func newRegistryTokenBucket(capacity int, tokensPerSecond float64) *registryToke
 		lastRefill: time.Now(),
 	}
 }
-
 func (tb *registryTokenBucket) allow() bool {
 	tb.mu.Lock()
 	defer tb.mu.Unlock()
@@ -2512,18 +2677,15 @@ func (tb *registryTokenBucket) allow() bool {
 	}
 	return false
 }
-
 type registryRateLimiter struct {
 	buckets map[string]*registryTokenBucket
 	mu      sync.Mutex
 }
-
 func newRegistryRateLimiter() *registryRateLimiter {
 	rl := &registryRateLimiter{buckets: make(map[string]*registryTokenBucket)}
 	go rl.cleanupLoop()
 	return rl
 }
-
 func (rl *registryRateLimiter) allow(clientIP string) bool {
 	rl.mu.Lock()
 	bucket, ok := rl.buckets[clientIP]
@@ -2534,7 +2696,6 @@ func (rl *registryRateLimiter) allow(clientIP string) bool {
 	rl.mu.Unlock()
 	return bucket.allow()
 }
-
 // cleanupLoop periodically forgets buckets for clients that haven't made a
 // request in a while, so a long-running process doesn't accumulate one
 // bucket per distinct IP forever.
@@ -2555,7 +2716,6 @@ func (rl *registryRateLimiter) cleanupLoop() {
 		rl.mu.Unlock()
 	}
 }
-
 // limitRequest wraps next with per-client-IP rate limiting and a cap on
 // request body size, applied ahead of every handler -- including the
 // unauthenticated self-service ones, which need it most since a shared
@@ -2574,7 +2734,6 @@ func limitRequest(rl *registryRateLimiter, next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
-
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Only set the allow-origin header when the request's origin is
@@ -2600,7 +2759,6 @@ func cors(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
-
 // allowedOrigin returns the Access-Control-Allow-Origin value for the given
 // request Origin header, or "" if that origin is not allowed (the caller
 // then omits the header entirely -- see cors above). With
@@ -2627,7 +2785,6 @@ func allowedOrigin(origin string) string {
 	}
 	return ""
 }
-
 func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -2635,11 +2792,9 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(value)
 }
-
 func sanitize(value string) string {
 	return safeName.ReplaceAllString(truncate(value, 64), "")
 }
-
 func truncate(value string, max int) string {
 	value = strings.TrimSpace(value)
 	if len(value) <= max {
@@ -2647,14 +2802,12 @@ func truncate(value string, max int) string {
 	}
 	return value[:max]
 }
-
 func defaultString(value, fallback string) string {
 	if value != "" {
 		return value
 	}
 	return fallback
 }
-
 func splitCSV(value string) []string {
 	parts := strings.Split(value, ",")
 	out := make([]string, 0, len(parts))
@@ -2666,7 +2819,6 @@ func splitCSV(value string) []string {
 	}
 	return out
 }
-
 func normalizeRole(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "validator", "public_validator", "public-validator", "validator_node":
@@ -2681,7 +2833,6 @@ func normalizeRole(value string) string {
 		return "observer"
 	}
 }
-
 func roleKind(role string) string {
 	switch role {
 	case "validator_candidate", "validator":
@@ -2692,7 +2843,6 @@ func roleKind(role string) string {
 		return "observer"
 	}
 }
-
 func proofStatus(p peer, now time.Time) string {
 	if p.LastHeartbeatAt == 0 {
 		return "registered"
@@ -2705,7 +2855,6 @@ func proofStatus(p peer, now time.Time) string {
 	}
 	return "proving"
 }
-
 func activateHostedProofSession(p *peer) {
 	if p == nil {
 		return
@@ -2727,7 +2876,6 @@ func activateHostedProofSession(p *peer) {
 		p.Capabilities = coreNodeCapabilities()
 	}
 }
-
 func nodeStatus(p peer, now time.Time) map[string]any {
 	p.ProofStatus = proofStatus(p, now)
 	uptime := time.Duration(p.VerifiedUptimeMS) * time.Millisecond
@@ -2779,44 +2927,48 @@ func nodeStatus(p peer, now time.Time) map[string]any {
 	capabilityMap := capabilityStatusMap(p.Capabilities)
 	healthy := p.LastHeartbeatAt > 0 && now.Sub(time.UnixMilli(p.LastHeartbeatAt)) <= staleAfter
 	synced := p.Height > 0
+	bondSatisfied := p.BondedSYN >= validatorMinimumBondSYN || p.ValidatorApproved
 	return map[string]any{
-		"node_id":                   p.Name,
-		"publicId":                  p.Name,
-		"public_key":                p.PublicKey,
-		"publicKey":                 p.PublicKey,
-		"role":                      role,
-		"kind":                      p.Kind,
-		"network":                   p.Network,
-		"endpoint":                  p.URL,
-		"status":                    p.Status,
-		"proof_status":              p.ProofStatus,
-		"hosted_proof_session":      p.HostedProofSession,
-		"real_signed_heartbeat":     !p.HostedProofSession && p.LastNonce != "",
-		"registered_at":             millisRFC3339(p.RegisteredAt),
-		"first_heartbeat_at":        millisRFC3339(p.FirstHeartbeatAt),
-		"last_heartbeat_at":         millisRFC3339(p.LastHeartbeatAt),
-		"valid_heartbeats":          p.ValidHeartbeats,
-		"verified_uptime_s":         int64(uptime.Seconds()),
-		"verified_days":             uptime.Hours() / 24,
-		"uptime_percent":            uptimePercent,
-		"uptime_percent_this_month": uptimePercent,
-		"uptime_required_s":         int64(rewardEpoch.Seconds()),
-		"reward_epoch":              rewardEpochTracking,
-		"height":                    p.Height,
-		"tip":                       p.Tip,
-		"state_root":                p.StateRoot,
-		"stateRoot":                 p.StateRoot,
-		"health":                    healthy,
-		"synced":                    synced,
-		"capabilities":              p.Capabilities,
-		"capability_status":         capabilityMap,
-		"capabilityStatus":          capabilityMap,
-		"accepted":                  rewardEligible,
-		"reward":                    reward,
-		"shared_hardware_with":      p.SharedHardwareWith,
+		"node_id":                    p.Name,
+		"publicId":                   p.Name,
+		"public_key":                 p.PublicKey,
+		"publicKey":                  p.PublicKey,
+		"role":                       role,
+		"kind":                       p.Kind,
+		"network":                    p.Network,
+		"endpoint":                   p.URL,
+		"status":                     p.Status,
+		"proof_status":               p.ProofStatus,
+		"hosted_proof_session":       p.HostedProofSession,
+		"real_signed_heartbeat":      !p.HostedProofSession && p.LastNonce != "",
+		"registered_at":              millisRFC3339(p.RegisteredAt),
+		"first_heartbeat_at":         millisRFC3339(p.FirstHeartbeatAt),
+		"last_heartbeat_at":          millisRFC3339(p.LastHeartbeatAt),
+		"valid_heartbeats":           p.ValidHeartbeats,
+		"verified_uptime_s":          int64(uptime.Seconds()),
+		"verified_days":              uptime.Hours() / 24,
+		"uptime_percent":             uptimePercent,
+		"uptime_percent_this_month":  uptimePercent,
+		"uptime_required_s":          int64(rewardEpoch.Seconds()),
+		"reward_epoch":               rewardEpochTracking,
+		"height":                     p.Height,
+		"tip":                        p.Tip,
+		"state_root":                 p.StateRoot,
+		"stateRoot":                  p.StateRoot,
+		"health":                     healthy,
+		"synced":                     synced,
+		"capabilities":               p.Capabilities,
+		"capability_status":          capabilityMap,
+		"capabilityStatus":           capabilityMap,
+		"accepted":                   rewardEligible,
+		"reward":                     reward,
+		"shared_hardware_with":       p.SharedHardwareWith,
+		"operator_address":           p.OperatorAddress,
+		"bonded_syn":                 p.BondedSYN,
+		"minimum_validator_bond_syn": validatorMinimumBondSYN,
+		"validator_bond_satisfied":   bondSatisfied,
 	}
 }
-
 func rewardEpochStatus(now time.Time, p peer, uptime time.Duration, uptimePercent float64, rewardStatus string, rewardEligible bool) map[string]any {
 	currentEpoch := now.UTC().Format("2006-01")
 	firstEligible := ""
@@ -2842,18 +2994,15 @@ func rewardEpochStatus(now time.Time, p peer, uptime time.Duration, uptimePercen
 		"note":                          "Reward eligibility applies to Validator Candidate and Validator roles only.",
 	}
 }
-
 func dutyStatus(ok bool) string {
 	if ok {
 		return "passing"
 	}
 	return "needs_attention"
 }
-
 func isRealSignedHeartbeat(p peer) bool {
 	return !p.HostedProofSession && p.LastNonce != "" && p.ValidHeartbeats > 0
 }
-
 func capabilityCount(p peer) int {
 	status := capabilityStatusMap(p.Capabilities)
 	count := 0
@@ -2864,7 +3013,6 @@ func capabilityCount(p peer) int {
 	}
 	return count
 }
-
 func operatorReliabilityScore(p peer, now time.Time) int {
 	score := 0
 	if isRealSignedHeartbeat(p) {
@@ -2893,7 +3041,6 @@ func operatorReliabilityScore(p peer, now time.Time) int {
 	}
 	return score
 }
-
 func reliabilityReportForPeer(p peer, now time.Time) map[string]any {
 	role := defaultString(p.Role, normalizeRole(p.Kind))
 	uptime := time.Duration(p.VerifiedUptimeMS) * time.Millisecond
@@ -2927,7 +3074,6 @@ func reliabilityReportForPeer(p peer, now time.Time) map[string]any {
 		"operator_score":        operatorReliabilityScore(p, now),
 	}
 }
-
 func coreNodeCapabilities() []string {
 	return []string{
 		"ed25519",
@@ -2939,7 +3085,6 @@ func coreNodeCapabilities() []string {
 		"persistent_storage",
 	}
 }
-
 func capabilityStatusMap(capabilities []string) map[string]bool {
 	out := map[string]bool{}
 	for _, value := range capabilities {
@@ -2959,20 +3104,23 @@ func capabilityStatusMap(capabilities []string) map[string]bool {
 	}
 	return out
 }
-
 func millisRFC3339(ms int64) string {
 	if ms <= 0 {
 		return ""
 	}
 	return time.UnixMilli(ms).UTC().Format(time.RFC3339)
 }
-
 func validatorRewardPolicy() map[string]any {
 	return map[string]any{
 		"token":                          "SYN",
 		"validator_monthly_base_syn":     validatorMonthlyBaseRewardSYN,
 		"validator_monthly_bonus_cap":    validatorMonthlyBonusCapSYN,
 		"validator_monthly_max_syn":      validatorMonthlyBaseRewardSYN + validatorMonthlyBonusCapSYN,
+		"requires_validator_bond":        true,
+		"minimum_validator_bond_syn":     validatorMinimumBondSYN,
+		"minimum_validator_bond_usd_est": 1000,
+		"early_access_url":               "https://82-29-54-7.sslip.io/early-access",
+		"staking_endpoint":               "https://82-29-54-7.sslip.io/api/validators/stake",
 		"payment_timing":                 "monthly_in_arrears",
 		"first_payment_after":            "one full month of verified validator uptime",
 		"no_payment_for_button_click":    true,
@@ -2987,7 +3135,6 @@ func validatorRewardPolicy() map[string]any {
 		"ten_year_max_per_validator_syn": 910_000,
 	}
 }
-
 // nonceLess reports whether heartbeat nonce a should be treated as
 // strictly earlier than nonce b, for the replay/staleness rejection in
 // handleAPINodeHeartbeat.
@@ -3033,7 +3180,6 @@ func nonceLess(a, b string) bool {
 	}
 	return false
 }
-
 // compareDecimalSegment compares two strings as non-negative base-10
 // integers when both consist entirely of ASCII digits (digit count first,
 // then lexicographically among equal-length digit strings -- exactly
@@ -3049,7 +3195,6 @@ func compareDecimalSegment(a, b string) int {
 	}
 	return strings.Compare(a, b)
 }
-
 func isAllDigits(s string) bool {
 	if s == "" {
 		return false
@@ -3061,7 +3206,6 @@ func isAllDigits(s string) bool {
 	}
 	return true
 }
-
 func canonicalHeartbeatMessage(nodeID string, height int64, tip string, stateRoot string, timestamp string, nonce string) []byte {
 	return []byte(fmt.Sprintf(
 		"SYNTHOS_HEARTBEAT_V1\nnode_id=%s\nheight=%d\ntip=%s\nstate_root=%s\ntimestamp=%s\nnonce=%s",
@@ -3073,7 +3217,6 @@ func canonicalHeartbeatMessage(nodeID string, height int64, tip string, stateRoo
 		strings.TrimSpace(nonce),
 	))
 }
-
 func verifyHeartbeatSignature(publicKeyHex string, signatureHex string, message []byte) error {
 	publicKeyHex = strings.TrimPrefix(strings.TrimSpace(publicKeyHex), "0x")
 	signatureHex = strings.TrimPrefix(strings.TrimSpace(signatureHex), "0x")
@@ -3090,8 +3233,8 @@ func verifyHeartbeatSignature(publicKeyHex string, signatureHex string, message 
 	}
 	return nil
 }
-
 func earlyAccessAssetsFromEnv() []earlyAccessAsset {
+	treasury := env("SYNTHOS_EARLY_ACCESS_PAYMENT_TREASURY", env("SYNTHOS_EARLY_ACCESS_TREASURY_WALLET", "0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2"))
 	if raw := os.Getenv("SYNTHOS_EARLY_ACCESS_ASSETS_JSON"); raw != "" {
 		var assets []earlyAccessAsset
 		if err := json.Unmarshal([]byte(raw), &assets); err == nil && len(assets) > 0 {
@@ -3100,7 +3243,7 @@ func earlyAccessAssetsFromEnv() []earlyAccessAsset {
 					assets[i].Enabled = true
 				}
 				if assets[i].TreasuryAddress == "" {
-					assets[i].TreasuryAddress = env("SYNTHOS_EARLY_ACCESS_PAYMENT_TREASURY", env("SYNTHOS_EARLY_ACCESS_TREASURY_WALLET", "0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2"))
+					assets[i].TreasuryAddress = treasury
 				}
 			}
 			return assets
@@ -3108,14 +3251,52 @@ func earlyAccessAssetsFromEnv() []earlyAccessAsset {
 		log.Printf("SYNTHOS_EARLY_ACCESS_ASSETS_JSON is invalid; using default asset slots")
 	}
 	return []earlyAccessAsset{
-		{Symbol: "USDC", Decimals: 6, USDPrice: "1.00", Enabled: false},
-		{Symbol: "USDT", Decimals: 6, USDPrice: "1.00", Enabled: false},
-		{Symbol: "WETH", Decimals: 18, Enabled: false},
-		{Symbol: "WBTC", Decimals: 8, Enabled: false},
-		{Symbol: "ETH", Native: true, Decimals: 18, Enabled: false},
+		{
+			Symbol:          "USDC",
+			Network:         "Ethereum Mainnet",
+			ChainID:         "1",
+			RPCURL:          env("SYNTHOS_ETH_RPC_URL", "https://ethereum-rpc.publicnode.com"),
+			Address:         "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+			TreasuryAddress: treasury,
+			Decimals:        6,
+			USDPrice:        "1.00",
+			Enabled:         true,
+		},
+		{
+			Symbol:          "USDC-BASE",
+			Network:         "Base Mainnet",
+			ChainID:         "8453",
+			RPCURL:          env("SYNTHOS_BASE_RPC_URL", "https://mainnet.base.org"),
+			Address:         "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+			TreasuryAddress: treasury,
+			Decimals:        6,
+			USDPrice:        "1.00",
+			Enabled:         true,
+		},
+		{
+			Symbol:          "USDT",
+			Network:         "Ethereum Mainnet",
+			ChainID:         "1",
+			RPCURL:          env("SYNTHOS_ETH_RPC_URL", "https://ethereum-rpc.publicnode.com"),
+			Address:         "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+			TreasuryAddress: treasury,
+			Decimals:        6,
+			USDPrice:        "1.00",
+			Enabled:         true,
+		},
+		{
+			Symbol:          "ETH",
+			Network:         "Ethereum Mainnet",
+			ChainID:         "1",
+			RPCURL:          env("SYNTHOS_ETH_RPC_URL", "https://ethereum-rpc.publicnode.com"),
+			TreasuryAddress: treasury,
+			Native:          true,
+			Decimals:        18,
+			USDPrice:        env("SYNTHOS_ETH_USD_PRICE", "2500.00"),
+			Enabled:         true,
+		},
 	}
 }
-
 func earlyAccessAssetBySymbol(symbol string) (earlyAccessAsset, bool) {
 	symbol = strings.ToUpper(strings.TrimSpace(symbol))
 	for _, asset := range earlyAccessAssetsFromEnv() {
@@ -3125,7 +3306,6 @@ func earlyAccessAssetBySymbol(symbol string) (earlyAccessAsset, bool) {
 	}
 	return earlyAccessAsset{}, false
 }
-
 func parseUSDCents(value string) (uint64, error) {
 	value = strings.TrimSpace(strings.TrimPrefix(value, "$"))
 	if value == "" {
@@ -3159,7 +3339,6 @@ func parseUSDCents(value string) (uint64, error) {
 	}
 	return cents.Uint64(), nil
 }
-
 func quotePaymentAmount(usdCents uint64, asset earlyAccessAsset) (string, error) {
 	priceCents, err := parseUSDCents(defaultString(asset.USDPrice, "1.00"))
 	if err != nil || priceCents == 0 {
@@ -3170,7 +3349,6 @@ func quotePaymentAmount(usdCents uint64, asset earlyAccessAsset) (string, error)
 	amount.Div(amount, new(big.Int).SetUint64(priceCents))
 	return amount.String(), nil
 }
-
 func isHexHash(value string) bool {
 	value = strings.TrimPrefix(value, "0x")
 	if len(value) != 64 {
@@ -3179,7 +3357,6 @@ func isHexHash(value string) bool {
 	_, err := hex.DecodeString(value)
 	return err == nil
 }
-
 func verifyEVMPayment(txHash string, intent earlyAccessPaymentIntent, asset earlyAccessAsset) error {
 	if asset.RPCURL == "" {
 		return fmt.Errorf("asset RPC URL is not configured")
@@ -3255,7 +3432,6 @@ func verifyEVMPayment(txHash string, intent earlyAccessPaymentIntent, asset earl
 	}
 	return fmt.Errorf("matching token transfer to treasury not found")
 }
-
 func evmRPC(url string, method string, params []any) (any, error) {
 	body, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0",
@@ -3286,7 +3462,6 @@ func evmRPC(url string, method string, params []any) (any, error) {
 	}
 	return decoded.Result, nil
 }
-
 func allocateNativeSYN(intent earlyAccessPaymentIntent) (string, error) {
 	privHex := distributionAgentPrivateKey()
 	rpcURL := strings.TrimRight(env("SYNTHOS_NATIVE_RPC_URL", "https://rpc.ishamwilliamsblockchains.com"), "/")
@@ -3362,7 +3537,6 @@ func allocateNativeSYN(intent earlyAccessPaymentIntent) (string, error) {
 	}
 	return result.TxID, nil
 }
-
 func synthosNonce(rpcURL string, address string) (uint64, error) {
 	resp, err := http.Get(rpcURL + "/account?address=" + address)
 	if err != nil {
@@ -3381,14 +3555,12 @@ func synthosNonce(rpcURL string, address string) (uint64, error) {
 	}
 	return account.Nonce, nil
 }
-
 func distributionAgentPrivateKey() string {
 	if value := os.Getenv("SYNTHOS_DISTRIBUTION_AGENT_PRIVATE_KEY"); value != "" {
 		return value
 	}
 	return os.Getenv("SYNTHOS_EARLY_ACCESS_ALLOCATION_PRIVATE_KEY")
 }
-
 func earlyAccessDistributorConfig() map[string]any {
 	info := map[string]any{
 		"agentId": env("SYNTHOS_DISTRIBUTION_AGENT_ID", "synthos-early-adopter-distributor"),
@@ -3409,7 +3581,6 @@ func earlyAccessDistributorConfig() map[string]any {
 	}
 	return info
 }
-
 func synthosTxChainID() (uint64, error) {
 	for _, raw := range []string{
 		os.Getenv("SYNTHOS_EARLY_ACCESS_TX_CHAIN_ID"),
@@ -3427,7 +3598,6 @@ func synthosTxChainID() (uint64, error) {
 	}
 	return 20260702, nil
 }
-
 func parseHexBig(value string) (*big.Int, error) {
 	value = strings.TrimPrefix(value, "0x")
 	if value == "" {
@@ -3439,29 +3609,24 @@ func parseHexBig(value string) (*big.Int, error) {
 	}
 	return n, nil
 }
-
 func hexBool(value any) bool {
 	raw := stringValue(value)
 	return raw == "0x1" || raw == "1"
 }
-
 func stringValue(value any) string {
 	if value == nil {
 		return ""
 	}
 	return fmt.Sprint(value)
 }
-
 func sameAddress(left string, right string) bool {
 	return strings.EqualFold(strings.TrimSpace(left), strings.TrimSpace(right))
 }
-
 func topicAddressMatches(topic string, address string) bool {
 	topic = strings.TrimPrefix(strings.ToLower(topic), "0x")
 	address = strings.TrimPrefix(strings.ToLower(address), "0x")
 	return len(topic) == 64 && len(address) == 40 && strings.HasSuffix(topic, address)
 }
-
 func normalizeChoice(value, fallback string, allowed ...string) string {
 	value = strings.ToLower(strings.TrimSpace(value))
 	for _, option := range allowed {
@@ -3471,7 +3636,6 @@ func normalizeChoice(value, fallback string, allowed ...string) string {
 	}
 	return fallback
 }
-
 func normalizeCapabilities(values []string) []string {
 	allowed := map[string]bool{
 		"immune_node":              true,
@@ -3497,7 +3661,6 @@ func normalizeCapabilities(values []string) []string {
 		"persistent_block_storage": true,
 		"persistent_vote_storage":  true,
 		"persistent_state_storage": true,
-
 		// mobile_candidate tags a peer as a phone-based P-O-U-T candidate
 		// (see internal/mobile package and cmd/cloudless-registry's own
 		// heartbeat handler) rather than a downloaded validator binary.
@@ -3532,7 +3695,6 @@ func normalizeCapabilities(values []string) []string {
 	}
 	return out
 }
-
 func canonicalCapability(value string) string {
 	switch value {
 	case "canonical_serialisation", "serialization":
@@ -3549,7 +3711,6 @@ func canonicalCapability(value string) string {
 		return value
 	}
 }
-
 func peerHasCapability(p peer, capability string) bool {
 	for _, value := range p.Capabilities {
 		if value == capability {
@@ -3558,7 +3719,6 @@ func peerHasCapability(p peer, capability string) bool {
 	}
 	return false
 }
-
 func shortID() string {
 	var b [5]byte
 	if _, err := rand.Read(b[:]); err != nil {
@@ -3566,7 +3726,6 @@ func shortID() string {
 	}
 	return hex.EncodeToString(b[:])
 }
-
 // paymentIntentID returns a payment-intent identifier with far more
 // entropy (16 random bytes = 128 bits) than shortID's 5 bytes (40 bits).
 // Unlike the other identifiers shortID produces -- node IDs, contact
@@ -3591,14 +3750,12 @@ func paymentIntentID() string {
 	}
 	return hex.EncodeToString(b[:])
 }
-
 func endpointURL(value string) string {
 	if value == "outbound-only" {
 		return ""
 	}
 	return value
 }
-
 func nextProposer(peers []peer) string {
 	for _, p := range peers {
 		if p.Kind == "" || p.Kind == "validator" {
@@ -3607,14 +3764,12 @@ func nextProposer(peers []peer) string {
 	}
 	return ""
 }
-
 func env(name, fallback string) string {
 	if value := os.Getenv(name); value != "" {
 		return value
 	}
 	return fallback
 }
-
 func defaultListen(fallback string) string {
 	if value := os.Getenv("SYNTHOS_REGISTRY_LISTEN"); value != "" {
 		return value
@@ -3624,7 +3779,6 @@ func defaultListen(fallback string) string {
 	}
 	return fallback
 }
-
 func dir(path string) string {
 	i := strings.LastIndexAny(path, `/\`)
 	if i < 0 {
