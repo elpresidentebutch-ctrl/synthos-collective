@@ -58,6 +58,7 @@ Synthos Collective records its block fingerprints on Base, Coinbase's Ethereum l
 - Contract: [0xae4C167ff08d13CaC9b397D13c50904bb9c881a5](https://basescan.org/address/0xae4C167ff08d13CaC9b397D13c50904bb9c881a5) on Base mainnet
 - First record: Synthos Collective block 42,288, written in [this transaction](https://basescan.org/tx/0xa8b5f38cd429a2aded5fc0a1c89fd7fb8136b0843970d273a63a4cb755246afa) on October 28, 2026
 - Only one approved relayer can write, and heights must always go up, so old records can't be rewritten
+- A Synthos Collective server posts a new record automatically every hour
 
 SYN itself is not on Base and is not traded on any exchange. The anchor proves history; it doesn't move tokens.
 
@@ -69,14 +70,12 @@ Known limits right now:
 
 - Both home validators share one home internet connection, and both servers use the same hosting company. Either outage takes down two validators at once and pauses the chain until one is back.
 - Blocks are mostly empty; there is no outside transaction volume yet.
-- The Base anchor is posted by hand for now; hourly automatic posting is the next step.
 - History from before the October 22 switch to CometBFT, more than 75,000 blocks from the chain's original engine, is kept on a single server.
 
 Next up:
 
 1. Bring in outside node operators and validators.
-2. Automate the hourly Base anchor.
-3. Archive the full chain history, both engines, on Filecoin, which is the subject of an [open grant proposal](https://github.com/filecoin-project/devgrants/issues/2227).
+2. Archive the full chain history, both engines, on Filecoin, which is the subject of an [open grant proposal](https://github.com/filecoin-project/devgrants/issues/2227).
 
 ## How to get involved
 
