@@ -79,7 +79,7 @@ Next up:
 
 ## How to get involved
 
-- **Run a node:** the 1-click Windows node is at [www.ishamwilliamsblockchains.com](https://www.ishamwilliamsblockchains.com) (type the www.).
+- **Run a node:** the full node is open source; build it from the [cometapp](https://github.com/elpresidentebutch-ctrl/synthos-collective/tree/main/cometapp) folder on GitHub. A step-by-step developer quickstart is coming next. Project site: [www.ishamwilliamsblockchains.com](https://www.ishamwilliamsblockchains.com) (type the www.).
 - **Read the code:** everything is open source under Apache-2.0 on [GitHub](https://github.com/elpresidentebutch-ctrl/synthos-collective) and [GitLab](https://gitlab.com/synthos-collective-group/synthos-collective).
 - **Check the chain yourself:** the live explorer is at [82-29-54-7.sslip.io](https://82-29-54-7.sslip.io), and the Base anchor is on [Basescan](https://basescan.org/address/0xae4C167ff08d13CaC9b397D13c50904bb9c881a5).
 - **Follow along:** [@elpresidentejim](https://x.com/elpresidentejim) on X and [James Isham Williams](https://www.linkedin.com/in/isham224369/) on LinkedIn.
