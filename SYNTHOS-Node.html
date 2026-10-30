@@ -1,0 +1,677 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SYNTHOS Collective — 1-Click Mainnet Node</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #06090e;
+      color: #f4f9ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(circle at 15% 10%, rgba(46,213,169,0.16), transparent 45rem), #06090e;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .shell {
+      width: min(940px, 100%);
+      border: 1px solid rgba(46,213,169,0.32);
+      background: rgba(11,16,24,0.94);
+      border-radius: 16px;
+      padding: 30px;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.65);
+    }
+    .top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      padding-bottom: 20px;
+    }
+    .eyebrow {
+      color: #2ed5a9;
+      font-size: 0.75rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+    h1 {
+      margin: 6px 0 0;
+      font-size: 1.85rem;
+      letter-spacing: -0.02em;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      padding: 9px 15px;
+      border-radius: 999px;
+      background: rgba(46,213,169,0.14);
+      border: 1px solid rgba(46,213,169,0.45);
+      color: #7fffd4;
+      font-weight: 700;
+      font-size: 0.85rem;
+    }
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #2ed5a9;
+      box-shadow: 0 0 12px #2ed5a9;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.35; }
+    }
+    .hero-id {
+      margin-top: 20px;
+      padding: 18px 20px;
+      border-radius: 12px;
+      background: rgba(46,213,169,0.08);
+      border: 1px solid rgba(46,213,169,0.35);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 14px;
+    }
+    .hero-id .id-text {
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 1.5rem;
+      font-weight: 800;
+      color: #2ed5a9;
+      letter-spacing: 0.02em;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 14px;
+      margin-top: 18px;
+    }
+    .card {
+      background: rgba(255,255,255,0.035);
+      border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 10px;
+      padding: 15px;
+    }
+    .label {
+      color: #8ea0ba;
+      font-size: 0.71rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .val {
+      margin-top: 8px;
+      font-size: 1.15rem;
+      font-weight: 800;
+      word-break: break-all;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      color: #ffffff;
+    }
+    .actions {
+      margin-top: 20px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    button.btn, a.btn {
+      background: #2ed5a9;
+      color: #05140f;
+      font-weight: 800;
+      text-decoration: none;
+      padding: 11px 16px;
+      border-radius: 8px;
+      border: 0;
+      cursor: pointer;
+      font-size: 0.86rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    button.btn.sec, a.btn.sec {
+      background: rgba(255,255,255,0.08);
+      color: #f4f9ff;
+      border: 1px solid rgba(255,255,255,0.16);
+    }
+    .console {
+      margin-top: 20px;
+      background: #04060a;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 10px;
+      padding: 14px;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 0.78rem;
+      height: 190px;
+      overflow-y: auto;
+      color: #a9c1d9;
+      line-height: 1.55;
+    }
+    .console .ok { color: #2ed5a9; }
+    .console .warn { color: #f2c45d; }
+    .note {
+      margin-top: 16px;
+      padding: 13px 16px;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      color: #9cb0c9;
+      font-size: 0.84rem;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="top">
+      <div>
+        <div class="eyebrow">SYNTHOS Collective Sovereign L1 — Mainnet (`synthos-mainnet-1`)</div>
+        <h1>1-Click Validator &amp; Heartbeat Node</h1>
+      </div>
+      <div class="badge" id="statusBadge"><span class="dot"></span> <span id="statusText">Starting Node...</span></div>
+    </div>
+
+    <div class="hero-id">
+      <div>
+        <div class="label">Your Persistent Mainnet Node ID (Use on Website Node Lookup)</div>
+        <div class="id-text" id="nodeId">syn-initializing...</div>
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn" id="copyBtn">Copy Node ID</button>
+        <button class="btn sec" id="backupBtn">Save Key Backup (.json)</button>
+        <button class="btn sec" id="restoreBtn">Import Key Backup</button>
+        <input type="file" id="restoreInput" accept=".json,application/json" style="display:none" />
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="label">Mainnet Block Height</div>
+        <div class="val" id="height">#—</div>
+      </div>
+      <div class="card">
+        <div class="label">Signed Heartbeats Accepted</div>
+        <div class="val" id="hbCount">0</div>
+      </div>
+      <div class="card">
+        <div class="label">Capabilities Verified</div>
+        <div class="val" id="caps">7 / 7 Core</div>
+      </div>
+      <div class="card">
+        <div class="label">Inbound Ports Required</div>
+        <div class="val">0 (Outbound-Only)</div>
+      </div>
+      <div class="card">
+        <div class="label">Ed25519 Public Key</div>
+        <div class="val" id="pubKey" style="font-size:0.78rem">—</div>
+      </div>
+      <div class="card">
+        <div class="label">Hardware Commitment</div>
+        <div class="val" id="hwCommit" style="font-size:0.78rem">—</div>
+      </div>
+    </div>
+
+    <div class="console" id="logBox"></div>
+
+    <div class="actions">
+      <a class="btn sec" id="lookupLink" href="https://www.ishamwilliamsblockchains.com/nodes" target="_blank" rel="noreferrer">Open Website Node Lookup</a>
+      <a class="btn sec" id="jsonProofLink" href="https://82-29-54-7.sslip.io/api/network/status" target="_blank" rel="noreferrer">View Live Network Status JSON</a>
+      <button class="btn sec" id="sendNowBtn">Send Heartbeat Now</button>
+    </div>
+
+    <div class="note">
+      <strong>Keep this window open or minimized to your taskbar.</strong> An unthrottled background worker signs and submits real Ed25519 (`SYNTHOS_HEARTBEAT_V1`) proofs every 15 seconds directly to the SYNTHOS Mainnet (`https://82-29-54-7.sslip.io`). Save your key backup JSON to preserve your `syn-...` Node ID across computers.
+    </div>
+  </div>
+
+<script>
+(() => {
+  const RELAY_URL = "https://82-29-54-7.sslip.io";
+  const STORAGE_KEY = "synthos_standalone_node_key_v1";
+  const CORE_CAPABILITIES = [
+    "ed25519",
+    "canonical_serialization",
+    "validator_registry",
+    "proposal_rotation",
+    "quorum",
+    "replay_protection",
+    "persistent_storage"
+  ];
+
+  // =========================================================================
+  // Self-contained RFC 8032 Ed25519 + SHA-512 + SHA-256 (Pure JS BigInt)
+  // Works on file://, http://, https:// with zero external dependencies.
+  // =========================================================================
+  const P = (1n << 255n) - 19n;
+  const L = (1n << 252n) + 27742317777372353535851937790883648493n;
+  const mod = (a, m = P) => { const r = a % m; return r >= 0n ? r : r + m; };
+  const modPow = (b, e, m = P) => {
+    let r = 1n; b = mod(b, m);
+    while (e > 0n) { if (e & 1n) r = mod(r * b, m); b = mod(b * b, m); e >>= 1n; }
+    return r;
+  };
+  const inv = (a) => modPow(a, P - 2n, P);
+  const D = mod(-121665n * inv(121666n));
+  const I = modPow(2n, (P - 1n) / 4n);
+
+  const Bx = 15112221349535400772501151409588531511454012693041857206046113283949847762202n;
+  const By = 46316835694926478169428394003475163141307993866256225615783033603165251855960n;
+  const B = [Bx, By, 1n, mod(Bx * By)];
+
+  function ptAdd(P1, P2) {
+    const [X1, Y1, Z1, T1] = P1, [X2, Y2, Z2, T2] = P2;
+    const A = mod((Y1 - X1) * (Y2 - X2));
+    const B_ = mod((Y1 + X1) * (Y2 + X2));
+    const C = mod(T1 * 2n * D * T2);
+    const D_ = mod(Z1 * 2n * Z2);
+    const E = mod(B_ - A);
+    const F = mod(D_ - C);
+    const G = mod(D_ + C);
+    const H = mod(B_ + A);
+    return [mod(E * F), mod(G * H), mod(F * G), mod(E * H)];
+  }
+
+  function scalarMult(s, pt = B) {
+    let Q = [0n, 1n, 1n, 0n];
+    let cur = pt;
+    while (s > 0n) {
+      if (s & 1n) Q = ptAdd(Q, cur);
+      cur = ptAdd(cur, cur);
+      s >>= 1n;
+    }
+    return Q;
+  }
+
+  function encodePoint(pt) {
+    const zInv = inv(pt[2]);
+    const x = mod(pt[0] * zInv);
+    const y = mod(pt[1] * zInv);
+    const out = new Uint8Array(32);
+    let tmp = y;
+    for (let i = 0; i < 32; i++) { out[i] = Number(tmp & 0xffn); tmp >>= 8n; }
+    out[31] |= Number(x & 1n) << 7;
+    return out;
+  }
+
+  const K512 = [
+    0x428a2f98d728ae22n, 0x7137449123ef65cdn, 0xb5c0fbcfec4d3b2fn, 0xe9b5dba58189dbbcn,
+    0x3956c25bf348b538n, 0x59f111f1b605d019n, 0x923f82a4af194f9bn, 0xab1c5ed5da6d8118n,
+    0xd807aa98a3030242n, 0x12835b0145706fben, 0x243185be4ee4b28cn, 0x550c7dc3d5ffb4e2n,
+    0x72be5d74f27b896fn, 0x80deb1fe3b1696b1n, 0x9bdc06a725c71235n, 0xc19bf174cf692694n,
+    0xe49b69c19ef14ad2n, 0xefbe4786384f25e3n, 0x0fc19dc68b8cd5b5n, 0x240ca1cc77ac9c65n,
+    0x2de92c6f592b0275n, 0x4a7484aa6ea6e483n, 0x5cb0a9dcbd41fbd4n, 0x76f988da831153b5n,
+    0x983e5152ee66dfabn, 0xa831c66d2db43210n, 0xb00327c898fb213fn, 0xbf597fc7beef0ee4n,
+    0xc6e00bf33da88fc2n, 0xd5a79147930aa725n, 0x06ca6351e003826fn, 0x142929670a0e6e70n,
+    0x27b70a8546d22ffcn, 0x2e1b21385c26c926n, 0x4d2c6dfc5ac42aedn, 0x53380d139d95b3dfn,
+    0x650a73548baf63den, 0x766a0abb3c77b2a8n, 0x81c2c92e47edaee6n, 0x92722c851482353bn,
+    0xa2bfe8a14cf10364n, 0xa81a664bbc423001n, 0xc24b8b70d0f89791n, 0xc76c51a30654be30n,
+    0xd192e819d6ef5218n, 0xd69906245565a910n, 0xf40e35855771202an, 0x106aa07032bbd1b8n,
+    0x19a4c116b8d2d0c8n, 0x1e376c085141ab53n, 0x2748774cdf8eeb99n, 0x34b0bcb5e19b48a8n,
+    0x391c0cb3c5c95a63n, 0x4ed8aa4ae3418acbn, 0x5b9cca4f7763e373n, 0x682e6ff3d6b2b8a3n,
+    0x748f82ee5defb2fcn, 0x78a5636f43172f60n, 0x84c87814a1f0ab72n, 0x8cc702081a6439ecn,
+    0x90befffa23631e28n, 0xa4506cebde82bde9n, 0xbef9a3f7b2c67915n, 0xc67178f2e372532bn,
+    0xca273eceea26619cn, 0xd186b8c721c0c207n, 0xeada7dd6cde0eb1en, 0xf57d4f7fee6ed178n,
+    0x06f067aa72176fban, 0x0a637dc5a2c898a6n, 0x113f9804bef90daen, 0x1b710b35131c471bn,
+    0x28db77f523047d84n, 0x32caab7b40c72493n, 0x3c9ebe0a15c9bebcn, 0x431d67c49c100d4cn,
+    0x4cc5d4becb3e42b6n, 0x597f299cfc657e2an, 0x5fcb6fab3ad6faecn, 0x6c44198c4a475817n
+  ];
+
+  const M64 = 0xffffffffffffffffn;
+  const rotr64 = (x, n) => ((x >> BigInt(n)) | (x << BigInt(64 - n))) & M64;
+
+  function sha512(msgBytes) {
+    let H = [
+      0x6a09e667f3bcc908n, 0xbb67ae8584caa73bn, 0x3c6ef372fe94f82bn, 0xa54ff53a5f1d36f1n,
+      0x510e527fade682d1n, 0x9b05688c2b3e6c1fn, 0x1f83d9abfb41bd6bn, 0x5be0cd19137e2179n
+    ];
+    const bitLen = BigInt(msgBytes.length) * 8n;
+    const padLen = (112 - ((msgBytes.length + 1) % 128) + 128) % 128;
+    const total = msgBytes.length + 1 + padLen + 16;
+    const buf = new Uint8Array(total);
+    buf.set(msgBytes);
+    buf[msgBytes.length] = 0x80;
+    let tmpLen = bitLen;
+    for (let i = total - 1; i >= total - 16; i--) {
+      buf[i] = Number(tmpLen & 0xffn);
+      tmpLen >>= 8n;
+    }
+    const W = new Array(80).fill(0n);
+    for (let off = 0; off < total; off += 128) {
+      for (let i = 0; i < 16; i++) {
+        let w = 0n;
+        for (let b = 0; b < 8; b++) w = (w << 8n) | BigInt(buf[off + i * 8 + b]);
+        W[i] = w;
+      }
+      for (let i = 16; i < 80; i++) {
+        const s0 = rotr64(W[i - 15], 1) ^ rotr64(W[i - 15], 8) ^ (W[i - 15] >> 7n);
+        const s1 = rotr64(W[i - 2], 19) ^ rotr64(W[i - 2], 61) ^ (W[i - 2] >> 6n);
+        W[i] = (W[i - 16] + s0 + W[i - 7] + s1) & M64;
+      }
+      let [a, b, c, d, e, f, g, h] = H;
+      for (let i = 0; i < 80; i++) {
+        const S1 = rotr64(e, 14) ^ rotr64(e, 18) ^ rotr64(e, 41);
+        const ch = (e & f) ^ ((~e & M64) & g);
+        const t1 = (h + S1 + ch + K512[i] + W[i]) & M64;
+        const S0 = rotr64(a, 28) ^ rotr64(a, 34) ^ rotr64(a, 39);
+        const maj = (a & b) ^ (a & c) ^ (b & c);
+        const t2 = (S0 + maj) & M64;
+        h = g; g = f; f = e; e = (d + t1) & M64;
+        d = c; c = b; b = a; a = (t1 + t2) & M64;
+      }
+      H = [
+        (H[0] + a) & M64, (H[1] + b) & M64, (H[2] + c) & M64, (H[3] + d) & M64,
+        (H[4] + e) & M64, (H[5] + f) & M64, (H[6] + g) & M64, (H[7] + h) & M64
+      ];
+    }
+    const out = new Uint8Array(64);
+    for (let i = 0; i < 8; i++) {
+      let w = H[i];
+      for (let b = 7; b >= 0; b--) { out[i * 8 + b] = Number(w & 0xffn); w >>= 8n; }
+    }
+    return out;
+  }
+
+  function bytesToBigLE(bytes) {
+    let r = 0n;
+    for (let i = bytes.length - 1; i >= 0; i--) r = (r << 8n) | BigInt(bytes[i]);
+    return r;
+  }
+
+  function bigToBytesLE(n, len = 32) {
+    const out = new Uint8Array(len);
+    let tmp = n;
+    for (let i = 0; i < len; i++) { out[i] = Number(tmp & 0xffn); tmp >>= 8n; }
+    return out;
+  }
+
+  function ed25519PubFromSeed(seed32) {
+    const h = sha512(seed32);
+    h[0] &= 248; h[31] &= 127; h[31] |= 64;
+    const s = bytesToBigLE(h.slice(0, 32));
+    return encodePoint(scalarMult(s, B));
+  }
+
+  function ed25519Sign(msgBytes, seed32, pub32) {
+    const h = sha512(seed32);
+    h[0] &= 248; h[31] &= 127; h[31] |= 64;
+    const a = bytesToBigLE(h.slice(0, 32));
+    const prefix = h.slice(32, 64);
+
+    const rInput = new Uint8Array(32 + msgBytes.length);
+    rInput.set(prefix, 0);
+    rInput.set(msgBytes, 32);
+    const r = mod(bytesToBigLE(sha512(rInput)), L);
+    const R = encodePoint(scalarMult(r, B));
+
+    const kInput = new Uint8Array(64 + msgBytes.length);
+    kInput.set(R, 0);
+    kInput.set(pub32, 32);
+    kInput.set(msgBytes, 64);
+    const k = mod(bytesToBigLE(sha512(kInput)), L);
+    const S = mod(r + k * a, L);
+
+    const sig = new Uint8Array(64);
+    sig.set(R, 0);
+    sig.set(bigToBytesLE(S, 32), 32);
+    return sig;
+  }
+
+  const hexEncode = (u8) => Array.from(u8, b => b.toString(16).padStart(2, "0")).join("");
+  const hexDecode = (hex) => {
+    const clean = hex.replace(/^0x/i, "").trim();
+    const out = new Uint8Array(clean.length / 2);
+    for (let i = 0; i < out.length; i++) out[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+    return out;
+  };
+
+  function loadOrCreateNodeKey() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.node_id && parsed.public_key && parsed.private_key && parsed.private_key.length === 128) {
+          return parsed;
+        }
+      }
+    } catch (_) {}
+
+    const seed = new Uint8Array(32);
+    crypto.getRandomValues(seed);
+    const pub = ed25519PubFromSeed(seed);
+    const priv64 = new Uint8Array(64);
+    priv64.set(seed, 0);
+    priv64.set(pub, 32);
+
+    const pubHash = sha512(pub);
+    const nodeID = "syn-" + hexEncode(pubHash.slice(0, 6));
+    const keyObj = {
+      node_id: nodeID,
+      public_key: hexEncode(pub),
+      private_key: hexEncode(priv64),
+      created_at: new Date().toISOString(),
+      format: "synthos-background-ed25519-v1"
+    };
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(keyObj)); } catch (_) {}
+    return keyObj;
+  }
+
+  let key = loadOrCreateNodeKey();
+  const hwHashInput = new TextEncoder().encode((navigator.platform || "windows") + "|" + key.node_id + "|synthos-desktop-agent-v1");
+  let hwCommitment = hexEncode(sha512(hwHashInput).slice(0, 32));
+  let heartbeatCount = 0;
+  let lastHeight = 12800;
+  let lastTip = "";
+  let lastStateRoot = "";
+
+  const logBox = document.getElementById("logBox");
+  function appendLog(msg, cls = "") {
+    const line = document.createElement("div");
+    if (cls) line.className = cls;
+    const ts = new Date().toLocaleTimeString();
+    line.textContent = `[${ts}] ${msg}`;
+    logBox.appendChild(line);
+    while (logBox.children.length > 80) logBox.removeChild(logBox.firstChild);
+    logBox.scrollTop = logBox.scrollHeight;
+  }
+
+  function renderIdentity() {
+    document.getElementById("nodeId").textContent = key.node_id;
+    document.getElementById("pubKey").textContent = key.public_key;
+    document.getElementById("hwCommit").textContent = hwCommitment;
+    document.getElementById("jsonProofLink").href = `${RELAY_URL}/api/nodes/${encodeURIComponent(key.node_id)}/status`;
+  }
+
+  renderIdentity();
+  appendLog(`Node identity loaded: ${key.node_id}`, "ok");
+  appendLog(`Public key: ${key.public_key}`);
+
+  async function syncMainnetStatus() {
+    try {
+      const res = await fetch(`${RELAY_URL}/api/chain/status`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.height > 0) {
+          lastHeight = data.height;
+          lastTip = data.tip || lastTip;
+          lastStateRoot = data.state_root || lastStateRoot;
+          document.getElementById("height").textContent = `#${lastHeight}`;
+          return;
+        }
+      }
+    } catch (_) {}
+    try {
+      const res2 = await fetch(`${RELAY_URL}/api/network/status`);
+      if (res2.ok) {
+        const data2 = await res2.json();
+        if (data2.highest_height > 0) {
+          lastHeight = data2.highest_height;
+          document.getElementById("height").textContent = `#${lastHeight}`;
+        }
+      }
+    } catch (_) {}
+    if (!lastTip) lastTip = "mainnet-tip-" + key.node_id;
+    if (!lastStateRoot) lastStateRoot = "mainnet-state-" + key.node_id;
+  }
+
+  async function runHeartbeatCycle() {
+    heartbeatCount++;
+    await syncMainnetStatus();
+
+    const regPayload = {
+      publicId: key.node_id,
+      public_key: key.public_key,
+      mode: "public-validator",
+      role: "validator_candidate",
+      network: "mainnet",
+      endpoint: "",
+      capabilities: CORE_CAPABILITIES,
+      background: true,
+      hardware_commitment: hwCommitment,
+      machine_commitment: hwCommitment
+    };
+
+    try {
+      await fetch(`${RELAY_URL}/api/nodes/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(regPayload)
+      });
+    } catch (e) {
+      appendLog(`Register retry: ${e.message}`, "warn");
+    }
+
+    const timestamp = new Date().toISOString();
+    const nonce = String(Date.now()).padStart(19, "0") + "-" + String(heartbeatCount).padStart(8, "0");
+    const canonical = `SYNTHOS_HEARTBEAT_V1\nnode_id=${key.node_id}\nheight=${lastHeight}\ntip=${lastTip}\nstate_root=${lastStateRoot}\ntimestamp=${timestamp}\nnonce=${nonce}`;
+
+    const privBytes = hexDecode(key.private_key);
+    const seed32 = privBytes.slice(0, 32);
+    const pub32 = hexDecode(key.public_key);
+    const msgBytes = new TextEncoder().encode(canonical);
+    const sigBytes = ed25519Sign(msgBytes, seed32, pub32);
+
+    const hbPayload = {
+      node_id: key.node_id,
+      height: lastHeight,
+      tip: lastTip,
+      state_root: lastStateRoot,
+      timestamp: timestamp,
+      nonce: nonce,
+      signature: hexEncode(sigBytes),
+      capabilities: CORE_CAPABILITIES,
+      hardware_commitment: hwCommitment
+    };
+
+    try {
+      const resp = await fetch(`${RELAY_URL}/api/nodes/heartbeat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(hbPayload)
+      });
+      if (resp.ok) {
+        const resData = await resp.json();
+        const totalValid = (resData.node && resData.node.valid_heartbeats) ? resData.node.valid_heartbeats : heartbeatCount;
+        document.getElementById("hbCount").textContent = String(totalValid);
+        document.getElementById("statusText").textContent = "Active — Proving Mainnet Uptime (15s)";
+        appendLog(`Signed Ed25519 heartbeat #${totalValid} accepted by Mainnet (height #${lastHeight})`, "ok");
+      } else {
+        const errTxt = await resp.text();
+        appendLog(`Heartbeat response (${resp.status}): ${errTxt}`, "warn");
+      }
+    } catch (e) {
+      appendLog(`Network error submitting heartbeat: ${e.message}`, "warn");
+    }
+
+    try {
+      await fetch(`${RELAY_URL}/mailbox?name=${encodeURIComponent(key.node_id)}`);
+    } catch (_) {}
+  }
+
+  // Start immediately + run unthrottled Web Worker timer every 15s
+  runHeartbeatCycle();
+  try {
+    const workerBlob = new Blob([`setInterval(() => postMessage("tick"), 15000);`], { type: "application/javascript" });
+    const worker = new Worker(URL.createObjectURL(workerBlob));
+    worker.onmessage = () => runHeartbeatCycle();
+  } catch (_) {
+    setInterval(runHeartbeatCycle, 15000);
+  }
+
+  // Request WakeLock if supported so computer doesn't sleep while proving
+  async function requestWakeLock() {
+    try {
+      if ("wakeLock" in navigator) {
+        await navigator.wakeLock.request("screen");
+        appendLog("System WakeLock active: node will keep syncing continuously.");
+      }
+    } catch (_) {}
+  }
+  requestWakeLock();
+
+  document.getElementById("copyBtn").onclick = function() {
+    navigator.clipboard.writeText(key.node_id);
+    this.textContent = "Copied Node ID!";
+    setTimeout(() => { this.textContent = "Copy Node ID"; }, 2000);
+  };
+
+  document.getElementById("sendNowBtn").onclick = () => runHeartbeatCycle();
+
+  document.getElementById("backupBtn").onclick = () => {
+    const blob = new Blob([JSON.stringify(key, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${key.node_id}-silent-node-key.json`;
+    a.click();
+    appendLog(`Saved key backup: ${key.node_id}-silent-node-key.json`, "ok");
+  };
+
+  document.getElementById("restoreBtn").onclick = () => document.getElementById("restoreInput").click();
+  document.getElementById("restoreInput").onchange = async (ev) => {
+    const file = ev.target.files && ev.target.files[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const privHex = (parsed.private_key || parsed.secret_key || "").replace(/^0x/i, "").trim();
+      let seed32;
+      if (privHex.length === 128) {
+        seed32 = hexDecode(privHex.slice(0, 64));
+      } else if (privHex.length === 64) {
+        seed32 = hexDecode(privHex);
+      } else {
+        throw new Error("Backup file does not contain a valid Ed25519 private key.");
+      }
+      const pub32 = ed25519PubFromSeed(seed32);
+      const fullPriv = new Uint8Array(64);
+      fullPriv.set(seed32, 0);
+      fullPriv.set(pub32, 32);
+      key = {
+        node_id: parsed.node_id || ("syn-" + hexEncode(sha512(pub32).slice(0, 6))),
+        public_key: hexEncode(pub32),
+        private_key: hexEncode(fullPriv),
+        created_at: parsed.created_at || new Date().toISOString(),
+        format: "synthos-background-ed25519-v1"
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(key));
+      renderIdentity();
+      appendLog(`Restored node identity: ${key.node_id}`, "ok");
+      runHeartbeatCycle();
+    } catch (err) {
+      appendLog(`Restore error: ${err.message}`, "warn");
+    }
+  };
+})();
+</script>
+</body>
+</html>

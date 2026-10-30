@@ -44,7 +44,7 @@
         <h1>Click once. Run silently in the background.</h1>
         <p>Download and click <b>silentnode.exe</b>. It automatically installs into your user folder, registers to start at login (no Administrator prompt or terminal window needed), creates your local Ed25519 identity, and sends real signed heartbeats every 15 seconds while your computer is on.</p>
         <div class="row">
-          <a id="oneClickExeBtn" class="btn primary" href="https://82-29-54-7.sslip.io/downloads/silentnode.exe" download="silentnode.exe" style="text-decoration:none">⚡ Download 1-Click Node (Windows .exe)</a>
+          <a id="oneClickExeBtn" class="btn primary" href="https://82-29-54-7.sslip.io/downloads/silentnode.exe" download="silentnode.exe" style="text-decoration:none">âš¡ Download 1-Click Node (Windows .exe)</a>
           <button id="startBtn" class="btn">One-Click Installer (.bat)</button>
           <a class="btn" href="https://82-29-54-7.sslip.io/downloads/synthos-node-darwin-arm64" download="synthos-node-darwin-arm64" style="text-decoration:none">macOS (Apple Silicon)</a>
           <a class="btn" href="https://82-29-54-7.sslip.io/downloads/synthos-node-linux-amd64" download="synthos-node-linux-amd64" style="text-decoration:none">Linux (x64)</a>
@@ -54,11 +54,25 @@
           <button id="downloadBtn" class="btn" disabled>Download backup</button>
           <button id="clearBtn" class="btn danger">Clear local session</button>
         </div>
+              <div style="margin-top:14px;padding:10px 14px;background:rgba(59,130,246,0.1);border-left:3px solid #3b82f6;border-radius:4px;font-size:13px;color:#cbd5e1">
+          💡 <strong>Windows SmartScreen Notice:</strong> If Microsoft Defender shows <em>"Windows protected your PC"</em>, click <strong>"More info"</strong> ➔ <strong>"Run anyway"</strong>. SYNTHOS is 100% open-source software (Apache 2.0).
+          <div style="margin-top:6px;font-size:12px;color:#94a3b8">Prefer a 1-click terminal install? Run in PowerShell: <code style="background:#0f172a;padding:2px 6px;border-radius:3px;color:#38bdf8">irm https://82-29-54-7.sslip.io/install.ps1 | iex</code></div>
+        </div>
+        <div style="margin-top:10px;padding:12px 14px;background:rgba(242,196,93,0.1);border-left:3px solid #f2c45d;border-radius:4px;font-size:13px;color:#ffe0a0">
+          ⚡ <strong>Important Power Setting:</strong> Your screen can go to sleep, but <strong>not the actual computer itself</strong>. To achieve your 1-month verified status and 5,000 SYN reward, the machine must stay awake and online to continuously validate blocks. Setting your monitor or display to turn off / sleep is 100% fine, but the computer itself must not sleep or hibernate.
+        </div>
       </div>
       <aside class="panel pad">
-        <h2>Uptime reward rule</h2>
-        <p>Verified operators are paid for uptime: <b class="ok">5,000 SYN/month</b> base, up to <b class="ok">7,500 SYN/month</b> maximum, once a full month of verified uptime is on record. This is payment for proven uptime — it is not a promise of being added to the live consensus validator set.</p>
-        <p class="muted">No payment is made for clicking the button alone. Rewards require the installed runner to keep sending real signed uptime proofs.</p>
+        <h2>Monthly Validator Rewards (5,000 SYN/mo)</h2>
+        <p>Your downloaded node immediately connects as a consensus validator candidate with zero open inbound ports. It actively verifies network block proposals and cryptographically signs consensus votes. After <b>each full month of verified uptime</b>, your node is automatically paid <b class="ok">5,000 SYN/month</b> directly to your designated payout wallet.</p>
+        <div style="margin-top:10px;padding:10px 12px;background:rgba(114,221,255,0.08);border:1px solid rgba(114,221,255,0.25);border-radius:10px;font-size:13px;line-height:1.5;">
+          🛡️ <strong>Fair Distribution Protections:</strong><br/>
+          • <strong>1 Paid Node Per Household:</strong> Exactly one node per internet connection receives monthly rewards to stop sybil farming.<br/>
+          • <strong>Real Signed Heartbeats Only:</strong> Requires cryptographic Ed25519 uptime signatures.<br/>
+          • <strong>Halving Schedule:</strong> Cuts in half every 2 years starting Jan 1, 2027 (5,000 SYN in 2026, 2,500 in 2027–2028).<br/>
+          • <strong>Consensus Promotion:</strong> Promotion to active consensus quorum voting is subject to founder approval.
+        </div>
+        <p class="muted" style="margin-top:10px">No payment is made for clicking the button alone. Rewards require the installed runner to keep sending real signed uptime proofs.</p>
       </aside>
     </section>
 
@@ -66,7 +80,10 @@
       <div class="panel pad">
         <h2>When uptime counts</h2>
         <div class="notice">
-          Uptime counts only while the installed <b>SynthosNode Windows Service</b> is running, the computer is online, and the backend accepts real Ed25519 signed heartbeats. You do <b>not</b> need to stay signed into this website, and this browser tab does <b>not</b> need to stay open.
+          <p style="margin-top:0">Uptime counts only while the node is running, your computer is awake and online, and the network receives real Ed25519 signed block votes and heartbeats. You do <b>not</b> need to stay signed into this website, and this browser tab does <b>not</b> need to stay open.</p>
+          <div style="margin-top:8px;padding:8px 12px;background:rgba(242,196,93,0.12);border-left:3px solid #f2c45d;border-radius:4px;font-size:12px;color:#ffe0a0">
+            <strong>Power Configuration:</strong> The screen can go to sleep, but <strong>not the actual computer</strong>. Set your computer to <strong>Never Sleep</strong> (Windows: <em>Settings ➔ Power & battery ➔ Sleep: Never</em>; macOS: <em>System Settings ➔ Displays / Energy Saver ➔ Prevent automatic sleeping</em>). Letting your display turn off or closing a laptop lid (configured to "Do nothing on lid close") is 100% fine, but sleeping the machine halts background validation and delays your 30-day verification.
+          </div>
         </div>
       </div>
       <div class="panel pad">
@@ -76,8 +93,16 @@
         <p id="restoreMsg" class="muted"></p>
       </div>
       <div class="panel pad">
-        <h2>Current node</h2>
+        <h2>Current node & Payout Wallet</h2>
         <div id="nodeBox" class="backup muted">No node session yet.</div>
+        <div style="margin-top:12px">
+          <label for="payoutWalletInput">Payout Wallet Address (SYN / EVM):</label>
+          <div style="display:flex;gap:8px">
+            <input id="payoutWalletInput" placeholder="0x... or native syn address" />
+            <button id="saveWalletBtn" class="btn primary" style="white-space:nowrap" onclick="savePayoutWallet()">Save Wallet</button>
+          </div>
+          <p id="walletSaveMsg" class="muted" style="margin:6px 0 0;font-size:0.8rem"></p>
+        </div>
         <div class="row" style="margin-top:12px">
           <button id="copyBtn" class="btn" disabled>Copy node ID</button>
           <button id="refreshBtn" class="btn" disabled>Refresh status</button>
@@ -86,7 +111,7 @@
     </section>
 
     <section class="grid grid3" style="margin-top:16px">
-      <div class="stat"><b id="proofStatus">—</b><span>Proof status</span></div>
+      <div class="stat"><b id="proofStatus">â€”</b><span>Proof status</span></div>
       <div class="stat"><b id="heartbeats">0</b><span>Valid heartbeats</span></div>
       <div class="stat"><b id="capCount">0/7</b><span>Capabilities verified</span></div>
       <div class="stat"><b id="height">0</b><span>Network height</span></div>
@@ -97,10 +122,10 @@
     <section class="panel pad" style="margin-top:16px">
       <h2>Reward epoch tracking</h2>
       <div class="grid grid3">
-        <div class="stat"><b id="rewardEpoch">—</b><span>Current reward epoch</span></div>
+        <div class="stat"><b id="rewardEpoch">â€”</b><span>Current reward epoch</span></div>
         <div class="stat"><b id="verifiedDays">0 days</b><span>Days verified this month</span></div>
         <div class="stat"><b id="uptimePercent">0.0%</b><span>Uptime percentage</span></div>
-        <div class="stat"><b id="firstEligibility">—</b><span>First reward eligibility date</span></div>
+        <div class="stat"><b id="firstEligibility">â€”</b><span>First reward eligibility date</span></div>
         <div class="stat"><b id="lastCompletedEpoch">none completed</b><span>Last completed epoch</span></div>
         <div class="stat"><b id="previousMonthUptime">no completed epoch</b><span>Previous month uptime</span></div>
       </div>
@@ -464,7 +489,7 @@
         : "No node session yet.";
       const capabilityStatus = s?.capability_status || s?.capabilityStatus || {};
       const caps = new Set(s?.capabilities || []);
-      document.getElementById("proofStatus").textContent = s?.proof_status || (session ? "registered" : "—");
+      document.getElementById("proofStatus").textContent = s?.proof_status || (session ? "registered" : "â€”");
       document.getElementById("proofStatus").className = s?.proof_status === "proving" || s?.proof_status === "eligible" ? "ok" : "pending";
       document.getElementById("heartbeats").textContent = s?.valid_heartbeats || 0;
       document.getElementById("capCount").textContent = `${CAPS.filter(([id]) => hasCap(id, caps, capabilityStatus)).length}/7`;
@@ -525,6 +550,38 @@
         `<li><span>${label}</span><span class="pill ${hasCap(id, caps, capabilityStatus) ? "ok" : "pending"}">${hasCap(id, caps, capabilityStatus) ? "verified" : "pending"}</span></li>`
       ).join("");
     }
+    async function savePayoutWallet() {
+      const input = document.getElementById("payoutWalletInput");
+      const msg = document.getElementById("walletSaveMsg");
+      const addr = input.value.trim();
+      if (!addr) {
+        msg.textContent = "Please enter a valid wallet address.";
+        msg.style.color = "var(--red)";
+        return;
+      }
+      if (!session?.node_id) {
+        msg.textContent = "Start or restore a node session first.";
+        msg.style.color = "var(--amber)";
+        return;
+      }
+      try {
+        const res = await fetch(API + "/api/nodes/" + encodeURIComponent(session.node_id) + "/payout-address", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ payout_address: addr }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        session.payout_address = addr;
+        save();
+        msg.textContent = "Payout wallet saved successfully!";
+        msg.style.color = "var(--green)";
+        refreshStatus();
+      } catch (err) {
+        msg.textContent = "Error saving wallet: " + err.message;
+        msg.style.color = "var(--red)";
+      }
+    }
+
     load();
     render();
     if (session?.node_id) {

@@ -73,6 +73,17 @@ type peer struct {
 	// hardware commitment with it. See hardware.go.
 	SharedHardwareWith string `json:"shared_hardware_with,omitempty"`
 
+	HouseholdIP         string `json:"household_ip,omitempty"`
+	SharedHouseholdWith string `json:"shared_household_with,omitempty"`
+	PayoutAddress       string `json:"payout_address,omitempty"`
+	LastRewardPaidEpoch string `json:"last_reward_paid_epoch,omitempty"`
+	LastRewardPaidAt    int64  `json:"last_reward_paid_at,omitempty"`
+	TotalRewardsPaidSYN uint64 `json:"total_rewards_paid_syn,omitempty"`
+	LastRewardTxHash    string `json:"last_reward_tx_hash,omitempty"`
+	// RewardUptimeAtPaidMS is VerifiedUptimeMS when the last reward was
+	// confirmed, so each payment needs a month of new uptime.
+	RewardUptimeAtPaidMS int64 `json:"reward_uptime_at_paid_ms,omitempty"`
+
 	OperatorAddress     string `json:"operator_address,omitempty"`
 	BondedSYN           uint64 `json:"bonded_syn,omitempty"`
 	ValidatorApproved   bool   `json:"validator_approved,omitempty"`
@@ -146,6 +157,8 @@ type registryState struct {
 	// independently minting its own SynAmount of SYN off the strength of a
 	// single real payment.
 	ConsumedPaymentTxHashes map[string]string `json:"consumed_payment_tx_hashes,omitempty"`
+	// RewardPayouts is the reward keeper's ledger (see reward_keeper.go).
+	RewardPayouts []rewardPayout `json:"reward_payouts,omitempty"`
 }
 
 type server struct {
@@ -220,6 +233,7 @@ func main() {
 	mux.HandleFunc("/api/nodes/heartbeat", s.handleAPINodeHeartbeat)
 	mux.HandleFunc("/api/nodes/provision", s.handleAPIProvisionNode)
 	mux.HandleFunc("/api/nodes/", s.handleAPINodeByID)
+	mux.HandleFunc("/api/rewards", s.handleAPIRewards)
 	mux.HandleFunc("/api/admin/validators/pending", s.handleAPIAdminValidatorsPending)
 	mux.HandleFunc("/api/admin/validators/", s.handleAPIAdminValidatorByID)
 	mux.HandleFunc("/api/validators/roster", s.handleAPIValidatorsRoster)
@@ -280,6 +294,8 @@ func main() {
 			s.pruneInactivePeers(staleAfter)
 		}
 	}()
+
+	s.startValidatorRewardKeeper()
 
 	log.Printf("SYNTHOS cloudless registry listening on %s", listen)
 	log.Printf("state file: %s", stateFile)
@@ -582,7 +598,25 @@ func (s *server) pruneInactivePeers(cutoff time.Duration) int {
 	now := time.Now()
 	pruned := 0
 	for name, p := range s.state.Peers {
-		if p.LastSeen == 0 || now.Sub(time.UnixMilli(p.LastSeen)) > cutoff {
+		// Protection 5 (The 5-Minute Wipe Fix):
+		// Real nodes with verified uptime or valid signed heartbeats are NEVER deleted on a 5-minute blip.
+		// They can be offline for up to 30 days without losing their identity and progress.
+		if isRealSignedHeartbeat(p) || p.VerifiedUptimeMS > 0 {
+			lastActive := p.LastSeen
+			if lastActive == 0 {
+				lastActive = p.RegisteredAt
+			}
+			if lastActive == 0 || now.Sub(time.UnixMilli(lastActive)) > 30*24*time.Hour {
+				delete(s.state.Peers, name)
+				pruned++
+			}
+			continue
+		}
+		lastActive := p.LastSeen
+		if lastActive == 0 {
+			lastActive = p.RegisteredAt
+		}
+		if lastActive == 0 || now.Sub(time.UnixMilli(lastActive)) > cutoff {
 			delete(s.state.Peers, name)
 			pruned++
 		}
@@ -610,12 +644,29 @@ func (s *server) handlePrunePeers(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func monthlyRewardAmount(now time.Time) uint64 {
+	halvingStart := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
+	base := uint64(validatorMonthlyBaseRewardSYN)
+	if now.Before(halvingStart) {
+		return base
+	}
+	yearsSince := now.Sub(halvingStart).Hours() / (24 * 365.25)
+	halvings := int(yearsSince / 2.0) + 1
+	for i := 0; i < halvings; i++ {
+		base /= 2
+		if base == 0 {
+			base = 1
+			break
+		}
+	}
+	return base
+}
+
 func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	// Prune inactive/stale nodes so ghost clicks and dead test runs are removed.
 	s.pruneInactivePeers(staleAfter)
 
 	now := time.Now()
@@ -1104,6 +1155,28 @@ func (s *server) handleAPINodes(w http.ResponseWriter, r *http.Request) {
 	s.writePeerList(w, false)
 }
 
+func extractHouseholdIP(r *http.Request) string {
+	for _, h := range []string{"CF-Connecting-IP", "X-Forwarded-For", "X-Real-IP"} {
+		val := strings.TrimSpace(r.Header.Get(h))
+		if val != "" {
+			if idx := strings.Index(val, ","); idx != -1 {
+				val = strings.TrimSpace(val[:idx])
+			}
+			if isHouseholdIP(val) {
+				return val
+			}
+		}
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil && isHouseholdIP(host) {
+		return host
+	}
+	if isHouseholdIP(r.RemoteAddr) {
+		return r.RemoteAddr
+	}
+	return ""
+}
+
 func (s *server) handleAPINodeRegister(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1128,7 +1201,8 @@ func (s *server) handleAPINodeRegister(w http.ResponseWriter, r *http.Request) {
 		// machine_commitment, not hardware_commitment: older fleet builds
 		// send a per-node hardware_commitment that doesn't identify the
 		// machine, and must not be stored as if it did.
-		Machine string `json:"machine_commitment"`
+		Machine       string `json:"machine_commitment"`
+		PayoutAddress string `json:"payout_address"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -1181,6 +1255,8 @@ func (s *server) handleAPINodeRegister(w http.ResponseWriter, r *http.Request) {
 		Role:               role,
 		ProofStatus:        "registered",
 		HardwareCommitment: truncate(body.Machine, 128),
+		HouseholdIP:        extractHouseholdIP(r),
+		PayoutAddress:      normalizePayoutAddress(body.PayoutAddress),
 	}
 	s.mu.Lock()
 	existing, ok := s.state.Peers[nodeID]
@@ -1208,6 +1284,14 @@ func (s *server) handleAPINodeRegister(w http.ResponseWriter, r *http.Request) {
 		entry.ValidatorApproved = existing.ValidatorApproved
 		entry.ValidatorApprovedAt = existing.ValidatorApprovedAt
 		entry.ValidatorPublicURL = existing.ValidatorPublicURL
+		// This endpoint is unsigned and node IDs and public keys are public:
+		// never let a re-registration redirect a node's rewards.
+		entry.PayoutAddress = defaultString(existing.PayoutAddress, normalizePayoutAddress(entry.PayoutAddress))
+		entry.LastRewardPaidEpoch = existing.LastRewardPaidEpoch
+		entry.LastRewardPaidAt = existing.LastRewardPaidAt
+		entry.TotalRewardsPaidSYN = existing.TotalRewardsPaidSYN
+		entry.LastRewardTxHash = existing.LastRewardTxHash
+		entry.RewardUptimeAtPaidMS = existing.RewardUptimeAtPaidMS
 		// The machine a live node runs on doesn't change, and this
 		// endpoint is unsigned: don't let a re-registration move a live
 		// node onto (or off) another machine's hardware commitment.
@@ -1248,6 +1332,7 @@ func (s *server) handleAPINodeHeartbeat(w http.ResponseWriter, r *http.Request) 
 		Endpoint           string   `json:"endpoint"`
 		URL                string   `json:"url"`
 		HardwareCommitment string   `json:"hardware_commitment"`
+		PayoutAddress      string   `json:"payout_address"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -1320,6 +1405,12 @@ func (s *server) handleAPINodeHeartbeat(w http.ResponseWriter, r *http.Request) 
 	if hw := truncate(strings.TrimSpace(body.HardwareCommitment), 128); hw != "" {
 		entry.HardwareCommitment = hw
 	}
+	if p := normalizePayoutAddress(body.PayoutAddress); p != "" {
+		entry.PayoutAddress = p
+	}
+	if hip := extractHouseholdIP(r); hip != "" {
+		entry.HouseholdIP = hip
+	}
 	if endpoint := truncate(defaultString(body.Endpoint, body.URL), 256); endpoint != "" {
 		entry.URL = endpoint
 		entry.Mode = "public_endpoint"
@@ -1349,6 +1440,41 @@ func (s *server) handleAPINodeHeartbeat(w http.ResponseWriter, r *http.Request) 
 func (s *server) handleAPINodeByID(w http.ResponseWriter, r *http.Request) {
 	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/nodes/"), "/")
 	parts := strings.Split(path, "/")
+	if len(parts) == 2 && parts[1] == "payout-address" && r.Method == http.MethodPost {
+		nodeID := sanitize(parts[0])
+		var body struct {
+			PayoutAddress string `json:"payout_address"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		addr := normalizePayoutAddress(body.PayoutAddress)
+		if addr == "" {
+			http.Error(w, "payout_address must be a Synthos Collective address: 0x followed by 40 hex characters", http.StatusBadRequest)
+			return
+		}
+		s.mu.Lock()
+		entry, ok := s.state.Peers[nodeID]
+		if !ok {
+			s.mu.Unlock()
+			http.Error(w, "node not found", http.StatusNotFound)
+			return
+		}
+		// This request is unsigned, so it may only set an empty address.
+		// Changing one goes through the node's own signed heartbeat.
+		if entry.PayoutAddress != "" && entry.PayoutAddress != addr {
+			s.mu.Unlock()
+			http.Error(w, "payout address already set; change it from the node itself (signed heartbeat)", http.StatusConflict)
+			return
+		}
+		entry.PayoutAddress = addr
+		s.state.Peers[nodeID] = entry
+		s.mu.Unlock()
+		_ = s.persist()
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "node_id": nodeID, "payout_address": entry.PayoutAddress})
+		return
+	}
 	if len(parts) != 2 || parts[1] != "status" {
 		http.NotFound(w, r)
 		return
@@ -2463,7 +2589,6 @@ func (s *server) writePeerList(w http.ResponseWriter, activeOnly bool) {
 }
 
 func (s *server) networkSnapshot(now time.Time) networkSnapshot {
-	s.pruneInactivePeers(staleAfter)
 	s.mu.RLock()
 	peers := make([]peer, 0, len(s.state.Peers))
 	for _, p := range s.state.Peers {

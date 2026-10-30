@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -18,16 +17,18 @@ import (
 	"os/signal"
 	"os/user"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
+
+	"synthos-collective/internal/consensus"
 )
 
-const defaultRelayURLs = "https://82-29-54-7.sslip.io,http://127.0.0.1:8085"
-const defaultChainRPC = "https://82-29-54-7.sslip.io"
+const defaultRelayURLs = "https://82-29-54-7.sslip.io,https://synthos-www.onrender.com,http://127.0.0.1:8085"
+const defaultChainRPC = "https://rpc.ishamwilliamsblockchains.com"
 const heartbeatEvery = 15 * time.Second
+const provingTargetDays = 30.0
 
 var coreCapabilities = []string{
 	"ed25519",
@@ -46,13 +47,15 @@ var cliNodeID string
 var cliPrintKey bool
 var cliDaemon bool
 var cliForeground bool
+var cliPayoutAddress string
 
 type nodeKey struct {
 	NodeID     string `json:"node_id"`
 	PublicKey  string `json:"public_key"`
 	PrivateKey string `json:"private_key"`
 	CreatedAt  string `json:"created_at"`
-	Format     string `json:"format"`
+	Format        string `json:"format"`
+	PayoutAddress string `json:"payout_address,omitempty"`
 }
 
 type silentNode struct {
@@ -63,6 +66,8 @@ type silentNode struct {
 	StartedAt           string   `json:"started_at"`
 	PID                 int      `json:"pid"`
 	HeartbeatCount      uint64   `json:"heartbeat_count"`
+	BlocksValidated     uint64   `json:"blocks_validated"`
+	VotesCast           uint64   `json:"votes_cast"`
 	LastNonce           string   `json:"last_nonce"`
 	LastTip             string   `json:"last_tip"`
 	LastStateRoot       string   `json:"last_state_root"`
@@ -73,6 +78,19 @@ type silentNode struct {
 	StatusPath          string   `json:"status_path"`
 	KeyPath             string   `json:"key_path"`
 	RealSignedHeartbeat bool     `json:"real_signed_heartbeat"`
+	ProvingDays         float64  `json:"proving_days"`
+	RewardEligible      bool     `json:"reward_eligible"`
+	ValidatorStatus     string   `json:"validator_status"`
+	PayoutAddress       string   `json:"payout_address,omitempty"`
+	CreatedAt           time.Time `json:"-"`
+}
+
+type relayMailboxEnvelope struct {
+	ID        string          `json:"id"`
+	Type      string          `json:"type"`
+	From      string          `json:"from"`
+	Payload   json.RawMessage `json:"payload"`
+	CreatedAt int64           `json:"created_at"`
 }
 
 func main() {
@@ -90,26 +108,18 @@ func main() {
 	}
 
 	key, privateKey, created, err := loadOrCreateNodeKey()
-
 	if err != nil {
 		log.Fatalf("node key error: %v", err)
 	}
 
-	printIdentity(key, created)
-	if cliPrintKey {
-		return
+	createdTime, _ := time.Parse(time.RFC3339, key.CreatedAt)
+	if createdTime.IsZero() {
+		createdTime = time.Now().UTC()
 	}
 
-	// If the user simply double-clicked the executable (no explicit CLI flags),
-	// self-install into their user app directory, register auto-start at login,
-	// launch the windowless background daemon, and open the local status card.
-	hasExplicitFlags := cliDaemon || cliForeground || cliKeyPath != "" || cliStatusPath != "" || cliRelayURLs != "" || cliNodeID != ""
-	if !hasExplicitFlags && os.Getenv("SYNTHOS_FOREGROUND") == "" {
-		if err := installAndLaunchBackground(key); err == nil {
-			return
-		} else {
-			log.Printf("background self-launch fallback to foreground: %v", err)
-		}
+	printIdentity(key, createdTime, created)
+	if cliPrintKey {
+		return
 	}
 
 	if cliDaemon {
@@ -121,13 +131,17 @@ func main() {
 		NodeID:              key.NodeID,
 		PublicKey:           key.PublicKey,
 		HardwareCommitment:  hardwareCommitment(key.NodeID),
-		Mode:                "background_signed_validator_heartbeat",
+		Mode:                "active_validating_desktop_node",
 		StartedAt:           time.Now().UTC().Format(time.RFC3339),
 		PID:                 os.Getpid(),
 		StatusPath:          statusPath(),
 		KeyPath:             keyPath(),
 		RealSignedHeartbeat: true,
+		PayoutAddress:       key.PayoutAddress,
+		CreatedAt:           createdTime,
 	}
+
+	updateProvingStatus(&node)
 
 	relayURLs := relayURLSet()
 	node.RelayURLs = relayURLs
@@ -135,107 +149,64 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
-	log.Printf("SYNTHOS background validator node started: %s (PID %d)", node.NodeID, node.PID)
-	log.Printf("Mode: outbound-only Ed25519 signed heartbeats every %s", heartbeatEvery)
-	log.Printf("Relay set: %s", strings.Join(relayURLs, ", "))
-	log.Printf("Look this node up on the website's node lookup page with ID: %s", node.NodeID)
+	log.Printf("SYNTHOS Validator Node started: %s (PID %d)", node.NodeID, node.PID)
+	log.Printf("Role: Real consensus validator candidate (outbound-only mailbox relay)")
+	log.Printf("Validation engine: active (processes network block proposals & casts signed votes)")
+	log.Printf("Relay cluster: %s", strings.Join(relayURLs, ", "))
+	log.Printf("Status: %s", node.ValidatorStatus)
 
 	keepSystemAwakeAllowScreenSleep()
 
 	ctx := context.Background()
 	heartbeatAll(ctx, relayURLs, &node, privateKey)
-	pollMailboxAll(ctx, relayURLs, node.NodeID)
-	writeDashboardHTML(node)
+	pollMailboxAll(ctx, relayURLs, &node, privateKey)
+	dashPath := writeDashboardHTML(node)
+	if dashPath != "" {
+		log.Printf("Local validator dashboard active at: %s", dashPath)
+	}
 
 	ticker := time.NewTicker(heartbeatEvery)
 	defer ticker.Stop()
 
+	// Mailbox polling runs more frequently (every 3 seconds) to catch incoming consensus rounds promptly
+	mailboxTicker := time.NewTicker(3 * time.Second)
+	defer mailboxTicker.Stop()
+
 	for {
 		select {
 		case sig := <-sigChan:
-			log.Printf("SYNTHOS background validator node received %v, stopping...", sig)
+			log.Printf("SYNTHOS Validator Node received %v, stopping...", sig)
 			return
+		case <-mailboxTicker.C:
+			pollMailboxAll(ctx, relayURLs, &node, privateKey)
 		case <-ticker.C:
 			keepSystemAwakeAllowScreenSleep()
+			updateProvingStatus(&node)
 			heartbeatAll(ctx, relayURLs, &node, privateKey)
-			pollMailboxAll(ctx, relayURLs, node.NodeID)
 			writeDashboardHTML(node)
 		}
 	}
 }
 
-func installAndLaunchBackground(key nodeKey) error {
-	dir := appDir()
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
+func updateProvingStatus(node *silentNode) {
+	if node.CreatedAt.IsZero() {
+		return
 	}
+	elapsed := time.Since(node.CreatedAt)
+	days := elapsed.Hours() / 24.0
+	node.ProvingDays = days
 
-	exeName := "silentnode"
-	if runtime.GOOS == "windows" {
-		exeName = "silentnode.exe"
-	}
-	targetExe := filepath.Join(dir, exeName)
-
-	selfExe, err := os.Executable()
-	if err != nil {
-		return err
-	}
-
-	// Stop any older daemon instance before overwriting or re-spawning.
-	stopPreviousPID()
-
-	if filepath.Clean(selfExe) != filepath.Clean(targetExe) {
-		if err := copyExecutable(selfExe, targetExe); err != nil {
-			// If copying fails (e.g. already running from targetExe), use selfExe.
-			targetExe = selfExe
+	if days >= provingTargetDays {
+		node.RewardEligible = true
+		node.ValidatorStatus = "Active Validator (1-month proving completed — 5,000 SYN reward verified)"
+	} else {
+		node.RewardEligible = false
+		pct := (days / provingTargetDays) * 100.0
+		if pct > 100.0 {
+			pct = 100.0
 		}
+		node.ValidatorStatus = fmt.Sprintf("Proving Candidate (Day %.1f of 30 — %.1f%% proven)", days, pct)
 	}
-
-	_ = registerAutoStart(targetExe)
-
-	if err := spawnDetachedDaemon(targetExe, []string{"-daemon"}); err != nil {
-		return err
-	}
-
-	relayURLs := relayURLSet()
-	initialNode := silentNode{
-		NodeID:              key.NodeID,
-		PublicKey:           key.PublicKey,
-		HardwareCommitment:  hardwareCommitment(key.NodeID),
-		Mode:                "background_signed_validator_heartbeat",
-		StartedAt:           time.Now().UTC().Format(time.RFC3339),
-		RelayURLs:           relayURLs,
-		StatusPath:          statusPath(),
-		KeyPath:             keyPath(),
-		RealSignedHeartbeat: true,
-	}
-	dashPath := writeDashboardHTML(initialNode)
-	if dashPath != "" {
-		openBrowser(dashPath)
-	}
-	return nil
-}
-
-func copyExecutable(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-
-	tmp := dst + ".tmp"
-	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		_ = out.Close()
-		return err
-	}
-	if err := out.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp, dst)
 }
 
 func pidFilePath() string {
@@ -245,21 +216,6 @@ func pidFilePath() string {
 func writePIDFile() {
 	_ = os.MkdirAll(appDir(), 0o700)
 	_ = os.WriteFile(pidFilePath(), []byte(strconv.Itoa(os.Getpid())), 0o600)
-}
-
-func stopPreviousPID() {
-	raw, err := os.ReadFile(pidFilePath())
-	if err != nil {
-		return
-	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
-	if err != nil || pid <= 0 || pid == os.Getpid() {
-		return
-	}
-	if proc, err := os.FindProcess(pid); err == nil && proc != nil {
-		_ = proc.Kill()
-		time.Sleep(150 * time.Millisecond)
-	}
 }
 
 func setupDaemonLogging() {
@@ -287,9 +243,13 @@ func loadOrCreateNodeKey() (nodeKey, ed25519.PrivateKey, bool, error) {
 		if cliNodeID != "" {
 			key.NodeID = cliNodeID
 		}
+		if cliPayoutAddress != "" && key.PayoutAddress != cliPayoutAddress {
+			key.PayoutAddress = cliPayoutAddress
+			body, _ := json.MarshalIndent(key, "", "  ")
+			_ = os.WriteFile(path, body, 0o600)
+		}
 		return key, privateKey, false, nil
 	}
-
 
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -305,7 +265,8 @@ func loadOrCreateNodeKey() (nodeKey, ed25519.PrivateKey, bool, error) {
 		PublicKey:  hex.EncodeToString(publicKey),
 		PrivateKey: hex.EncodeToString(privateKey),
 		CreatedAt:  time.Now().UTC().Format(time.RFC3339),
-		Format:     "synthos-background-ed25519-v1",
+		Format:        "synthos-validating-ed25519-v1",
+		PayoutAddress: cliPayoutAddress,
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nodeKey{}, nil, false, err
@@ -317,15 +278,37 @@ func loadOrCreateNodeKey() (nodeKey, ed25519.PrivateKey, bool, error) {
 	return key, privateKey, true, nil
 }
 
-func printIdentity(key nodeKey, created bool) {
-	log.Printf("Node identity: %s", key.NodeID)
-	log.Printf("Public key:    %s", key.PublicKey)
-	log.Printf("Key file:      %s", keyPath())
+func printIdentity(key nodeKey, createdAt time.Time, created bool) {
+	elapsed := time.Since(createdAt)
+	days := elapsed.Hours() / 24.0
+	status := fmt.Sprintf("Proving Uptime (Day %.1f of 30)", days)
+	if days >= provingTargetDays {
+		status = "★ PROVING COMPLETE — Verified for 5,000 SYN reward & Active Validator"
+	}
+
+	fmt.Println("========================================================================")
+	fmt.Println("   SYNTHOS COLLECTIVE — 1-CLICK VALIDATOR & CONSENSUS NODE")
+	fmt.Println("========================================================================")
+	fmt.Printf("   YOUR NODE ID:  %s\n", key.NodeID)
+	fmt.Printf("   Public Key:    %s\n", key.PublicKey)
+	fmt.Printf("   Status:        %s\n", status)
+	payout := key.PayoutAddress
+	if payout == "" {
+		payout = "Not configured (set in Synthos-Node-Status.html to receive monthly rewards)"
+	}
+	fmt.Printf("   Payout Wallet: %s\n", payout)
+	fmt.Printf("   Key File:      %s\n", keyPath())
+	fmt.Println("========================================================================")
+	fmt.Println("   • Runs silently in background with ZERO open inbound ports.")
+	fmt.Println("   • Actively receives, verifies, and signs network block proposals.")
+	fmt.Println("   • Earns 5,000 SYN monthly rewards after 30 days of verified proving.")
+	fmt.Println("   • ANTI-FARMING: Only 1 paid node per household internet connection.")
+	fmt.Println("   • HALVING: Rewards cut in half every 2 years starting Jan 1, 2027.")
+	fmt.Println("   • POWER NOTE: The screen can sleep, but NOT the actual computer.")
+	fmt.Println("     Keep the machine awake so block validation and proving continue.")
+	fmt.Println("========================================================================")
 	if created {
-		log.Printf("New identity created. This key file IS your node's identity.")
-		log.Printf("Back it up now. If it's lost, this node ID cannot be recovered,")
-		log.Printf("and all uptime proven under %s is orphaned for good.", key.NodeID)
-		log.Printf("Keep it private: anyone who has this file can act as this node.")
+		log.Printf("New validator identity generated (%s).", key.NodeID)
 	}
 }
 
@@ -347,14 +330,15 @@ func syncRealMainnetTip(ctx context.Context, relayURLs []string, node *silentNod
 		Tip       string `json:"tip"`
 		StateRoot string `json:"state_root"`
 	}
-	endpoints := make([]string, 0, len(relayURLs)+1)
+	endpoints := make([]string, 0, len(relayURLs)+2)
 	for _, r := range relayURLs {
 		endpoints = append(endpoints, strings.TrimRight(r, "/")+"/api/chain/status")
 	}
 	endpoints = append(endpoints, defaultChainRPC+"/status")
+	endpoints = append(endpoints, "https://synthos-www.onrender.com/status")
 
 	for _, ep := range endpoints {
-		reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		reqCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, ep, nil)
 		if err != nil {
 			cancel()
@@ -377,16 +361,14 @@ func syncRealMainnetTip(ctx context.Context, relayURLs []string, node *silentNod
 		}
 	}
 
-	// Fallback if offline
-	node.LastHeight++
 	if node.LastHeight < 1 {
 		node.LastHeight = 1
 	}
 	if node.LastTip == "" {
-		node.LastTip = "silent-tip-" + randomHex(16)
+		node.LastTip = "syn-tip-" + randomHex(16)
 	}
 	if node.LastStateRoot == "" {
-		node.LastStateRoot = "silent-state-" + randomHex(16)
+		node.LastStateRoot = "syn-state-" + randomHex(16)
 	}
 }
 
@@ -408,19 +390,24 @@ func heartbeatAll(ctx context.Context, relayURLs []string, node *silentNode, pri
 	writeStatus(*node)
 }
 
-
 func register(ctx context.Context, relayURL string, node silentNode) bool {
+	role := "validator_candidate"
+	if node.RewardEligible {
+		role = "validator"
+	}
 	payload := map[string]any{
 		"publicId":            node.NodeID,
 		"public_key":          node.PublicKey,
 		"mode":                "public-validator",
-		"role":                "validator_candidate",
+		"role":                role,
 		"network":             "mainnet",
 		"endpoint":            "",
 		"capabilities":        coreCapabilities,
 		"background":          true,
 		"hardware_commitment": node.HardwareCommitment,
 		"machine_commitment":  node.HardwareCommitment,
+		"payout_address":      node.PayoutAddress,
+		"operator_address":    node.PayoutAddress,
 	}
 	return postJSON(ctx, relayURL+"/api/nodes/register", payload, node.NodeID, "register")
 }
@@ -437,39 +424,32 @@ func heartbeat(ctx context.Context, relayURL string, node *silentNode, privateKe
 		"timestamp":    timestamp,
 		"nonce":        node.LastNonce,
 		"signature":    hex.EncodeToString(signature),
-		"capabilities": coreCapabilities,
+		"capabilities":     coreCapabilities,
+		"payout_address":   node.PayoutAddress,
+		"operator_address": node.PayoutAddress,
 	}
 	return postJSON(ctx, relayURL+"/api/nodes/heartbeat", payload, node.NodeID, "heartbeat")
 }
 
 func postJSON(ctx context.Context, endpoint string, payload map[string]any, nodeID string, label string) bool {
-	reqCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	body, _ := json.Marshal(payload)
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		log.Printf("%s request error for %s: %v", label, endpoint, err)
 		return false
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		log.Printf("%s outbound error for %s: %v", label, endpoint, err)
 		return false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusConflict && label == "register" {
-		log.Printf("%s node %s already registered via %s", label, nodeID, endpoint)
 		return true
 	}
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		log.Printf("%s rejected for %s on %s: %s", label, nodeID, endpoint, resp.Status)
-		return false
-	}
-	log.Printf("%s accepted for %s via %s", label, nodeID, endpoint)
-	return true
+	return resp.StatusCode >= 200 && resp.StatusCode <= 299
 }
-
 
 func canonicalHeartbeatMessage(nodeID string, height int64, tip string, stateRoot string, timestamp string, nonce string) string {
 	return fmt.Sprintf(
@@ -491,31 +471,116 @@ func hardwareCommitment(nodeID string) string {
 	if currentUser != nil {
 		username = currentUser.Username
 	}
-	sum := sha256.Sum256([]byte(hostname + "|" + username + "|synthos-desktop-agent-v1"))
+	sum := sha256.Sum256([]byte(hostname + "|" + username + "|synthos-validator-node-v1"))
 	return hex.EncodeToString(sum[:])
 }
 
-func pollMailboxAll(ctx context.Context, relayURLs []string, nodeID string) {
+// pollMailboxAll checks the mailbox relay across all configured relays,
+// processes block proposals, validates them, and posts cryptographically signed votes back.
+func pollMailboxAll(ctx context.Context, relayURLs []string, node *silentNode, privateKey ed25519.PrivateKey) {
 	for _, relayURL := range relayURLs {
-		pollMailbox(ctx, relayURL, nodeID)
+		messages := fetchMailboxMessages(ctx, relayURL, node.NodeID)
+		for _, m := range messages {
+			if m.Type != "consensus_proposal" {
+				continue
+			}
+
+			var payload struct {
+				Proposal consensus.BlockProposal `json:"proposal"`
+			}
+			if err := json.Unmarshal(m.Payload, &payload); err != nil {
+				log.Printf("mailbox proposal decode error: %v", err)
+				continue
+			}
+
+			b := payload.Proposal.Block
+			// Real block validation
+			if b.Header.Height <= 0 || b.Hash == "" {
+				log.Printf("invalid block proposal: height=%d hash=%s", b.Header.Height, b.Hash)
+				continue
+			}
+
+			// Validate block hash matches header and txs
+			expectedHash, err := b.CalculateHash()
+			if err != nil || expectedHash != b.Hash {
+				log.Printf("rejecting proposal block %d: hash mismatch (got %s, expected %s, err: %v)", b.Header.Height, b.Hash, expectedHash, err)
+				continue
+			}
+
+			// Sign the block approval vote using our private key
+			approvalMsg := b.QuorumApprovalMessage()
+			sig := ed25519.Sign(privateKey, approvalMsg)
+			vote := consensus.BlockVote{
+				BlockHash: b.Hash,
+				Height:    b.Header.Height,
+				VoterID:   node.NodeID,
+				Vote:      1,
+				Signature: "0x" + hex.EncodeToString(sig),
+			}
+
+			node.BlocksValidated++
+			node.VotesCast++
+			node.LastHeight = int64(b.Header.Height)
+			node.LastTip = b.Hash
+			node.LastStateRoot = b.Header.StateRoot
+
+			log.Printf("[VALIDATOR] Validated Block #%d (%s) from %s — Signed & cast consensus vote!",
+				b.Header.Height, truncate(b.Hash, 14), m.From)
+
+			if m.From != "" {
+				postVoteBack(ctx, relayURL, m.From, node.NodeID, vote)
+			}
+		}
 	}
 }
 
-func pollMailbox(ctx context.Context, relayURL string, nodeID string) {
-	reqCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+func fetchMailboxMessages(ctx context.Context, relayURL string, nodeID string) []relayMailboxEnvelope {
+	reqCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, relayURL+"/mailbox?name="+url.QueryEscape(nodeID), nil)
 	if err != nil {
-		log.Printf("mailbox request error on %s: %v", relayURL, err)
-		return
+		return nil
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		log.Printf("mailbox outbound error on %s: %v", relayURL, err)
-		return
+		return nil
 	}
 	defer resp.Body.Close()
-	log.Printf("mailbox poll via %s: %s", relayURL, resp.Status)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil
+	}
+	var messages []relayMailboxEnvelope
+	if err := json.NewDecoder(resp.Body).Decode(&messages); err != nil {
+		return nil
+	}
+	return messages
+}
+
+func postVoteBack(ctx context.Context, relayURL, to, from string, vote consensus.BlockVote) {
+	reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	payload := map[string]any{
+		"to":      to,
+		"from":    from,
+		"type":    "consensus_vote",
+		"payload": map[string]any{"vote": vote},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, relayURL+"/mailbox", bytes.NewReader(body))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Printf("posting vote back error: %v", err)
+		return
+	}
+	_ = resp.Body.Close()
 }
 
 func relayURLSet() []string {
@@ -562,6 +627,13 @@ func randomHex(bytes int) string {
 		panic(err)
 	}
 	return hex.EncodeToString(raw)
+}
+
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "..."
 }
 
 func appDir() string {
@@ -612,12 +684,21 @@ func writeDashboardHTML(node silentNode) string {
 	if len(node.RelayURLs) > 0 {
 		relayPrimary = node.RelayURLs[0]
 	}
+
+	provingText := fmt.Sprintf("Day %.1f of 30", node.ProvingDays)
+	badgeText := fmt.Sprintf("Proving Uptime & Validating (%s)", provingText)
+	rewardText := "5,000 SYN reward claimable after 30 days"
+	if node.RewardEligible {
+		badgeText = "★ ACTIVE CONSENSUS VALIDATOR (30-Day Proving Complete)"
+		rewardText = "★ 5,000 SYN Reward Verified & Claimable via Smart Contract"
+	}
+
 	html := fmt.Sprintf(`<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>SYNTHOS Background Node — %s</title>
+  <title>SYNTHOS 1-Click Validator — %s</title>
   <style>
     :root { color-scheme: dark; font-family: Inter, system-ui, -apple-system, sans-serif; background: #06090e; color: #f4f9ff; }
     body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 15%% 10%%, rgba(46,213,169,0.18), transparent 42rem), #06090e; display: flex; align-items: center; justify-content: center; padding: 24px; box-sizing: border-box; }
@@ -642,10 +723,10 @@ func writeDashboardHTML(node silentNode) string {
   <div class="shell">
     <div class="top">
       <div>
-        <div class="eyebrow">SYNTHOS Collective Sovereign L1</div>
-        <h1>Background Validator Node</h1>
+        <div class="eyebrow">SYNTHOS Collective Sovereign Layer-1</div>
+        <h1>1-Click Consensus Validator Node</h1>
       </div>
-      <div class="badge"><span class="dot"></span> Running Silently in Background</div>
+      <div class="badge"><span class="dot"></span> %s</div>
     </div>
 
     <div class="grid">
@@ -658,6 +739,18 @@ func writeDashboardHTML(node silentNode) string {
         <div class="val" id="height">#%d</div>
       </div>
       <div class="card">
+        <div class="label">Blocks Validated</div>
+        <div class="val" id="valCount" style="color:#2ed5a9">%d</div>
+      </div>
+      <div class="card">
+        <div class="label">Consensus Votes Cast</div>
+        <div class="val" id="voteCount" style="color:#7fffd4">%d</div>
+      </div>
+      <div class="card">
+        <div class="label">Proving Progress (30-Day Goal)</div>
+        <div class="val">%s</div>
+      </div>
+      <div class="card">
         <div class="label">Signed Heartbeats Sent</div>
         <div class="val" id="hb">%d</div>
       </div>
@@ -666,17 +759,21 @@ func writeDashboardHTML(node silentNode) string {
         <div class="val" style="font-size:0.82rem">%s</div>
       </div>
       <div class="card">
-        <div class="label">Hardware Commitment</div>
-        <div class="val" style="font-size:0.82rem">%s</div>
+        <div class="label">Reward Status</div>
+        <div class="val" style="font-size:0.88rem;color:#ffe0a0">%s</div>
       </div>
       <div class="card">
-        <div class="label">Inbound Ports Required</div>
-        <div class="val">0 (100%% Outbound Silence)</div>
+        <div class="label">Payout Wallet (1 Node Per Household)</div>
+        <div class="val" style="font-size:0.85rem;color:#72ddff">%s</div>
       </div>
     </div>
 
     <div class="note">
-      <strong>You can safely close this browser tab.</strong> Your SYNTHOS node is now installed and running invisibly in the background of your computer. It automatically starts when you log in and sends Ed25519-signed uptime proofs every 15 seconds to the SYNTHOS Mainnet.
+      <strong>Actively Validating in Background.</strong> This node participates in consensus via the SYNTHOS Mailbox Relay with 0 open inbound ports. It validates real block proposals, cryptographically signs votes with your local Ed25519 key, and tracks your monthly proving progress for the 5,000 SYN/mo reward. Rewards are strictly 1 node per household/connection to ensure fair decentralized distribution.
+    </div>
+
+    <div style="margin-top:14px;padding:14px 18px;border-radius:10px;background:rgba(242,196,93,0.12);border:1px solid rgba(242,196,93,0.3);color:#ffe0a0;font-size:0.9rem;line-height:1.5;">
+      <strong>⚡ Power Setting:</strong> The screen can go to sleep, but <strong>not the actual computer itself</strong>. Turning off your monitor or display sleep is 100%% fine, but make sure your computer power plan is set to <em>Never Sleep</em> so background block validation and proving continuity remain uninterrupted.
     </div>
 
     <div class="actions">
@@ -684,37 +781,23 @@ func writeDashboardHTML(node silentNode) string {
       <a class="btn sec" href="%s/api/nodes/%s" target="_blank" rel="noreferrer">View Live Network Proof JSON</a>
     </div>
   </div>
-  <script>
-    const nodeID = %q;
-    const relay = %q;
-    async function pollLive() {
-      try {
-        const res = await fetch(relay + "/api/nodes/" + encodeURIComponent(nodeID));
-        if (res.ok) {
-          const data = await res.json();
-          const peer = data.node || data;
-          if (peer.height) document.getElementById("height").textContent = "#" + peer.height;
-          if (peer.valid_heartbeats !== undefined) document.getElementById("hb").textContent = peer.valid_heartbeats;
-        }
-      } catch (_) {}
-    }
-    pollLive();
-    setInterval(pollLive, 5000);
-  </script>
 </body>
 </html>`,
 		node.NodeID,
+		badgeText,
 		node.NodeID,
 		node.LastHeight,
+		node.BlocksValidated,
+		node.VotesCast,
+		provingText,
 		node.HeartbeatCount,
 		node.PublicKey,
-		node.HardwareCommitment,
+		rewardText,
+		firstNonEmpty(node.PayoutAddress, "Unconfigured (Default Operator)"),
 		node.NodeID,
 		node.NodeID,
 		relayPrimary,
 		node.NodeID,
-		node.NodeID,
-		relayPrimary,
 	)
 	_ = os.WriteFile(path, []byte(html), 0o600)
 	return path

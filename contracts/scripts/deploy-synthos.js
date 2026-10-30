@@ -350,6 +350,10 @@ async function main() {
 
   const dex = await deployContract("SYNTHOSDex", [syn.address]);
 
+  const validatorCandidateRewards = await deployContract("SYNTHOSValidatorCandidateRewards", [
+    syn.address,
+  ]);
+
   if (merkle.root !== ethers.ZeroHash || merkle.gateRequired) {
     tx = await adopterRewards.contract.setAdopterMerkleRoot(
       merkle.root,
@@ -536,6 +540,7 @@ async function main() {
     ["SYNTHOSAdopterRewards", adopterRewards.contract],
     ["SYNTHOSEarlyAdopterPresale", earlyAdopterSale.contract],
     ["SYNTHOSDex", dex.contract],
+    ["SYNTHOSValidatorCandidateRewards", validatorCandidateRewards.contract],
     ["SYNTHOSComplianceRegistry", complianceRegistry.contract],
   ];
   for (const [label, contract] of ownableTransfers) {
@@ -597,6 +602,7 @@ async function main() {
       complianceRegistry: complianceRegistry.address,
       earlyAdopterSale: earlyAdopterSale.address,
       adopterRewards: adopterRewards.address,
+      validatorCandidateRewards: validatorCandidateRewards.address,
       dex: dex.address,
       founderVesting: founderVesting.address,
     },

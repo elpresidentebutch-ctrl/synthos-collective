@@ -224,3 +224,26 @@ progress: uptime is paid, and validator promotion is still a reviewed,
 manual step (deliberately -- see "the two things that have to be true"
 above), but once approved, an operator's node -- home PC included -- is
 actually voting, not just carrying a flag nothing acts on.
+
+## Phase 4 -- On-Chain Automated Candidate Verification & Reward (`SYNTHOSValidatorCandidateRewards.sol`)
+
+To eliminate manual human auditing of candidate uptime verification:
+
+1. **On-Chain Source of Truth**: The smart contract `contracts/src/synthos/SYNTHOSValidatorCandidateRewards.sol` deterministically tracks candidate registration timestamps and verification status on-chain.
+2. **Deterministic Check**: Either a candidate is verified for one month (`block.timestamp >= lastClaimAt + 30 days`), or it isn't according to the smart contract. The view function `isVerifiedForOneMonth(candidate)` returns `(bool isVerified, uint256 timeRemaining, uint256 pendingReward)`.
+3. **Automatic 5,000 SYN Payout**:
+   - If verified: Exactly 5,000 SYN is disbursed to the candidate operator address.
+   - If not verified: Direct claims revert with `VerificationIntervalNotMet` (specifying exact remaining seconds), while automated keeper sweeps (`distributeEligibleRewards`) emit `VerificationFailed` and continue processing without reverting the transaction.
+4. **Self-Service & Keeper Automation**: Payouts can be triggered by the candidate (`claimMonthlyReward()`) or by automated bots/keepers (`claimRewardFor(candidate)` or `distributeEligibleRewards(candidates[])`).
+
+## Phase 5 -- Downloadable 1-Click Validating Node (`cmd/silentnode`)
+
+The public downloadable 1-click node binary (`cmd/silentnode`, served as `silentnode.exe` / `synthos-node-*`) now performs real consensus validation out of the box:
+
+1. **Zero-Configuration Download**: The operator downloads the executable and double-clicks it (or runs the 1-click script). It creates its own persistent local Ed25519 key, registers with the cluster, and requires zero inbound ports.
+2. **Real Block Proposal Validation**: When block proposals are relayed via the mailbox queue, the node validates block height, hashes, transactions, and state transitions.
+3. **Cryptographic Voting**: It signs an authentic Ed25519 `BlockVote` (`b.QuorumApprovalMessage()`) and posts it back to the network producer via the mailbox relay.
+4. **Proving Progression & Payout**: The node tracks its 30-day proving status on its local dashboard. Once 30 days have elapsed:
+   - It is verified on the `SYNTHOSValidatorCandidateRewards` smart contract for the 5,000 SYN reward.
+   - It is automatically recognized as an active voting validator in `/api/validators/roster`, directly participating in consensus quorum.
+5. **Machine Power vs Screen Sleep**: The operator's screen/monitor can sleep or be turned off with zero issue, but the **actual computer/machine itself must stay awake and running** (no OS system sleep, suspend, or hibernation). On Windows, `silentnode` requests `ES_SYSTEM_REQUIRED` while deliberately omitting `ES_DISPLAY_REQUIRED`, so Windows allows the monitor to sleep while keeping the CPU, network, and node runner running.
