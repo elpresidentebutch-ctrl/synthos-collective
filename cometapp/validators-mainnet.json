@@ -1,0 +1,14 @@
+[
+  {
+    "moniker": "hosteons-validator-1",
+    "consensus_pub_key": "0xb44c9b9bb72998ba6119b4995fa13a30c3397a36c6abacc415c472051ece91be",
+    "operator": "0x4119efcd17aafd0f785f06d8df7cd4e88f85b5b2",
+    "self_bond": 1000000
+  },
+  {
+    "moniker": "jim-pc-validator-1",
+    "consensus_pub_key": "0x8c930602b86ad71740df3e8ede4c92a8ab6be1fa4037cf90bb56a8bb75f6bca9",
+    "operator": "0x83f91f1fbef8b0a0d995a7fe3cedbbab6b8e3ed9",
+    "self_bond": 1000000
+  }
+]

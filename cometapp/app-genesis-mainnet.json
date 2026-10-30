@@ -1,0 +1,122 @@
+{
+  "chain": {
+    "chain_id": "synthos-mainnet-1",
+    "tx_chain_id": 20260702,
+    "alloc": null
+  },
+  "staking": {
+    "enabled_from_height": 1,
+    "min_self_bond": 10000,
+    "unbonding_blocks": 86400,
+    "max_active_validators": 0,
+    "consensus_from_height": 0,
+    "epoch_blocks": 100,
+    "slash_fraction_bps": 500,
+    "reporter_reward_bps": 1000
+  },
+  "validators": [
+    {
+      "operator": "0x4119efcd17aafd0f785f06d8df7cd4e88f85b5b2",
+      "consensus_pub_key": "0xb44c9b9bb72998ba6119b4995fa13a30c3397a36c6abacc415c472051ece91be",
+      "self_bond": 1000000,
+      "moniker": "hosteons-validator-1"
+    },
+    {
+      "operator": "0x83f91f1fbef8b0a0d995a7fe3cedbbab6b8e3ed9",
+      "consensus_pub_key": "0x8c930602b86ad71740df3e8ede4c92a8ab6be1fa4037cf90bb56a8bb75f6bca9",
+      "self_bond": 1000000,
+      "moniker": "jim-pc-validator-1"
+    }
+  ],
+  "initial_state": {
+    "Accounts": {
+      "0x25151dd517ef19003d8feb50a501d8a096b7f597": {
+        "balance": 7000,
+        "assets": {},
+        "nonce": 0
+      },
+      "0x4119efcd17aafd0f785f06d8df7cd4e88f85b5b2": {
+        "balance": 22000000000,
+        "assets": {},
+        "nonce": 0
+      },
+      "0x564f8814cc40f7c287ccdff66a4324217859cc8f": {
+        "balance": 17000000000,
+        "assets": {},
+        "nonce": 0
+      },
+      "0x58a39157bcfdbadbd779ca32325d28f921311973": {
+        "balance": 3000000000,
+        "assets": {},
+        "nonce": 0
+      },
+      "0x66a0c64a9ff8d5187715b1fefed6b0ccc883b702": {
+        "balance": 2000,
+        "assets": {},
+        "nonce": 0
+      },
+      "0x757a88a78ad5e636a083de9775f8606fc3f0a511": {
+        "balance": 40,
+        "assets": {},
+        "nonce": 0
+      },
+      "0x825fd94aa826da6ce0b4e57487418b72aea09f5e": {
+        "balance": 499978940,
+        "assets": {},
+        "nonce": 0
+      },
+      "0x83f91f1fbef8b0a0d995a7fe3cedbbab6b8e3ed9": {
+        "balance": 12000000000,
+        "assets": {},
+        "nonce": 0
+      },
+      "0xa4aabbc7e5841259b61afb4b4fbfcd7dae7b0501": {
+        "balance": 13000000000,
+        "assets": {},
+        "nonce": 0
+      },
+      "0xa8e6b4662c0344e83ba260e8360c096b3ef7019a": {
+        "balance": 12500000000,
+        "assets": {},
+        "nonce": 0
+      },
+      "0xb039d690927d389e4c03a87f3f0001069f4832fe": {
+        "balance": 10000,
+        "assets": {},
+        "nonce": 0
+      },
+      "0xc58962c2c91db3b106cacfe42f1992eafc0a9b23": {
+        "balance": 20000000000,
+        "assets": {},
+        "nonce": 0
+      },
+      "0xcf206e37d6425bbcebeefa006b1df9e4964ba87c": {
+        "balance": 20,
+        "assets": {},
+        "nonce": 0
+      },
+      "0xea5435f9b214f9bf193a9b9f1d3ae8fb8ec09d99": {
+        "balance": 2000,
+        "assets": {},
+        "nonce": 0
+      }
+    },
+    "ImmuneNodes": {},
+    "SovereignProofs": {},
+    "BridgeEvents": {},
+    "ProcessedBridgeEvents": {},
+    "BridgeValidators": {},
+    "BridgeQuorum": 0,
+    "LastSovereignProofID": "",
+    "LastBridgeEventID": "",
+    "TotalSupply": 100000000000,
+    "CitizenStakes": {},
+    "TreasuryAddress": "0xa4aabbc7e5841259b61afb4b4fbfcd7dae7b0501",
+    "CitizenRewardRateBpsPerYear": 650,
+    "GovernanceProposals": {},
+    "GovernanceFounder": "0x7c8edee564a7e884717f5f71cce09b2bfb8bf904",
+    "Validators": {},
+    "ValidatorSetSnapshot": null
+  },
+  "initial_state_root": "0xa40c015e2800877ec9db67c55a5316b5e8b43dcf967fcbf3ade78aa7bc44a2ff"
+}

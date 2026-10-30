@@ -1,0 +1,169 @@
+{
+  "genesis_time": "2026-10-01T00:52:47.6214969Z",
+  "chain_id": "synthos-testnet-1",
+  "initial_height": "1",
+  "consensus_params": {
+    "block": {
+      "max_bytes": "22020096",
+      "max_gas": "-1"
+    },
+    "evidence": {
+      "max_age_num_blocks": "100000",
+      "max_age_duration": "172800000000000",
+      "max_bytes": "1048576"
+    },
+    "validator": {
+      "pub_key_types": [
+        "ed25519"
+      ]
+    },
+    "version": {
+      "app": "0"
+    },
+    "abci": {
+      "vote_extensions_enable_height": "0"
+    }
+  },
+  "validators": [
+    {
+      "address": "AA79423E8BC9A5ECDD93DAAFEEA12C0EC08B4661",
+      "pub_key": {
+        "type": "tendermint/PubKeyEd25519",
+        "value": "6VNmWtoVfpshDJ/U3HwUxgOZeMg8lxksX73kDLETxEg="
+      },
+      "power": "1000000",
+      "name": "jim-home-1"
+    }
+  ],
+  "app_hash": "",
+  "app_state": {
+    "chain": {
+      "chain_id": "synthos-testnet-1",
+      "tx_chain_id": 20261001,
+      "alloc": null
+    },
+    "staking": {
+      "enabled_from_height": 1,
+      "min_self_bond": 10000,
+      "unbonding_blocks": 86400,
+      "max_active_validators": 0,
+      "consensus_from_height": 0,
+      "epoch_blocks": 100,
+      "slash_fraction_bps": 500,
+      "reporter_reward_bps": 1000
+    },
+    "validators": [
+      {
+        "operator": "0x83f91f1fbef8b0a0d995a7fe3cedbbab6b8e3ed9",
+        "consensus_pub_key": "0xe953665ada157e9b210c9fd4dc7c14c6039978c83c97192c5fbde40cb113c448",
+        "self_bond": 1000000,
+        "moniker": "jim-home-1"
+      }
+    ],
+    "initial_state": {
+      "Accounts": {
+        "0x25151dd517ef19003d8feb50a501d8a096b7f597": {
+          "balance": 7000,
+          "assets": {},
+          "nonce": 0
+        },
+        "0x4119efcd17aafd0f785f06d8df7cd4e88f85b5b2": {
+          "balance": 22000000000,
+          "assets": {},
+          "nonce": 0
+        },
+        "0x564f8814cc40f7c287ccdff66a4324217859cc8f": {
+          "balance": 17000000000,
+          "assets": {},
+          "nonce": 0
+        },
+        "0x58a39157bcfdbadbd779ca32325d28f921311973": {
+          "balance": 3000000000,
+          "assets": {},
+          "nonce": 0
+        },
+        "0x66a0c64a9ff8d5187715b1fefed6b0ccc883b702": {
+          "balance": 2000,
+          "assets": {},
+          "nonce": 0
+        },
+        "0x757a88a78ad5e636a083de9775f8606fc3f0a511": {
+          "balance": 40,
+          "assets": {},
+          "nonce": 0
+        },
+        "0x825fd94aa826da6ce0b4e57487418b72aea09f5e": {
+          "balance": 499978940,
+          "assets": {},
+          "nonce": 0
+        },
+        "0x83f91f1fbef8b0a0d995a7fe3cedbbab6b8e3ed9": {
+          "balance": 12000000000,
+          "assets": {},
+          "nonce": 0
+        },
+        "0xa4aabbc7e5841259b61afb4b4fbfcd7dae7b0501": {
+          "balance": 13000000000,
+          "assets": {},
+          "nonce": 0
+        },
+        "0xa6cc70355b1dc27d0d12c000aaad34dcd3d246c5": {
+          "balance": 0,
+          "assets": {},
+          "nonce": 0
+        },
+        "0xa8e6b4662c0344e83ba260e8360c096b3ef7019a": {
+          "balance": 12500000000,
+          "assets": {},
+          "nonce": 0
+        },
+        "0xb039d690927d389e4c03a87f3f0001069f4832fe": {
+          "balance": 10000,
+          "assets": {},
+          "nonce": 0
+        },
+        "0xc58962c2c91db3b106cacfe42f1992eafc0a9b23": {
+          "balance": 20000000000,
+          "assets": {},
+          "nonce": 0
+        },
+        "0xcf206e37d6425bbcebeefa006b1df9e4964ba87c": {
+          "balance": 20,
+          "assets": {},
+          "nonce": 0
+        },
+        "0xea5435f9b214f9bf193a9b9f1d3ae8fb8ec09d99": {
+          "balance": 2000,
+          "assets": {},
+          "nonce": 0
+        }
+      },
+      "ImmuneNodes": {
+        "0xea486589b90b2d95316cff6c587f49c7206bfe35": {
+          "address": "0xea486589b90b2d95316cff6c587f49c7206bfe35",
+          "hardware_hash": "synthos-hw-synthos-validator-12",
+          "activated_at": 1789777461,
+          "sovereign_proofs": 0,
+          "opt_in_local_only": true,
+          "cryptographic_mode": "absolute_silence"
+        }
+      },
+      "SovereignProofs": {},
+      "BridgeEvents": {},
+      "ProcessedBridgeEvents": {},
+      "BridgeValidators": {},
+      "BridgeQuorum": 0,
+      "LastSovereignProofID": "",
+      "LastBridgeEventID": "",
+      "TotalSupply": 100000000000,
+      "CitizenStakes": {},
+      "TreasuryAddress": "0xa4aabbc7e5841259b61afb4b4fbfcd7dae7b0501",
+      "CitizenRewardRateBpsPerYear": 650,
+      "GovernanceProposals": {},
+      "GovernanceFounder": "0x7c8edee564a7e884717f5f71cce09b2bfb8bf904",
+      "Validators": {},
+      "ValidatorSetSnapshot": null
+    },
+    "initial_state_root": "0x10d3730bb7ddb8a76a678a57c776bc95e39d2cf6abbb56ddfab3ae1cd2b34fcd"
+  }
+}
