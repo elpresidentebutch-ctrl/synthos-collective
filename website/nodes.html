@@ -59,17 +59,18 @@
           <div style="margin-top:6px;font-size:12px;color:#94a3b8">Prefer a 1-click terminal install? Run in PowerShell: <code style="background:#0f172a;padding:2px 6px;border-radius:3px;color:#38bdf8">irm https://82-29-54-7.sslip.io/install.ps1 | iex</code></div>
         </div>
         <div style="margin-top:10px;padding:12px 14px;background:rgba(242,196,93,0.1);border-left:3px solid #f2c45d;border-radius:4px;font-size:13px;color:#ffe0a0">
-          ⚡ <strong>Important Power Setting:</strong> Your screen can go to sleep, but <strong>not the actual computer itself</strong>. To achieve your 1-month verified status and 5,000 SYN reward, the machine must stay awake and online to continuously validate blocks. Setting your monitor or display to turn off / sleep is 100% fine, but the computer itself must not sleep or hibernate.
+          ⚡ <strong>Important Power Setting:</strong> Your screen can go to sleep, but <strong>not the actual computer itself</strong>. To achieve your 1-month verified status and 10,000 SYN reward, the machine must stay awake and online to continuously validate blocks. Setting your monitor or display to turn off / sleep is 100% fine, but the computer itself must not sleep or hibernate.
         </div>
       </div>
       <aside class="panel pad">
-        <h2>Monthly Validator Rewards (5,000 SYN/mo)</h2>
-        <p>Your downloaded node immediately connects as a consensus validator candidate with zero open inbound ports. It actively verifies network block proposals and cryptographically signs consensus votes. After <b>each full month of verified uptime</b>, your node is automatically paid <b class="ok">5,000 SYN/month</b> directly to your designated payout wallet.</p>
+        <h2>Monthly Validator Rewards (10,000 SYN/mo)</h2>
+        <p>Your downloaded node immediately connects as a consensus validator candidate with zero open inbound ports. It actively verifies network block proposals and cryptographically signs consensus votes. After <b>each full month of verified uptime</b>, your node is automatically paid <b class="ok">10,000 SYN/month</b> directly to your designated payout wallet.</p>
         <div style="margin-top:10px;padding:10px 12px;background:rgba(114,221,255,0.08);border:1px solid rgba(114,221,255,0.25);border-radius:10px;font-size:13px;line-height:1.5;">
           🛡️ <strong>Fair Distribution Protections:</strong><br/>
           • <strong>1 Paid Node Per Household:</strong> Exactly one node per internet connection receives monthly rewards to stop sybil farming.<br/>
           • <strong>Real Signed Heartbeats Only:</strong> Requires cryptographic Ed25519 uptime signatures.<br/>
-          • <strong>Halving Schedule:</strong> Cuts in half every 2 years starting Jan 1, 2027 (5,000 SYN in 2026, 2,500 in 2027–2028).<br/>
+          • <strong>Monthly Distribution Cap:</strong> 250,000 SYN per month reward pool.<br/>
+          • <strong>Halving Schedule:</strong> Cuts in half every 2 years starting Jan 1, 2027 (10,000 SYN in 2026, 5,000 in 2027–2028).<br/>
           • <strong>Consensus Promotion:</strong> Promotion to active consensus quorum voting is subject to founder approval.
         </div>
         <p class="muted" style="margin-top:10px">No payment is made for clicking the button alone. Rewards require the installed runner to keep sending real signed uptime proofs.</p>
@@ -131,6 +132,77 @@
       </div>
       <p style="margin-top:14px"><b id="rewardStatus">Reward status: Waiting for node</b></p>
       <p class="muted" id="rewardNote">Reward eligibility applies to Validator Candidate and Validator roles only.</p>
+    </section>
+
+    <!-- GAMIFIED AIRDROP POINTS & DUOLINGO STREAKS -->
+    <section class="panel pad" style="margin-top:16px;background:linear-gradient(135deg,rgba(46,213,169,0.08),rgba(114,221,255,0.04));border-color:rgba(46,213,169,0.3)">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+        <div>
+          <div class="eyebrow">Real-Time Infrastructure Rewards</div>
+          <h2 style="margin:4px 0 0">Gamified Ecosystem Points & Uptime Streaks</h2>
+        </div>
+        <div id="streakPill" class="pill ok" style="font-weight:800;font-size:0.85rem;padding:6px 14px">
+          🔥 <span id="streakDaysBadge">0.0 Days</span> Streak (1.0x Base)
+        </div>
+      </div>
+
+      <div class="grid grid2" style="margin-top:18px;align-items:center">
+        <div class="stat" style="border-color:rgba(46,213,169,0.4);background:rgba(46,213,169,0.05)">
+          <span style="font-size:0.75rem;font-weight:800;color:var(--green);text-transform:uppercase;letter-spacing:0.08em">Ticking Ecosystem Points</span>
+          <b id="tickerPoints" style="font-size:2.4rem;color:var(--green);font-family:monospace;letter-spacing:-0.03em;margin-top:4px">0.00</b>
+          <span style="color:var(--cyan);font-family:monospace;font-size:0.95rem;margin-top:4px">≈ <span id="tickerSyn">0.0000</span> SYN Accumulated (Goal: 10,000 SYN)</span>
+        </div>
+
+        <div>
+          <div style="display:flex;justify-content:space-between;font-size:0.82rem;font-weight:700;margin-bottom:6px">
+            <span id="streakGoalText">Next Multiplier: 1.5x Boost</span>
+            <span id="streakRemainingText" style="color:var(--amber)">7.0 days left</span>
+          </div>
+          <div style="width:100%;height:10px;border-radius:999px;background:rgba(255,255,255,0.08);overflow:hidden">
+            <div id="streakProgressFill" style="width:0%;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--amber),var(--green));transition:width 0.4s ease"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:0.7rem;color:var(--muted);margin-top:8px;font-weight:700">
+            <span>Genesis (1.0x)</span>
+            <span>7-Day (1.5x)</span>
+            <span>14-Day (2.0x)</span>
+            <span>21-Day (2.5x)</span>
+            <span>30-Day (3.0x + 10k SYN)</span>
+          </div>
+          <p style="font-size:0.78rem;color:var(--muted);margin-top:10px;line-height:1.4">
+            🔥 <strong>Duolingo for Infrastructure:</strong> Keep your computer awake and connected to maintain your streak. Reaching 7 straight days of uptime automatically unlocks a <strong>1.5x points multiplier</strong>.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- LIVE VALIDATOR LEADERBOARD -->
+    <section class="panel pad" style="margin-top:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+        <div>
+          <h2>🏆 Consensus Validator Leaderboard</h2>
+          <p style="margin:2px 0 0;font-size:0.85rem;color:var(--muted)">Top decentralized nodes ranked by uptime streaks and network validation proofs</p>
+        </div>
+        <button id="refreshLbBtn" class="btn" style="padding:6px 12px;font-size:0.8rem" onclick="loadLeaderboard()">Refresh Rankings</button>
+      </div>
+      <div style="overflow-x:auto;margin-top:14px">
+        <table style="width:100%;border-collapse:collapse;font-size:0.88rem">
+          <thead>
+            <tr style="text-align:left;color:var(--muted);font-size:0.72rem;text-transform:uppercase;border-bottom:1px solid var(--line)">
+              <th style="padding:8px 10px">Rank</th>
+              <th style="padding:8px 10px">Node ID</th>
+              <th style="padding:8px 10px">Uptime Streak</th>
+              <th style="padding:8px 10px">Multiplier</th>
+              <th style="padding:8px 10px">Heartbeats</th>
+              <th style="padding:8px 10px">Status</th>
+            </tr>
+          </thead>
+          <tbody id="leaderboardBody">
+            <tr>
+              <td colspan="6" style="padding:16px 10px;text-align:center;color:var(--muted)">Loading network rankings...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </section>
 
     <section class="panel pad" style="margin-top:16px">
@@ -501,6 +573,47 @@
       renderRewardEpoch(s);
       renderSteps(s, caps, capabilityStatus);
       renderCaps(caps, capabilityStatus);
+      renderGamifiedStreaks(s);
+    }
+    function renderGamifiedStreaks(s) {
+      const epoch = s?.reward_epoch || s?.reward?.epoch || {};
+      const verifiedDays = Number(epoch.days_verified_this_month ?? s?.verified_days ?? 0);
+      let mult = 1.0;
+      let nextGoal = "7-Day Streak (1.5x Boost)";
+      let nextTargetDays = 7.0;
+      if (verifiedDays >= 21) {
+        mult = 2.5;
+        nextGoal = "30-Day Master (3.0x + 10,000 SYN Claim)";
+        nextTargetDays = 30.0;
+      } else if (verifiedDays >= 14) {
+        mult = 2.0;
+        nextGoal = "21-Day Streak (2.5x Boost)";
+        nextTargetDays = 21.0;
+      } else if (verifiedDays >= 7) {
+        mult = 1.5;
+        nextGoal = "14-Day Streak (2.0x Boost)";
+        nextTargetDays = 14.0;
+      }
+      const daysLeft = Math.max(0, nextTargetDays - verifiedDays);
+      const streakPct = Math.min(100, (verifiedDays / nextTargetDays) * 100);
+
+      const streakBadge = document.getElementById("streakDaysBadge");
+      const streakPill = document.getElementById("streakPill");
+      const goalEl = document.getElementById("streakGoalText");
+      const remEl = document.getElementById("streakRemainingText");
+      const fillEl = document.getElementById("streakProgressFill");
+
+      if (streakBadge) streakBadge.textContent = `${verifiedDays.toFixed(1)} Days`;
+      if (streakPill) streakPill.innerHTML = `🔥 <span>${verifiedDays.toFixed(1)} Days</span> Streak (${mult.toFixed(1)}x Active)`;
+      if (goalEl) goalEl.textContent = `Next Multiplier: ${nextGoal}`;
+      if (remEl) remEl.textContent = `${daysLeft.toFixed(1)} days left`;
+      if (fillEl) fillEl.style.width = `${streakPct.toFixed(1)}%`;
+
+      const basePts = (verifiedDays * 2400 * mult) + (s?.valid_heartbeats || 0);
+      const synAcc = Math.min(10000, (verifiedDays / 30) * 10000);
+      window.activeBasePoints = basePts;
+      window.activeSynAcc = synAcc;
+      window.activeMult = mult;
     }
     function hasCap(id, caps, capabilityStatus) {
       return caps.has(id) || capabilityStatus[id] === true;
@@ -582,6 +695,60 @@
       }
     }
 
+    let livePoints = 0;
+    let liveSyn = 0;
+    setInterval(() => {
+      const mult = window.activeMult || 1.0;
+      const ptsInc = ((100 / 3600) * mult) * 0.1;
+      const synInc = (10000 / (30 * 86400)) * 0.1;
+      if (window.activeBasePoints !== undefined) {
+        livePoints = (livePoints > 0 ? livePoints : window.activeBasePoints) + ptsInc;
+        liveSyn = (liveSyn > 0 ? liveSyn : (window.activeSynAcc || 0)) + synInc;
+        if (liveSyn > 10000) liveSyn = 10000;
+        const ptEl = document.getElementById("tickerPoints");
+        const synEl = document.getElementById("tickerSyn");
+        if (ptEl) ptEl.textContent = livePoints.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        if (synEl) synEl.textContent = liveSyn.toFixed(4);
+      }
+    }, 100);
+
+    async function loadLeaderboard() {
+      const tbody = document.getElementById("leaderboardBody");
+      try {
+        const res = await fetch(API + "/api/nodes");
+        if (!res.ok) throw new Error("Status " + res.status);
+        const data = await res.json();
+        const peers = data.peers || [];
+        peers.sort((a, b) => (b.verified_uptime_ms || 0) - (a.verified_uptime_ms || 0));
+        
+        let html = "";
+        const myNodeId = session?.node_id;
+        peers.slice(0, 15).forEach((p, idx) => {
+          const isMe = myNodeId && p.name === myNodeId;
+          const days = ((p.verified_uptime_ms || 0) / 86400000).toFixed(1);
+          let m = "1.0x";
+          if (days >= 30) m = "3.0x";
+          else if (days >= 21) m = "2.5x";
+          else if (days >= 14) m = "2.0x";
+          else if (days >= 7) m = "1.5x";
+          
+          const rankBadge = idx === 0 ? "🥇 #1" : idx === 1 ? "🥈 #2" : idx === 2 ? "🥉 #3" : "#" + (idx + 1);
+          const rowStyle = isMe ? 'background:rgba(46,213,169,0.12);font-weight:800;border-left:3px solid var(--green);' : '';
+          html += `<tr style="${rowStyle}border-bottom:1px solid rgba(255,255,255,0.05)">
+            <td style="padding:10px">${rankBadge}</td>
+            <td style="padding:10px;font-family:monospace">${p.name}${isMe ? ' <span style="color:var(--green)">(YOU)</span>' : ''}</td>
+            <td style="padding:10px">${days} days</td>
+            <td style="padding:10px;color:var(--amber);font-weight:700">🔥 ${m}</td>
+            <td style="padding:10px;font-family:monospace">${(p.valid_heartbeats || 0).toLocaleString()}</td>
+            <td style="padding:10px;color:${p.stale ? 'var(--red)' : 'var(--green)'}">${p.stale ? 'Offline' : 'Validating'}</td>
+          </tr>`;
+        });
+        if (tbody) tbody.innerHTML = html || '<tr><td colspan="6" style="padding:14px;text-align:center;color:var(--muted)">No active peers reporting.</td></tr>';
+      } catch (err) {
+        if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="padding:14px;text-align:center;color:var(--amber)">Leaderboard sync: ${err.message}</td></tr>`;
+      }
+    }
+
     load();
     render();
     if (session?.node_id) {
@@ -589,8 +756,12 @@
       startPolling();
     }
     refreshBackendNodeStatus();
+    loadLeaderboard();
     if (!pollTimer) {
-      pollTimer = setInterval(refreshBackendNodeStatus, 15000);
+      pollTimer = setInterval(() => {
+        refreshBackendNodeStatus();
+        loadLeaderboard();
+      }, 15000);
     }
   </script>
 </body>

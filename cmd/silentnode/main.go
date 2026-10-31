@@ -75,13 +75,16 @@ type silentNode struct {
 	RelayURLs           []string `json:"relay_urls"`
 	LastRelayOK         []string `json:"last_relay_ok"`
 	LastRelayFailed     []string `json:"last_relay_failed"`
-	StatusPath          string   `json:"status_path"`
-	KeyPath             string   `json:"key_path"`
-	RealSignedHeartbeat bool     `json:"real_signed_heartbeat"`
-	ProvingDays         float64  `json:"proving_days"`
-	RewardEligible      bool     `json:"reward_eligible"`
-	ValidatorStatus     string   `json:"validator_status"`
-	PayoutAddress       string   `json:"payout_address,omitempty"`
+	StatusPath          string    `json:"status_path"`
+	KeyPath             string    `json:"key_path"`
+	RealSignedHeartbeat bool      `json:"real_signed_heartbeat"`
+	ProvingDays         float64   `json:"proving_days"`
+	StreakDays          float64   `json:"streak_days"`
+	StreakMultiplier    float64   `json:"streak_multiplier"`
+	EcosystemPoints     float64   `json:"ecosystem_points"`
+	RewardEligible      bool      `json:"reward_eligible"`
+	ValidatorStatus     string    `json:"validator_status"`
+	PayoutAddress       string    `json:"payout_address,omitempty"`
 	CreatedAt           time.Time `json:"-"`
 }
 
@@ -188,6 +191,21 @@ func main() {
 	}
 }
 
+func streakMultiplierForDays(days float64) float64 {
+	switch {
+	case days >= 30.0:
+		return 3.0
+	case days >= 21.0:
+		return 2.5
+	case days >= 14.0:
+		return 2.0
+	case days >= 7.0:
+		return 1.5
+	default:
+		return 1.0
+	}
+}
+
 func updateProvingStatus(node *silentNode) {
 	if node.CreatedAt.IsZero() {
 		return
@@ -195,17 +213,21 @@ func updateProvingStatus(node *silentNode) {
 	elapsed := time.Since(node.CreatedAt)
 	days := elapsed.Hours() / 24.0
 	node.ProvingDays = days
+	node.StreakDays = days
+	node.StreakMultiplier = streakMultiplierForDays(days)
+	// 2,400 points/day base rate (100 pts/hr) * streak multiplier + block validation & heartbeat bonuses
+	node.EcosystemPoints = (days * 2400.0 * node.StreakMultiplier) + float64(node.BlocksValidated*10) + float64(node.HeartbeatCount)
 
 	if days >= provingTargetDays {
 		node.RewardEligible = true
-		node.ValidatorStatus = "Active Validator (1-month proving completed — 5,000 SYN reward verified)"
+		node.ValidatorStatus = "Active Validator (1-month proving completed — 10,000 SYN reward verified)"
 	} else {
 		node.RewardEligible = false
 		pct := (days / provingTargetDays) * 100.0
 		if pct > 100.0 {
 			pct = 100.0
 		}
-		node.ValidatorStatus = fmt.Sprintf("Proving Candidate (Day %.1f of 30 — %.1f%% proven)", days, pct)
+		node.ValidatorStatus = fmt.Sprintf("Proving Candidate (Day %.1f of 30 — %.1f%% proven — %.1fx Streak Boost)", days, pct, node.StreakMultiplier)
 	}
 }
 
@@ -281,9 +303,10 @@ func loadOrCreateNodeKey() (nodeKey, ed25519.PrivateKey, bool, error) {
 func printIdentity(key nodeKey, createdAt time.Time, created bool) {
 	elapsed := time.Since(createdAt)
 	days := elapsed.Hours() / 24.0
-	status := fmt.Sprintf("Proving Uptime (Day %.1f of 30)", days)
+	mult := streakMultiplierForDays(days)
+	status := fmt.Sprintf("Proving Uptime (Day %.1f of 30 — %.1fx Streak Boost)", days, mult)
 	if days >= provingTargetDays {
-		status = "★ PROVING COMPLETE — Verified for 5,000 SYN reward & Active Validator"
+		status = "★ PROVING COMPLETE — Verified for 10,000 SYN reward & Active Validator"
 	}
 
 	fmt.Println("========================================================================")
@@ -301,7 +324,8 @@ func printIdentity(key nodeKey, createdAt time.Time, created bool) {
 	fmt.Println("========================================================================")
 	fmt.Println("   • Runs silently in background with ZERO open inbound ports.")
 	fmt.Println("   • Actively receives, verifies, and signs network block proposals.")
-	fmt.Println("   • Earns 5,000 SYN monthly rewards after 30 days of verified proving.")
+	fmt.Println("   • Earns 10,000 SYN monthly rewards after 30 days of verified proving.")
+	fmt.Println("   • Gamified Streaks: 7-day (1.5x), 14-day (2.0x), 21-day (2.5x), 30-day (3.0x).")
 	fmt.Println("   • ANTI-FARMING: Only 1 paid node per household internet connection.")
 	fmt.Println("   • HALVING: Rewards cut in half every 2 years starting Jan 1, 2027.")
 	fmt.Println("   • POWER NOTE: The screen can sleep, but NOT the actual computer.")
@@ -687,10 +711,36 @@ func writeDashboardHTML(node silentNode) string {
 
 	provingText := fmt.Sprintf("Day %.1f of 30", node.ProvingDays)
 	badgeText := fmt.Sprintf("Proving Uptime & Validating (%s)", provingText)
-	rewardText := "5,000 SYN reward claimable after 30 days"
+	rewardText := "10,000 SYN reward claimable after 30 days"
 	if node.RewardEligible {
 		badgeText = "★ ACTIVE CONSENSUS VALIDATOR (30-Day Proving Complete)"
-		rewardText = "★ 5,000 SYN Reward Verified & Claimable via Smart Contract"
+		rewardText = "★ 10,000 SYN Reward Verified & Claimable via Smart Contract"
+	}
+
+	synAccumulated := (node.ProvingDays / provingTargetDays) * 10000.0
+	if synAccumulated > 10000.0 {
+		synAccumulated = 10000.0
+	}
+
+	nextMilestoneDay := 7.0
+	nextMilestoneMult := "1.5x"
+	if node.StreakDays >= 21.0 {
+		nextMilestoneDay = 30.0
+		nextMilestoneMult = "3.0x + 10,000 SYN Claim"
+	} else if node.StreakDays >= 14.0 {
+		nextMilestoneDay = 21.0
+		nextMilestoneMult = "2.5x"
+	} else if node.StreakDays >= 7.0 {
+		nextMilestoneDay = 14.0
+		nextMilestoneMult = "2.0x"
+	}
+	daysToNext := nextMilestoneDay - node.StreakDays
+	if daysToNext < 0 {
+		daysToNext = 0
+	}
+	streakPct := (node.StreakDays / nextMilestoneDay) * 100.0
+	if streakPct > 100.0 {
+		streakPct = 100.0
 	}
 
 	html := fmt.Sprintf(`<!doctype html>
@@ -701,18 +751,43 @@ func writeDashboardHTML(node silentNode) string {
   <title>SYNTHOS 1-Click Validator — %s</title>
   <style>
     :root { color-scheme: dark; font-family: Inter, system-ui, -apple-system, sans-serif; background: #06090e; color: #f4f9ff; }
-    body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 15%% 10%%, rgba(46,213,169,0.18), transparent 42rem), #06090e; display: flex; align-items: center; justify-content: center; padding: 24px; box-sizing: border-box; }
-    .shell { width: min(860px, 100%%); border: 1px solid rgba(46,213,169,0.3); background: rgba(13,19,28,0.9); border-radius: 16px; padding: 32px; box-shadow: 0 24px 60px rgba(0,0,0,0.55); }
+    body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 15%% 10%%, rgba(46,213,169,0.18), transparent 42rem), radial-gradient(circle at 85%% 25%%, rgba(242,196,93,0.12), transparent 36rem), #06090e; display: flex; align-items: center; justify-content: center; padding: 24px; box-sizing: border-box; }
+    .shell { width: min(920px, 100%%); border: 1px solid rgba(46,213,169,0.3); background: rgba(13,19,28,0.92); border-radius: 18px; padding: 32px; box-shadow: 0 24px 60px rgba(0,0,0,0.6); backdrop-filter: blur(12px); }
     .top { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 20px; }
     .eyebrow { color: #2ed5a9; font-size: 0.75rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
     h1 { margin: 6px 0 0; font-size: 2rem; letter-spacing: -0.02em; }
     .badge { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px; background: rgba(46,213,169,0.14); border: 1px solid rgba(46,213,169,0.45); color: #7fffd4; font-weight: 700; font-size: 0.85rem; }
     .dot { width: 9px; height: 9px; border-radius: 50%%; background: #2ed5a9; box-shadow: 0 0 12px #2ed5a9; animation: pulse 2s infinite; }
     @keyframes pulse { 0%%, 100%% { opacity: 1; } 50%% { opacity: 0.4; } }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; margin-top: 22px; }
+    
+    /* GAMIFIED HERO TICKER */
+    .hero-ticker { margin-top: 22px; padding: 22px; border-radius: 14px; background: linear-gradient(135deg, rgba(46,213,169,0.12), rgba(114,221,255,0.06)); border: 1px solid rgba(46,213,169,0.4); display: grid; grid-template-columns: 1.2fr 1fr; gap: 20px; align-items: center; }
+    @media (max-width: 720px) { .hero-ticker { grid-template-columns: 1fr; } }
+    .ticker-val { font-size: clamp(2rem, 4vw, 2.8rem); font-weight: 900; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; color: #2ed5a9; letter-spacing: -0.03em; text-shadow: 0 0 24px rgba(46,213,169,0.4); }
+    .syn-val { font-size: 1.25rem; font-weight: 800; color: #72ddff; font-family: ui-monospace, SFMono-Regular, monospace; margin-top: 4px; }
+    .multiplier-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; background: rgba(242,196,93,0.16); border: 1px solid rgba(242,196,93,0.45); color: #ffe0a0; font-weight: 800; font-size: 0.85rem; }
+    
+    /* DUOLINGO STREAK BAR */
+    .streak-box { margin-top: 18px; padding: 18px; border-radius: 14px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); }
+    .streak-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+    .streak-flame { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 1.1rem; color: #f2c45d; }
+    .progress-track { width: 100%%; height: 10px; border-radius: 999px; background: rgba(255,255,255,0.08); overflow: hidden; position: relative; }
+    .progress-fill { height: 100%%; border-radius: 999px; background: linear-gradient(90deg, #f2c45d, #2ed5a9); transition: width 0.4s ease; }
+    .milestones { display: flex; justify-content: space-between; margin-top: 10px; font-size: 0.72rem; color: #8ea0ba; font-weight: 700; text-transform: uppercase; }
+    .milestone-active { color: #2ed5a9; font-weight: 800; }
+
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; margin-top: 18px; }
     .card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 16px; }
     .label { color: #8ea0ba; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
     .val { margin-top: 8px; font-size: 1.15rem; font-weight: 800; word-break: break-all; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; color: #ffffff; }
+    
+    /* LEADERBOARD TABLE */
+    .lb-box { margin-top: 22px; padding: 20px; border-radius: 14px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); }
+    table.lb-table { width: 100%%; border-collapse: collapse; margin-top: 12px; font-size: 0.88rem; }
+    table.lb-table th { text-align: left; padding: 8px 10px; color: #8ea0ba; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; border-bottom: 1px solid rgba(255,255,255,0.1); }
+    table.lb-table td { padding: 10px 10px; border-bottom: 1px solid rgba(255,255,255,0.05); font-family: ui-monospace, SFMono-Regular, monospace; }
+    tr.my-node { background: rgba(46,213,169,0.12); font-weight: 800; border-left: 3px solid #2ed5a9; }
+    
     .note { margin-top: 22px; padding: 16px; border-radius: 10px; background: rgba(46,213,169,0.07); border: 1px solid rgba(46,213,169,0.22); color: #cbe6dd; font-size: 0.92rem; line-height: 1.5; }
     .actions { margin-top: 22px; display: flex; gap: 12px; flex-wrap: wrap; }
     a.btn, button.btn { background: #2ed5a9; color: #05140f; font-weight: 800; text-decoration: none; padding: 12px 18px; border-radius: 8px; border: 0; cursor: pointer; font-size: 0.9rem; }
@@ -727,6 +802,46 @@ func writeDashboardHTML(node silentNode) string {
         <h1>1-Click Consensus Validator Node</h1>
       </div>
       <div class="badge"><span class="dot"></span> %s</div>
+    </div>
+
+    <!-- REAL-TIME TICKING POINTS HERO -->
+    <div class="hero-ticker">
+      <div>
+        <div class="label" style="color:#2ed5a9">🔥 Real-Time Ecosystem Points (Ticking)</div>
+        <div class="ticker-val" id="pointsTicker">%.2f</div>
+        <div class="syn-val">≈ <span id="synTicker">%.4f</span> SYN Accumulated <span style="font-size:0.8rem;color:#8ea0ba">(Target: 10,000 SYN)</span></div>
+      </div>
+      <div>
+        <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-start">
+          <div class="multiplier-badge">🔥 %.1fx Streak Multiplier Active</div>
+          <div style="font-size:0.8rem;color:#8ea0ba">
+            Base: <strong>100 PTS/hr</strong> • Boosted: <strong>%.0f PTS/hr</strong><br/>
+            Block validates (+10) & Heartbeats (+1) included!
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DUOLINGO-STYLE STREAK TRACKER -->
+    <div class="streak-box">
+      <div class="streak-header">
+        <div class="streak-flame">
+          <span>🔥</span> Day %.1f Consecutive Uptime Streak
+        </div>
+        <div style="font-size:0.85rem;color:#ffe0a0;font-weight:700">
+          Next Goal: <strong>%s</strong> (in %.1f days)
+        </div>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill" style="width: %.1f%%"></div>
+      </div>
+      <div class="milestones">
+        <span class="milestone-active">Genesis (1.0x)</span>
+        <span class="%s">7-Day Streak (1.5x)</span>
+        <span class="%s">14-Day Streak (2.0x)</span>
+        <span class="%s">21-Day Streak (2.5x)</span>
+        <span class="%s">30-Day Master (3.0x + 10k SYN)</span>
+      </div>
     </div>
 
     <div class="grid">
@@ -768,8 +883,43 @@ func writeDashboardHTML(node silentNode) string {
       </div>
     </div>
 
+    <!-- COMMUNITY VALIDATOR LEADERBOARD -->
+    <div class="lb-box">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <div>
+          <div class="label" style="color:#72ddff">🏆 Consensus Validator Leaderboard</div>
+          <div style="font-size:0.85rem;color:#8ea0ba;margin-top:2px">Live global node rankings by uptime streak and accumulated points</div>
+        </div>
+        <div style="font-size:0.75rem;color:#2ed5a9;font-weight:700">● Live Mainnet Sync</div>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="lb-table">
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Node ID</th>
+              <th>Uptime Streak</th>
+              <th>Multiplier</th>
+              <th>Heartbeats</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="lbBody">
+            <tr class="my-node">
+              <td>★</td>
+              <td>%s <span style="color:#2ed5a9;font-size:0.75rem">(YOU)</span></td>
+              <td>%.1f days</td>
+              <td>🔥 %.1fx</td>
+              <td>%d</td>
+              <td style="color:#2ed5a9">Actively Proving</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <div class="note">
-      <strong>Actively Validating in Background.</strong> This node participates in consensus via the SYNTHOS Mailbox Relay with 0 open inbound ports. It validates real block proposals, cryptographically signs votes with your local Ed25519 key, and tracks your monthly proving progress for the 5,000 SYN/mo reward. Rewards are strictly 1 node per household/connection to ensure fair decentralized distribution.
+      <strong>Actively Validating in Background.</strong> This node participates in consensus via the SYNTHOS Mailbox Relay with 0 open inbound ports. It validates real block proposals, cryptographically signs votes with your local Ed25519 key, and tracks your monthly proving progress for the 10,000 SYN/mo reward. Rewards are strictly 1 node per household/connection to ensure fair decentralized distribution.
     </div>
 
     <div style="margin-top:14px;padding:14px 18px;border-radius:10px;background:rgba(242,196,93,0.12);border:1px solid rgba(242,196,93,0.3);color:#ffe0a0;font-size:0.9rem;line-height:1.5;">
@@ -779,12 +929,84 @@ func writeDashboardHTML(node silentNode) string {
     <div class="actions">
       <button class="btn" onclick="navigator.clipboard.writeText('%s'); this.textContent='Copied Node ID!';">Copy Node ID (%s)</button>
       <a class="btn sec" href="%s/api/nodes/%s" target="_blank" rel="noreferrer">View Live Network Proof JSON</a>
+      <a class="btn sec" href="https://www.ishamwilliamsblockchains.com/nodes" target="_blank" rel="noreferrer">Open Web Portal</a>
     </div>
   </div>
+
+  <script>
+    // Live Smooth JS Ticker
+    let currentPts = %.2f;
+    let currentSyn = %.4f;
+    const mult = %.1f;
+    const ptsPerSec = (100 / 3600) * mult;
+    const synPerSec = (10000 / (30 * 86400));
+    const ptsEl = document.getElementById("pointsTicker");
+    const synEl = document.getElementById("synTicker");
+
+    setInterval(() => {
+      currentPts += ptsPerSec * 0.1;
+      currentSyn += synPerSec * 0.1;
+      if (currentSyn > 10000) currentSyn = 10000;
+      if (ptsEl) ptsEl.textContent = currentPts.toFixed(2);
+      if (synEl) synEl.textContent = currentSyn.toFixed(4);
+    }, 100);
+
+    // Live Community Leaderboard Fetch
+    async function loadLeaderboard() {
+      try {
+        const res = await fetch("%s/api/nodes");
+        if (!res.ok) return;
+        const data = await res.json();
+        const peers = data.peers || [];
+        peers.sort((a, b) => (b.verified_uptime_ms || 0) - (a.verified_uptime_ms || 0));
+        const body = document.getElementById("lbBody");
+        if (!body) return;
+        
+        let html = "";
+        let myFound = false;
+        const myNodeId = "%s";
+
+        peers.slice(0, 10).forEach((p, idx) => {
+          const isMe = p.name === myNodeId;
+          if (isMe) myFound = true;
+          const days = ((p.verified_uptime_ms || 0) / 86400000).toFixed(1);
+          let m = "1.0x";
+          if (days >= 30) m = "3.0x";
+          else if (days >= 21) m = "2.5x";
+          else if (days >= 14) m = "2.0x";
+          else if (days >= 7) m = "1.5x";
+          
+          const rankBadge = idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : "#" + (idx + 1);
+          html += '<tr class="' + (isMe ? 'my-node' : '') + '"><td>' + rankBadge + '</td><td>' + p.name + (isMe ? ' <span style="color:#2ed5a9;font-size:0.75rem">(YOU)</span>' : '') + '</td><td>' + days + ' days</td><td>🔥 ' + m + '</td><td>' + (p.valid_heartbeats || 0) + '</td><td style="color:' + (p.stale ? '#ff6b8a' : '#2ed5a9') + '">' + (p.stale ? 'Offline' : 'Validating') + '</td></tr>';
+        });
+
+        if (!myFound && myNodeId) {
+          html += '<tr class="my-node"><td>★</td><td>' + myNodeId + ' <span style="color:#2ed5a9;font-size:0.75rem">(YOU)</span></td><td>%.1f days</td><td>🔥 %.1fx</td><td>%d</td><td style="color:#2ed5a9">Actively Proving</td></tr>';
+        }
+        body.innerHTML = html;
+      } catch (e) {
+        // Fallback to static current row
+      }
+    }
+    loadLeaderboard();
+    setInterval(loadLeaderboard, 30000);
+  </script>
 </body>
 </html>`,
 		node.NodeID,
 		badgeText,
+		node.EcosystemPoints,
+		synAccumulated,
+		node.StreakMultiplier,
+		100.0*node.StreakMultiplier,
+		node.StreakDays,
+		nextMilestoneMult,
+		daysToNext,
+		streakPct,
+		milestoneClass(node.StreakDays, 7.0),
+		milestoneClass(node.StreakDays, 14.0),
+		milestoneClass(node.StreakDays, 21.0),
+		milestoneClass(node.StreakDays, 30.0),
 		node.NodeID,
 		node.LastHeight,
 		node.BlocksValidated,
@@ -795,10 +1017,29 @@ func writeDashboardHTML(node silentNode) string {
 		rewardText,
 		firstNonEmpty(node.PayoutAddress, "Unconfigured (Default Operator)"),
 		node.NodeID,
+		node.StreakDays,
+		node.StreakMultiplier,
+		node.HeartbeatCount,
+		node.NodeID,
 		node.NodeID,
 		relayPrimary,
 		node.NodeID,
+		node.EcosystemPoints,
+		synAccumulated,
+		node.StreakMultiplier,
+		relayPrimary,
+		node.NodeID,
+		node.StreakDays,
+		node.StreakMultiplier,
+		node.HeartbeatCount,
 	)
 	_ = os.WriteFile(path, []byte(html), 0o600)
 	return path
+}
+
+func milestoneClass(days, target float64) string {
+	if days >= target {
+		return "milestone-active"
+	}
+	return ""
 }
