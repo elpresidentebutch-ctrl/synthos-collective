@@ -17,11 +17,16 @@ package main
 //  3. Only nodes the founder approved are paid, and only to the payout
 //     address written in that approval (SYNTHOS_REWARD_APPROVED_FILE), so a
 //     changed payout address can never redirect a reward.
-//  4. The first payment needs 30 days of verified uptime; each later one
-//     needs 27 more days of it. The node must be online when paid.
+//  4. The first payment (10,000 SYN, the validator bond) needs 30 days of
+//     verified uptime; each later monthly one needs 27 more days of it. The
+//     node must be online when paid.
 //  5. Total payouts per calendar month are capped
 //     (SYNTHOS_REWARD_MONTHLY_CAP_SYN).
 //
+// Settings: the key comes from SYNTHOS_REWARD_KEEPER_PRIVATE_KEY or the file
+// SYNTHOS_REWARD_KEEPER_KEY_FILE (default /etc/synthos/reward-keeper.key,
+// made by `cloudless-registry -new-reward-key <path>`); the monthly cap from
+// SYNTHOS_REWARD_MONTHLY_CAP_SYN or "monthly_cap_syn" in the approval file.
 // With any setting missing, the keeper pays nothing and only logs who would
 // qualify. GET /api/rewards publishes every payout and the keeper's state.
 
@@ -45,11 +50,14 @@ import (
 )
 
 const (
-	rewardKeeperEvery     = 2 * time.Minute
-	rewardFirstUptime     = rewardEpoch         // 30 days before the first payment
-	rewardRepeatUptime    = 27 * 24 * time.Hour // new uptime needed for each later payment
-	rewardStuckAfter      = time.Hour           // unconfirmed this long: pause and ask a person
-	rewardTxFeeSYN        = 1
+	rewardKeeperEvery  = 2 * time.Minute
+	rewardFirstUptime  = rewardEpoch         // 30 days before the first payment
+	rewardRepeatUptime = 27 * 24 * time.Hour // new uptime needed for each later payment
+	rewardStuckAfter   = time.Hour           // unconfirmed this long: pause and ask a person
+	rewardTxFeeSYN     = 1
+	// rewardActivationSYN is an operator's first payment: exactly the
+	// minimum validator bond, so a month of uptime earns the bond.
+	rewardActivationSYN   = validatorMinimumBondSYN
 	payoutStatusSubmitted = "submitted"
 	payoutStatusConfirmed = "confirmed"
 	payoutStatusStuck     = "stuck"
@@ -139,7 +147,12 @@ func loadRewardKeeperConfig() rewardKeeperConfig {
 	cfg := rewardKeeperConfig{}
 	key := strings.TrimSpace(os.Getenv("SYNTHOS_REWARD_KEEPER_PRIVATE_KEY"))
 	if key == "" {
-		cfg.Reason = "SYNTHOS_REWARD_KEEPER_PRIVATE_KEY is not set"
+		if raw, err := os.ReadFile(env("SYNTHOS_REWARD_KEEPER_KEY_FILE", "/etc/synthos/reward-keeper.key")); err == nil {
+			key = strings.TrimSpace(string(raw))
+		}
+	}
+	if key == "" {
+		cfg.Reason = "no rewards wallet key (SYNTHOS_REWARD_KEEPER_PRIVATE_KEY or the key file)"
 		return cfg
 	}
 	w, err := wallet.FromPrivateKeyHex(key)
@@ -153,18 +166,21 @@ func loadRewardKeeperConfig() rewardKeeperConfig {
 		return cfg
 	}
 	cfg.Wallet, cfg.Address = w, strings.ToLower(string(addr))
-	capSYN, err := strconv.ParseUint(strings.TrimSpace(os.Getenv("SYNTHOS_REWARD_MONTHLY_CAP_SYN")), 10, 64)
-	if err != nil || capSYN == 0 {
-		cfg.Reason = "SYNTHOS_REWARD_MONTHLY_CAP_SYN is not set"
-		return cfg
-	}
-	cfg.MonthlyCap = capSYN
-	approved, err := loadApprovedOperators(env("SYNTHOS_REWARD_APPROVED_FILE", "/etc/synthos/reward-approved.json"))
+	approved, fileCap, err := loadApprovedOperators(env("SYNTHOS_REWARD_APPROVED_FILE", "/etc/synthos/reward-approved.json"))
 	if err != nil {
 		cfg.Reason = "approval file: " + err.Error()
 		return cfg
 	}
 	cfg.Approved = approved
+	capSYN, err := strconv.ParseUint(strings.TrimSpace(os.Getenv("SYNTHOS_REWARD_MONTHLY_CAP_SYN")), 10, 64)
+	if err != nil || capSYN == 0 {
+		capSYN = fileCap
+	}
+	if capSYN == 0 {
+		cfg.Reason = "no monthly cap (SYNTHOS_REWARD_MONTHLY_CAP_SYN or monthly_cap_syn in the approval file)"
+		return cfg
+	}
+	cfg.MonthlyCap = capSYN
 	if cfg.ChainID, err = synthosTxChainID(); err != nil {
 		cfg.Reason = err.Error()
 		return cfg
@@ -173,30 +189,73 @@ func loadRewardKeeperConfig() rewardKeeperConfig {
 	return cfg
 }
 
-// loadApprovedOperators reads {"approved":[{"node_id":"...","payout_address":"0x..."}]}.
-func loadApprovedOperators(path string) (map[string]string, error) {
+// loadApprovedOperators reads
+// {"monthly_cap_syn":100000,"approved":[{"node_id":"...","payout_address":"0x..."}]}.
+func loadApprovedOperators(path string) (map[string]string, uint64, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	var file struct {
-		Approved []struct {
+		MonthlyCapSYN uint64 `json:"monthly_cap_syn"`
+		Approved      []struct {
 			NodeID        string `json:"node_id"`
 			PayoutAddress string `json:"payout_address"`
 		} `json:"approved"`
 	}
 	if err := json.Unmarshal(raw, &file); err != nil {
-		return nil, fmt.Errorf("not valid JSON: %w", err)
+		return nil, 0, fmt.Errorf("not valid JSON: %w", err)
 	}
 	out := map[string]string{}
 	for _, a := range file.Approved {
 		addr := normalizePayoutAddress(a.PayoutAddress)
 		if a.NodeID == "" || addr == "" {
-			return nil, fmt.Errorf("entry %q needs a node_id and a 0x payout_address", a.NodeID)
+			return nil, 0, fmt.Errorf("entry %q needs a node_id and a 0x payout_address", a.NodeID)
 		}
 		out[sanitize(a.NodeID)] = addr
 	}
-	return out, nil
+	return out, file.MonthlyCapSYN, nil
+}
+
+// rewardAmountFor is 10,000 SYN for an operator's first reward and the
+// monthly amount after that.
+func rewardAmountFor(p peer, now time.Time) uint64 {
+	if p.TotalRewardsPaidSYN == 0 && p.RewardUptimeAtPaidMS == 0 {
+		return rewardActivationSYN
+	}
+	return monthlyRewardAmount(now)
+}
+
+// createRewardKeeperKey writes a new wallet key (root-only) and returns its
+// address. It refuses to overwrite an existing key.
+func createRewardKeeperKey(path string) (string, error) {
+	if _, err := os.Stat(path); err == nil {
+		return "", fmt.Errorf("%s already exists; not overwriting", path)
+	}
+	w, err := wallet.New()
+	if err != nil {
+		return "", err
+	}
+	priv, err := w.PrivateKeyHex()
+	if err != nil {
+		return "", err
+	}
+	addr, err := w.Address()
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(dir(path), 0o700); err != nil {
+		return "", err
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return "", err
+	}
+	if _, err := f.WriteString(priv + "\n"); err != nil {
+		f.Close()
+		return "", err
+	}
+	return string(addr), f.Close()
 }
 
 func (s *server) startValidatorRewardKeeper() {
@@ -230,10 +289,9 @@ type rewardCandidate struct {
 
 func (s *server) rewardKeeperCycle(now time.Time, cfg rewardKeeperConfig, ch rewardChain) {
 	epoch := now.UTC().Format("2006-01")
-	amount := monthlyRewardAmount(now)
 
 	if !cfg.Enabled {
-		s.logDryRun(now, cfg.Reason, epoch, amount)
+		s.logDryRun(now, cfg.Reason, epoch)
 		return
 	}
 
@@ -287,7 +345,7 @@ func (s *server) rewardKeeperCycle(now time.Time, cfg rewardKeeperConfig, ch rew
 	}
 
 	// Step 2: pick this month's qualifying, approved nodes, within the cap.
-	candidates := s.rewardCandidates(now, cfg, epoch, amount)
+	candidates := s.rewardCandidates(now, cfg, epoch)
 	s.mu.Unlock()
 	if len(candidates) == 0 {
 		return
@@ -344,7 +402,7 @@ func (s *server) rewardKeeperCycle(now time.Time, cfg rewardKeeperConfig, ch rew
 }
 
 // rewardCandidates must be called with s.mu held.
-func (s *server) rewardCandidates(now time.Time, cfg rewardKeeperConfig, epoch string, amount uint64) []rewardCandidate {
+func (s *server) rewardCandidates(now time.Time, cfg rewardKeeperConfig, epoch string) []rewardCandidate {
 	var spent uint64
 	paidNodes := map[string]bool{}
 	for _, po := range s.state.RewardPayouts {
@@ -374,6 +432,7 @@ func (s *server) rewardCandidates(now time.Time, cfg rewardKeeperConfig, epoch s
 		if reason != "" {
 			continue
 		}
+		amount := rewardAmountFor(p, now)
 		if spent+amount > cfg.MonthlyCap {
 			log.Printf("[reward keeper] monthly cap of %d SYN reached for %s; %s waits", cfg.MonthlyCap, epoch, p.Name)
 			break
@@ -404,7 +463,7 @@ func rewardIneligibleReason(p peer, now time.Time, epoch string, paidThisEpoch b
 	return ""
 }
 
-func (s *server) logDryRun(now time.Time, reason, epoch string, amount uint64) {
+func (s *server) logDryRun(now time.Time, reason, epoch string) {
 	rewardDryRunLog.Lock()
 	defer rewardDryRunLog.Unlock()
 	if now.Sub(rewardDryRunLog.last) < time.Hour {
@@ -425,7 +484,7 @@ func (s *server) logDryRun(now time.Time, reason, epoch string, amount uint64) {
 		}
 	}
 	sort.Strings(names)
-	log.Printf("[reward keeper] not paying (%s). Nodes that would qualify for %d SYN in %s, pending approval: %v", reason, amount, epoch, names)
+	log.Printf("[reward keeper] not paying (%s). Nodes that would qualify in %s, pending approval: %v", reason, epoch, names)
 }
 
 func mustPublicKeyHex(w *wallet.Wallet) string {
@@ -459,6 +518,7 @@ func (s *server) handleAPIRewards(w http.ResponseWriter, r *http.Request) {
 	body := map[string]any{
 		"enabled":                        cfg.Enabled,
 		"epoch":                          epoch,
+		"first_reward_syn":               rewardActivationSYN,
 		"monthly_reward_syn":             monthlyRewardAmount(now),
 		"first_payment_after_days":       int(rewardFirstUptime.Hours() / 24),
 		"later_payments_after_days":      int(rewardRepeatUptime.Hours() / 24),

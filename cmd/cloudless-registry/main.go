@@ -193,7 +193,16 @@ func main() {
 	flag.StringVar(&listen, "listen", defaultListen(":8090"), "HTTP listen address")
 	flag.StringVar(&stateFile, "state", env("SYNTHOS_REGISTRY_STATE", ".synthos/cloudless-registry.json"), "registry state JSON path")
 	flag.StringVar(&secret, "secret", os.Getenv("REGISTRY_SECRET"), "optional registry admin/mailbox secret")
+	newRewardKey := flag.String("new-reward-key", "", "create the reward keeper's own wallet key at this path, print its address, and exit")
 	flag.Parse()
+	if *newRewardKey != "" {
+		addr, err := createRewardKeeperKey(*newRewardKey)
+		if err != nil {
+			log.Fatalf("new reward key: %v", err)
+		}
+		fmt.Printf("Reward keeper wallet created. Key saved to %s (root-only, never printed).\nRewards wallet address: %s\n", *newRewardKey, addr)
+		return
+	}
 
 	s := &server{
 		state: registryState{

@@ -80,8 +80,8 @@ func TestKeeperRecordsPaymentOnlyAfterChainConfirms(t *testing.T) {
 	ch := &fakeRewardChain{}
 
 	s.rewardKeeperCycle(keeperNow, cfg, ch)
-	if len(ch.submitted) != 1 || string(ch.submitted[0].To) != addrA || ch.submitted[0].Amount != 5000 {
-		t.Fatalf("expected one 5000 SYN transfer to %s, got %+v", addrA, ch.submitted)
+	if len(ch.submitted) != 1 || string(ch.submitted[0].To) != addrA || ch.submitted[0].Amount != 10000 {
+		t.Fatalf("expected one 10,000 SYN first-month transfer to %s, got %+v", addrA, ch.submitted)
 	}
 	if p := s.state.Peers["node-a"]; p.TotalRewardsPaidSYN != 0 || p.LastRewardPaidEpoch != "" {
 		t.Fatalf("recorded as paid before confirmation: %+v", p)
@@ -99,7 +99,7 @@ func TestKeeperRecordsPaymentOnlyAfterChainConfirms(t *testing.T) {
 	ch.commit()
 	s.rewardKeeperCycle(keeperNow.Add(4*time.Minute), cfg, ch)
 	p := s.state.Peers["node-a"]
-	if p.TotalRewardsPaidSYN != 5000 || p.LastRewardPaidEpoch != "2026-11" || p.LastRewardTxHash != ch.submitted[0].ID {
+	if p.TotalRewardsPaidSYN != 10000 || p.LastRewardPaidEpoch != "2026-11" || p.LastRewardTxHash != ch.submitted[0].ID {
 		t.Fatalf("not recorded after confirmation: %+v", p)
 	}
 	if len(ch.submitted) != 1 {
@@ -174,11 +174,11 @@ func TestKeeperPaysToApprovedAddressAndHonorsMonthlyCap(t *testing.T) {
 	a := rewardPeer("node-a", 31, "") // never set a payout address: approval decides
 	b := rewardPeer("node-b", 31, addrB)
 	s := keeperServer(a, b)
-	cfg := keeperConfig(t, map[string]string{"node-a": addrA, "node-b": addrB}, 5000)
+	cfg := keeperConfig(t, map[string]string{"node-a": addrA, "node-b": addrB}, 15000)
 	ch := &fakeRewardChain{}
 	s.rewardKeeperCycle(keeperNow, cfg, ch)
 	if len(ch.submitted) != 1 || string(ch.submitted[0].To) != addrA {
-		t.Fatalf("cap of 5000 should allow exactly one transfer to %s, got %+v", addrA, ch.submitted)
+		t.Fatalf("cap of 15,000 should allow exactly one 10,000 transfer to %s, got %+v", addrA, ch.submitted)
 	}
 }
 
@@ -222,6 +222,53 @@ func TestKeeperDisabledWithoutSettings(t *testing.T) {
 	cfg := loadRewardKeeperConfig()
 	if !cfg.Enabled || cfg.Approved["node-a"] != addrA || cfg.MonthlyCap != 50000 {
 		t.Fatalf("keeper should be enabled: %+v", cfg.Reason)
+	}
+
+	// Key from a file made by -new-reward-key, cap from the approval file.
+	t.Setenv("SYNTHOS_REWARD_KEEPER_PRIVATE_KEY", "")
+	t.Setenv("SYNTHOS_REWARD_MONTHLY_CAP_SYN", "")
+	keyFile := filepath.Join(t.TempDir(), "keys", "reward-keeper.key")
+	t.Setenv("SYNTHOS_REWARD_KEEPER_KEY_FILE", keyFile)
+	addr, err := createRewardKeeperKey(keyFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := createRewardKeeperKey(keyFile); err == nil {
+		t.Fatal("overwrote an existing reward key")
+	}
+	if info, _ := os.Stat(keyFile); info.Mode().Perm() != 0o600 {
+		t.Fatalf("key file mode %v", info.Mode().Perm())
+	}
+	_ = os.WriteFile(file, []byte(`{"monthly_cap_syn":100000,"approved":[]}`), 0o600)
+	cfg = loadRewardKeeperConfig()
+	if !cfg.Enabled || cfg.MonthlyCap != 100000 || cfg.Address != strings.ToLower(addr) {
+		t.Fatalf("key file + file cap should enable the keeper: %q %+v", cfg.Reason, cfg.MonthlyCap)
+	}
+}
+
+func TestKeeperFirstRewardIsTheBondThenMonthly(t *testing.T) {
+	s := keeperServer(rewardPeer("node-a", 31, addrA))
+	cfg := keeperConfig(t, map[string]string{"node-a": addrA}, 100000)
+	ch := &fakeRewardChain{}
+	s.rewardKeeperCycle(keeperNow, cfg, ch)
+	ch.commit()
+	s.rewardKeeperCycle(keeperNow.Add(2*time.Minute), cfg, ch)
+
+	// A month later, with 28 more days of uptime: the monthly amount.
+	next := keeperNow.AddDate(0, 1, 0)
+	p := s.state.Peers["node-a"]
+	p.VerifiedUptimeMS += days(28)
+	p.LastSeen = next.Add(-time.Minute).UnixMilli()
+	s.state.Peers["node-a"] = p
+	s.rewardKeeperCycle(next, cfg, ch)
+	if len(ch.submitted) != 2 {
+		t.Fatalf("want a second payment, got %d", len(ch.submitted))
+	}
+	if ch.submitted[0].Amount != 10000 || ch.submitted[1].Amount != monthlyRewardAmount(next) {
+		t.Fatalf("amounts %d then %d", ch.submitted[0].Amount, ch.submitted[1].Amount)
+	}
+	if ch.submitted[0].Amount != validatorMinimumBondSYN {
+		t.Fatal("first reward must equal the validator bond")
 	}
 }
 
