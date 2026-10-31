@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -53,6 +54,7 @@ func rewardPeer(name string, uptimeDays float64, payout string) peer {
 		Name: name, PublicKey: "ab", LastSeen: keeperNow.Add(-time.Minute).UnixMilli(),
 		LastNonce: "n1", ValidHeartbeats: 100, VerifiedUptimeMS: days(uptimeDays),
 		PayoutAddress: payout, HouseholdIP: "", HardwareCommitment: "hw-" + name,
+		RegisteredAt: rewardProgramStartCutoffMS + 1000,
 	}
 }
 
@@ -236,8 +238,10 @@ func TestKeeperDisabledWithoutSettings(t *testing.T) {
 	if _, err := createRewardKeeperKey(keyFile); err == nil {
 		t.Fatal("overwrote an existing reward key")
 	}
-	if info, _ := os.Stat(keyFile); info.Mode().Perm() != 0o600 {
-		t.Fatalf("key file mode %v", info.Mode().Perm())
+	if runtime.GOOS != "windows" {
+		if info, _ := os.Stat(keyFile); info.Mode().Perm() != 0o600 {
+			t.Fatalf("key file mode %v", info.Mode().Perm())
+		}
 	}
 	_ = os.WriteFile(file, []byte(`{"monthly_cap_syn":100000,"approved":[]}`), 0o600)
 	cfg = loadRewardKeeperConfig()
@@ -306,5 +310,43 @@ func TestRewardsEndpointPublishesLedger(t *testing.T) {
 	}
 	if body["enabled"] != false || body["not_paying_because"] == nil || len(body["payouts"].([]any)) != 1 {
 		t.Fatalf("unexpected body: %s", rec.Body.String())
+	}
+}
+
+func TestFounderFleetAndPreCutoffNodesExcluded(t *testing.T) {
+	// Pre-cutoff node
+	oldNode := rewardPeer("community-old-node", 35, addrA)
+	oldNode.RegisteredAt = rewardProgramStartCutoffMS - 50000
+
+	// Founder fleet node
+	fleetNode := rewardPeer("syn-fleet-1", 35, addrA)
+	fleetNode.RegisteredAt = rewardProgramStartCutoffMS + 50000
+
+	// Community candidate node registered after cutoff
+	newNode := rewardPeer("community-new-validator", 35, addrA)
+	newNode.RegisteredAt = rewardProgramStartCutoffMS + 50000
+
+	s := keeperServer(oldNode, fleetNode, newNode)
+	cfg := keeperConfig(t, map[string]string{
+		"community-old-node":      addrA,
+		"syn-fleet-1":             addrA,
+		"community-new-validator": addrA,
+	}, 250000)
+
+	ch := &fakeRewardChain{}
+	s.rewardKeeperCycle(keeperNow, cfg, ch)
+
+	// Only community-new-validator should be submitted for payment
+	if len(ch.submitted) != 1 {
+		t.Fatalf("expected exactly 1 payment submitted, got %d", len(ch.submitted))
+	}
+	if ch.submitted[0].Amount != 10000 {
+		t.Fatalf("expected 10,000 SYN payment, got %d", ch.submitted[0].Amount)
+	}
+	if p := s.state.Peers["community-old-node"]; p.TotalRewardsPaidSYN != 0 {
+		t.Fatalf("pre-cutoff node should not be paid")
+	}
+	if p := s.state.Peers["syn-fleet-1"]; p.TotalRewardsPaidSYN != 0 {
+		t.Fatalf("founder fleet node should not be paid")
 	}
 }

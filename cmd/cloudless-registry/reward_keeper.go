@@ -58,10 +58,17 @@ const (
 	// rewardActivationSYN is an operator's first payment: exactly the
 	// minimum validator bond, so a month of uptime earns the bond.
 	rewardActivationSYN   = validatorMinimumBondSYN
+	defaultMonthlyCapSYN  = 250000 // 250,000 SYN/mo cap allows paying up to 25 new validators (at 10k) or 50 recurring (at 5k)
 	payoutStatusSubmitted = "submitted"
 	payoutStatusConfirmed = "confirmed"
 	payoutStatusStuck     = "stuck"
 )
+
+// rewardProgramStartCutoffMS marks the formal public launch cutoff for the
+// candidate reward program (Oct 31, 2026 00:36 UTC). Any preexisting founder,
+// test, or fleet nodes registered prior to this timestamp are internal
+// infrastructure and are permanently excluded from candidate rewards.
+const rewardProgramStartCutoffMS int64 = 1793407000000
 
 var payoutAddressPattern = regexp.MustCompile(`^0x[0-9a-f]{40}$`)
 
@@ -177,8 +184,7 @@ func loadRewardKeeperConfig() rewardKeeperConfig {
 		capSYN = fileCap
 	}
 	if capSYN == 0 {
-		cfg.Reason = "no monthly cap (SYNTHOS_REWARD_MONTHLY_CAP_SYN or monthly_cap_syn in the approval file)"
-		return cfg
+		capSYN = defaultMonthlyCapSYN
 	}
 	cfg.MonthlyCap = capSYN
 	if cfg.ChainID, err = synthosTxChainID(); err != nil {
@@ -447,6 +453,10 @@ func (s *server) rewardCandidates(now time.Time, cfg rewardKeeperConfig, epoch s
 // apart from approval.
 func rewardIneligibleReason(p peer, now time.Time, epoch string, paidThisEpoch bool) string {
 	switch {
+	case isFounderFleetNode(p):
+		return "founder/fleet infrastructure node (ineligible for candidate reward)"
+	case p.RegisteredAt > 0 && p.RegisteredAt < rewardProgramStartCutoffMS:
+		return "registered before candidate reward program launch cutoff"
 	case paidThisEpoch || p.LastRewardPaidEpoch == epoch:
 		return "already paid this month"
 	case p.HostedProofSession || !isRealSignedHeartbeat(p):
@@ -461,6 +471,19 @@ func rewardIneligibleReason(p peer, now time.Time, epoch string, paidThisEpoch b
 		return "under 27 days of new uptime since the last reward"
 	}
 	return ""
+}
+
+func isFounderFleetNode(p peer) bool {
+	name := strings.ToLower(p.Name)
+	return strings.HasPrefix(name, "syn-fleet-") ||
+		strings.HasPrefix(name, "synthos-hosteons-") ||
+		strings.HasPrefix(name, "synthos-render-") ||
+		strings.HasPrefix(name, "synthos-lovable-") ||
+		strings.HasPrefix(name, "synthos-ryzen-") ||
+		strings.HasPrefix(name, "syn-gitlab-") ||
+		strings.HasPrefix(name, "synthos-home-") ||
+		strings.HasPrefix(name, "desktop-17d2b0d4d401") ||
+		p.Cloud == "fleet" || p.Cloud == "render" || p.Cloud == "lovable"
 }
 
 func (s *server) logDryRun(now time.Time, reason, epoch string) {
