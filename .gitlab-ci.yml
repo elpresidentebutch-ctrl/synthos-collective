@@ -45,6 +45,7 @@ docker-build:
 android-apk-build:
   stage: build
   image: ghcr.io/cirruslabs/android-sdk:34
+  needs: []
   script:
     - cd android
     - gradle assembleDebug --stacktrace
