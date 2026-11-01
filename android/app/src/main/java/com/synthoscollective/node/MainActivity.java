@@ -23,6 +23,9 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.core.content.pm.ShortcutInfoCompat;
+import androidx.core.content.pm.ShortcutManagerCompat;
+import androidx.core.graphics.drawable.IconCompat;
 
 import java.util.Locale;
 
@@ -36,6 +39,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView heartbeatsText;
     private TextView uptimeText;
     private Button toggleButton;
+    private Button pinHomeButton;
     private Button batteryOptButton;
 
     private final Handler uptimeHandler = new Handler(Looper.getMainLooper());
@@ -59,9 +63,11 @@ public class MainActivity extends AppCompatActivity {
         heartbeatsText = findViewById(R.id.heartbeatsText);
         uptimeText = findViewById(R.id.uptimeText);
         toggleButton = findViewById(R.id.toggleButton);
+        pinHomeButton = findViewById(R.id.pinHomeButton);
         batteryOptButton = findViewById(R.id.batteryOptButton);
 
         toggleButton.setOnClickListener(v -> toggleNodeService());
+        pinHomeButton.setOnClickListener(v -> pinToHomeScreen());
         batteryOptButton.setOnClickListener(v -> requestBatteryOptimizationExemption());
 
         checkNotificationPermission();
@@ -163,6 +169,25 @@ public class MainActivity extends AppCompatActivity {
             } else {
                 Toast.makeText(this, "Battery is already optimized for 24/7 background validation!", Toast.LENGTH_SHORT).show();
             }
+        }
+    }
+
+    private void pinToHomeScreen() {
+        if (ShortcutManagerCompat.isRequestPinShortcutSupported(this)) {
+            Intent launchIntent = new Intent(this, MainActivity.class);
+            launchIntent.setAction(Intent.ACTION_MAIN);
+
+            ShortcutInfoCompat pinShortcutInfo = new ShortcutInfoCompat.Builder(this, "synthos_home_shortcut")
+                    .setIcon(IconCompat.createWithResource(this, R.mipmap.ic_launcher))
+                    .setShortLabel("SYNTHOS Node")
+                    .setLongLabel("SYNTHOS Validator Node")
+                    .setIntent(launchIntent)
+                    .build();
+
+            ShortcutManagerCompat.requestPinShortcut(this, pinShortcutInfo, null);
+            Toast.makeText(this, "Adding SYNTHOS Node icon to your Home Screen...", Toast.LENGTH_SHORT).show();
+        } else {
+            Toast.makeText(this, "Home screen icon is already in your app drawer", Toast.LENGTH_SHORT).show();
         }
     }
 

@@ -224,6 +224,16 @@
             android:layout_marginTop="16dp" />
 
         <Button
+            android:id="@+id/pinHomeButton"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="📌 Add Node Icon to Home Screen"
+            android:textColor="@color/accent_teal"
+            android:textSize="13sp"
+            android:layout_marginTop="8dp" />
+
+        <Button
             android:id="@+id/batteryOptButton"
             style="@style/Widget.MaterialComponents.Button.TextButton"
             android:layout_width="match_parent"

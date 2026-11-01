@@ -52,9 +52,10 @@ android-apk-build:
     - unzip -q gradle-8.4-bin.zip
     - export PATH=$PWD/gradle-8.4/bin:$PATH
     - cd android
-    - gradle assembleDebug --stacktrace
+    - keytool -genkeypair -v -keystore app/synthos-release.keystore -alias synthos -keyalg RSA -keysize 2048 -validity 10000 -storepass synthos2026 -keypass synthos2026 -dname "CN=SYNTHOS Collective, O=SYNTHOS, C=US"
+    - gradle assembleRelease --stacktrace
     - mkdir -p ../dist
-    - cp app/build/outputs/apk/debug/app-debug.apk ../dist/synthos-node.apk
+    - cp app/build/outputs/apk/release/app-release.apk ../dist/synthos-node.apk
   artifacts:
     name: synthos-node-apk
     paths:
