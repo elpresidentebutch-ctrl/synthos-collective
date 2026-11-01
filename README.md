@@ -8,165 +8,107 @@ Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
 
 ## Current Status
 
-Status as of September 24, 2026:
+Status as of October 31, 2026:
 
-### Network / live services
+### Network / Consensus Engine
+- **Consensus**: CometBFT (BFT proof-of-stake consensus, live on mainnet since October 22, 2026).
+- **Production Node**: `synthos-comet` in [`cometapp/`](cometapp/) handles CometBFT p2p, consensus voting, validator set rotation, and executes the SYNTHOS state machine via ABCI.
+- **Outbound Candidate Client**: `synthos-node` in [`cmd/silentnode/`](cmd/silentnode/) is an outbound-only Proof-of-Uptime candidate client (no open ports required) for operators onboarding toward validator eligibility.
+- **Legacy Engine**: [`cmd/synthosd/`](cmd/synthosd/) is preserved as the pre-CometBFT reference engine and migration source.
+- **Base L2 Anchor**: Synthos Collective commits hourly block fingerprints to Base mainnet via the `SynthosAnchor` contract at [`0xae4C167ff08d13CaC9b397D13c50904bb9c881a5`](https://basescan.org/address/0xae4C167ff08d13CaC9b397D13c50904bb9c881a5).
+- **Network Name**: `synthos-mainnet-1`
+- **Native Coin**: `SYN` (fixed supply: 100,000,000,000 SYN)
 
-Verified directly against the Render dashboard on September 24, 2026 (not just carried forward this time):
+### Live Services
+- **Registry & Backend Service**: `https://synthos-www.onrender.com` (deployed from `Dockerfile` via Render blueprint `render.yaml`). Serves the peer registry, node heartbeat endpoints, explorer backend, and early-access routes.
+- **Public Website**: `https://www.ishamwilliamsblockchains.com`
+- **Live Explorer**: `https://82-29-54-7.sslip.io`
 
-- Live RPC endpoint: `https://rpc.ishamwilliamsblockchains.com` -- confirmed live. This is a custom domain mapped straight to the `synthos-rpc` Render service, which is Live and deployed at commit `cd6263b` (current `main`).
-- Render registry/backend service: `https://synthos-www.onrender.com` -- confirmed live, also deployed at `cd6263b`. Serves `/explorer.html`, `/api/explorer/*`, and the early-access routes, matching what `render.yaml` actually deploys.
-- Public website: `https://www.ishamwilliamsblockchains.com` -- **not hosted on Render.** It's built and hosted separately via Lovable (per this repo's own commit history), so no custom domain for it is attached to any Render service and its live status can't be confirmed from the Render dashboard. The bare domain without `www.` still does not resolve.
-- Live explorer: previously listed here as `https://synthos-explorer.onrender.com`, but **no Render service by that name exists.** The account has 7 services total (4 active, 3 suspended) and none is named `synthos-explorer`. Either the explorer lives somewhere else (unconfirmed) or this URL is stale -- treat it as unverified until it's checked directly.
-- Network name: `synthos-mainnet-1`
-- Coin display name: `SYN coins`
-- Coin symbol: `SYN`
-
-Public sale/payment execution remains intentionally gated until production custody, legal, and deployment controls are finalized.
-
-Note: the old Render service previously flagged here at `https://synthos-collective.onrender.com` no longer appears on the account at all -- it's gone, not just disconnected. No further cleanup needed there.
-
-### Source control & release pipeline
-
-- **GitHub** ([`elpresidentebutch-ctrl/synthos-collective`](https://github.com/elpresidentebutch-ctrl/synthos-collective)) is the primary public repository. GitHub Actions is currently unable to run because of an account billing lock, so the release workflow (`.github/workflows/release.yml`) exists in the repo but cannot execute until that's resolved.
-- **GitLab** (mirror, `synthos-collective-group/synthos-collective`) has a working release pipeline (`.gitlab-ci.yml`). Release `v0.1.0` is live and public, with all 8 cross-platform node binaries (`synthos-node-*`, `synthosd-*` for linux/amd64, darwin/arm64, darwin/amd64, windows/amd64) plus `SHA256SUMS` attached.
-- **Bitbucket** (mirror, `synthoscollective/synthos-collective`, private) was added this week with the full commit history imported from GitHub. A `bitbucket-pipelines.yml` publishes the same cross-platform binaries to Bitbucket Downloads on a tag push, but it hasn't been exercised with a real release yet -- treat it as unverified until a tag is pushed and the run is checked.
-
-In short: GitHub is the canonical public source, GitLab is the one platform with a binary release actually published, and Bitbucket is a private mirror with an as-yet-untested release pipeline.
-
-## Important Security Notice
-
-This repository is public project infrastructure, not a key vault.
-
-Do not commit private keys, wallet seed phrases, deployer keys, recovery codes, API tokens, or payment processor secrets. Local generated wallet material belongs only under ignored local folders such as `.synthos/`.
-
-Previously exposed or test keys must be treated as compromised and must not be reused for live assets.
+### Release Binaries
+Cross-platform binaries are published for Linux (amd64), macOS (arm64, amd64), and Windows (amd64) with SHA256 checksums:
+- `synthos-comet`: The production CometBFT validator node binary (`cometapp/`).
+- `synthos-node`: The candidate Proof-of-Uptime node binary (`cmd/silentnode/`).
+- `synthosd`: The legacy consensus node binary (`cmd/synthosd/`, archive reference).
 
 ## What Is In This Repo
 
 ```text
-cmd/                 Runnable Go entrypoints
-internal/            Chain, consensus, networking, RPC, storage, and agent code
-config/              Genesis and network configuration
-contracts/           Smart contract workspace
-website/             Static web pages served by the backend
-docs/                Launch, wallet, security, and operating documentation
-deploy/              Deployment support files
-scripts/             Local helper scripts
-render.yaml          Render deployment configuration
-Dockerfile           Container build for the live backend
+cometapp/            Production CometBFT validator node (synthos-comet), ABCI app, and tests
+cmd/                 Runnable Go entrypoints (cloudless-registry, silentnode, bridgerelayer, synthosd)
+internal/            Chain state machine, cryptographic primitives, RPC, storage, and networking
+config/              Genesis specifications and network configuration
+contracts/           Smart contracts (Solidity workspace with Hardhat)
+website/             Static web pages and assets served by the registry backend
+docs/                Architecture, onboarding, tokenomics, and validator runbooks
+deploy/              Deployment configurations and runbooks
+scripts/             Operational automation and helper scripts
+render.yaml          Render blueprint deployment configuration
+Dockerfile           Container build for cloudless-registry and node binaries
+src/                 Legacy Python framework prototype (archived)
 ```
 
 ## Quick Start
 
-Run the proof network:
+### 1. Build and Run the Production CometBFT Node (`synthos-comet`)
 
 ```bash
-go run ./cmd/l1netcheck
+# Enter cometapp directory
+cd cometapp
+
+# Run all CometBFT application and multi-node network tests
+go test -v ./...
+
+# Build the production node binary
+go build -o synthos-comet .
+
+# Inspect node commands
+./synthos-comet --help
 ```
 
-Run the local registry/backend:
+### 2. Run the Candidate Node (`cmd/silentnode`)
+
+To connect to the live network as a Proof-of-Uptime candidate node without opening inbound ports:
 
 ```bash
-go run ./cmd/cloudless-registry -listen :8090
+go run ./cmd/silentnode -id "my-node-1" -relay "https://synthos-www.onrender.com"
+```
+
+### 3. Run the Peer Registry / Backend Locally
+
+```bash
+# In local development mode:
+go run ./cmd/cloudless-registry -listen :8090 --insecure-dev
 ```
 
 Check health:
-
 ```bash
 curl http://127.0.0.1:8090/health
 ```
 
-Run the Go test suite:
+### 4. Run the Full Go Test Suite
 
 ```bash
+# Root module tests
 go test ./...
+
+# CometBFT production node tests
+(cd cometapp && go test -race -count=1 ./...)
 ```
 
-Build and run the Docker service:
+### 5. Build Container Image
 
 ```bash
 docker build -t synthos-collective:local .
 docker run --rm -p 8080:8080 -v synthos-data:/data synthos-collective:local
 ```
 
-## Live RPC Routes
+## Important Security Notice
 
-The backend exposes these public network routes:
+This repository is public project infrastructure, not a key vault. Do not commit private keys, wallet seed phrases, deployer keys, recovery codes, API tokens, or payment processor secrets. Local generated wallet material belongs only under ignored local folders such as `.synthos/`.
 
-```text
-GET  /health
-GET  /status
-GET  /account
-GET  /balance
-GET  /mempool
-GET  /blocks
-GET  /peers
-POST /submitTx
-POST /proposeBlock
-POST /gossip/block
-POST /gossip/tx-batch
-```
+## Smart Contracts
 
-Agent capability routes are also available on compatible validator builds:
-
-```text
-GET /capabilities
-GET /aen/status
-```
-
-## SYN Coins
-
-The current configured display coin is `SYN coins` with symbol `SYN`.
-
-Named genesis wallet allocations are documented in:
-
-- [docs/SYN_COINS_GENESIS_WALLETS.md](docs/SYN_COINS_GENESIS_WALLETS.md)
-
-That document lists public wallet addresses and allocation amounts only. Private wallet files are intentionally local and ignored by Git.
-
-## Early Access
-
-The early-access sale path is present, but payment execution is closed by default until production controls are ready.
-
-Before enabling real payments or token distribution, the project still needs:
-
-- final receiving wallet/custody policy
-- deployed sale contract on the intended production network
-- verified chain ID and RPC routing
-- production ABI and contract address file
-- legal review for token sale language
-- security review of payment and allocation flow
-
-## Cloudless Launch Path
-
-SYNTHOS does not require Cloudflare, Deno, or a managed edge runtime. The canonical launch path is self-hosted and container-friendly:
-
-1. Run the peer registry/backend from `cmd/cloudless-registry`.
-2. Run validator nodes using the shared genesis and peer configuration.
-3. Expose RPC/status endpoints from operator-controlled infrastructure.
-4. Point websites, explorers, and wallets at the live RPC URL.
-
-See:
-
-- [docs/CLOUDLESS_NETWORK.md](docs/CLOUDLESS_NETWORK.md)
-- [docs/RUN_NODE.md](docs/RUN_NODE.md)
-
-## Agent Roles
-
-Each SYNTHOS agent can support these roles:
-
-- Immune Node: validates blocks and transactions
-- Economist: manages incentives and resource allocation
-- Governor: coordinates proposals and governance
-- Communicator: handles peer-to-peer coordination
-- Simulator: models outcomes and protocol scenarios
-- Enforcer: monitors compliance and slashing conditions
-- Citizen: participates in usage, staking, and governance flows
-
-## Contracts
-
-Smart contract work lives in `contracts/`.
+Smart contract workspace lives in `contracts/`:
 
 ```bash
 cd contracts
@@ -175,31 +117,10 @@ npm run compile
 npx hardhat test
 ```
 
-Use `contracts/.env.example` as the template for deployment variables. Never commit a real `.env` file.
-
-## Deployment
-
-The active hosted backend is deployed on Render from this repository.
-
-Useful public URLs:
-
-- RPC/status: `https://rpc.ishamwilliamsblockchains.com`
-- Render backend (registry + early access): `https://synthos-www.onrender.com`
-- Explorer: `https://synthos-explorer.onrender.com`
-- Early access page: `https://synthos-www.onrender.com/early-access`
-
-This repository on GitHub (`elpresidentebutch-ctrl/synthos-collective`) is the only repo Render should ever be connected to for deploys. No GitLab project is authorized to host or deploy this code.
-
 ## Contributions
 
-SYNTHOS Collective is not accepting outside code contributions at this time.
-
-The repository is maintained as a founder-controlled project. Issues, merge requests, unsolicited patches, and third-party feature submissions may be closed without review until an official contribution process is announced.
+SYNTHOS Collective is currently maintained as a founder-controlled project. Outside pull requests are closed without review until an official contribution framework is announced.
 
 ## License
 
-SYNTHOS Collective source code is licensed under the Apache License, Version 2.0.
-
-SYNTHOS Collective, SYNTHOS, SYN coins, and related names, marks, and logos remain reserved except as permitted by the license for identifying the origin of the work.
-
-This repository is informational and technical infrastructure only. It is not legal, financial, or investment advice.
+SYNTHOS Collective source code is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).

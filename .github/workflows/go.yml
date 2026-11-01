@@ -30,6 +30,19 @@ jobs:
       - name: L1 integrity check
         run: go run ./cmd/l1check
 
+      # Production CometBFT node checks (cometapp module)
+      - name: Cometapp format check
+        run: test -z "$(gofmt -l cometapp/)"
+      - name: Cometapp vet
+        working-directory: cometapp
+        run: go vet ./...
+      - name: Cometapp unit and race tests
+        working-directory: cometapp
+        run: go test -race -count=1 ./...
+      - name: Cometapp build (synthos-comet)
+        working-directory: cometapp
+        run: go build .
+
   reproducibility:
     runs-on: ubuntu-latest
     timeout-minutes: 10

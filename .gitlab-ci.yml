@@ -14,7 +14,7 @@ variables:
 
 go-test:
   stage: test
-  image: golang:1.25
+  image: golang:1.26
   script:
     - go test -count=1 ./...
 
@@ -53,23 +53,17 @@ render-deploy:
     - curl --fail --request POST "$RENDER_DEPLOY_HOOK_URL"
 
 # ---------------------------------------------------------------------------
-# CometBFT migration: dependency bundle
-#
-# The migration lives in cometapp/, a separate Go module, so nothing it
-# depends on can affect the live synthosd build. The sandbox this work is
-# developed in can't reach Go module servers, so this job resolves CometBFT
-# and its dependencies here and publishes them as one artifact (go.mod,
-# go.sum, vendor/) to copy into that sandbox. Runs only on feat/cometbft*
-# branches.
+# Production CometBFT Node: dependency bundle & tests
 # ---------------------------------------------------------------------------
 cometapp-deps:
   stage: build
-  image: golang:1.25
+  image: golang:1.26
   rules:
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "master"'
     - if: '$CI_COMMIT_BRANCH =~ /^feat\/cometbft/'
+    - if: '$CI_COMMIT_TAG'
   script:
     - cd cometapp
-    - go get github.com/cometbft/cometbft@v0.38
     - go mod tidy
     - go mod vendor
     - go build ./...
@@ -83,19 +77,17 @@ cometapp-deps:
       - cometapp-deps.tgz
     expire_in: 14 days
 
-# Tests for the CometBFT-based node (cometapp/): the application against
-# ABCI calls, plus real in-process CometBFT networks (a single node with a
-# restart, and a 5-node network where a newcomer bonds into the validator
-# set and a validator goes offline). Runs on every push to feat/cometbft*
-# branches, and elsewhere when cometapp/ or the chain rules change.
+# Tests for the production CometBFT-based node (cometapp/): application against
+# ABCI calls, plus real in-process CometBFT networks (single node with restart,
+# and 5-node network with validator bonding/unbonding and failover).
 cometapp-test:
   stage: test
-  image: golang:1.25
+  image: golang:1.26
   variables:
     CGO_ENABLED: "1" # the race detector needs cgo; the pipeline default is 0
   rules:
-    # Always on the migration branches; elsewhere only when the node or
-    # the chain rules it runs change.
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "master"'
+    - if: '$CI_COMMIT_TAG'
     - if: '$CI_COMMIT_BRANCH =~ /^feat\/cometbft/'
     - changes:
         - cometapp/**/*
@@ -110,22 +102,16 @@ cometapp-test:
 # Node binary releases
 #
 # Builds real, auditable cross-platform binaries straight from this repo's
-# source and publishes them as a GitLab Release, so anyone downloading a
-# SYNTHOS node binary can trace it back to the exact commit that built it --
-# rather than depending on some separate, unaudited build process.
+# source and publishes them as a GitLab Release.
 #
-# This is the GitLab-native equivalent of .github/workflows/release.yml,
-# added because GitHub Actions on this account is currently blocked by a
-# billing lock. Same two binaries, same meaning:
+# Three binaries are published:
 #   - synthos-node-<os>-<arch>[.exe]   built from cmd/silentnode: the
 #     outbound-only Proof-of-Uptime candidate client (no open ports, no
-#     consensus participation). This is what the public "run a node"
-#     download should point at for someone just getting started.
-#   - synthosd-<os>-<arch>[.exe]       built from cmd/synthosd: the real
-#     validator/consensus binary. Running this does not by itself make
-#     anyone an active validator -- joining the live validator set is
-#     still a separate, deliberate operator step (shared genesis, peer
-#     registration, consensus tokens), not something this pipeline grants.
+#     consensus participation).
+#   - synthos-comet-<os>-<arch>[.exe]  built from cometapp: the production
+#     CometBFT validator/consensus binary (live chain since Oct 22, 2026).
+#   - synthosd-<os>-<arch>[.exe]       built from cmd/synthosd: the legacy
+#     pre-CometBFT standalone node engine, kept for archive and migration reference.
 #
 # Triggers:
 #   - Pushing a tag like v1.2.3 builds the binaries AND publishes a real
@@ -137,12 +123,13 @@ cometapp-test:
 
 .release_build_template:
   stage: release-build
-  image: golang:1.25
+  image: golang:1.26
   script:
     - mkdir -p dist
     - GOOS=$GOOS GOARCH=$GOARCH go build -trimpath -ldflags="-s -w" -o "dist/synthos-node-${GOOS}-${GOARCH}${EXT}" ./cmd/silentnode
+    - (cd cometapp && GOOS=$GOOS GOARCH=$GOARCH go build -trimpath -ldflags="-s -w" -o "../dist/synthos-comet-${GOOS}-${GOARCH}${EXT}" .)
     - GOOS=$GOOS GOARCH=$GOARCH go build -trimpath -ldflags="-s -w" -o "dist/synthosd-${GOOS}-${GOARCH}${EXT}" ./cmd/synthosd
-    - echo "built dist/synthos-node-${GOOS}-${GOARCH}${EXT} and dist/synthosd-${GOOS}-${GOARCH}${EXT}"
+    - echo "built dist/synthos-node-${GOOS}-${GOARCH}${EXT}, dist/synthos-comet-${GOOS}-${GOARCH}${EXT}, and dist/synthosd-${GOOS}-${GOARCH}${EXT}"
   artifacts:
     paths:
       - dist/
@@ -237,6 +224,14 @@ release-publish:
           url: "${PACKAGE_REGISTRY_URL}/synthos-node-darwin-amd64"
         - name: "synthos-node-windows-amd64.exe"
           url: "${PACKAGE_REGISTRY_URL}/synthos-node-windows-amd64.exe"
+        - name: "synthos-comet-linux-amd64"
+          url: "${PACKAGE_REGISTRY_URL}/synthos-comet-linux-amd64"
+        - name: "synthos-comet-darwin-arm64"
+          url: "${PACKAGE_REGISTRY_URL}/synthos-comet-darwin-arm64"
+        - name: "synthos-comet-darwin-amd64"
+          url: "${PACKAGE_REGISTRY_URL}/synthos-comet-darwin-amd64"
+        - name: "synthos-comet-windows-amd64.exe"
+          url: "${PACKAGE_REGISTRY_URL}/synthos-comet-windows-amd64.exe"
         - name: "synthosd-linux-amd64"
           url: "${PACKAGE_REGISTRY_URL}/synthosd-linux-amd64"
         - name: "synthosd-darwin-arm64"
@@ -258,7 +253,7 @@ release-publish:
 # ---------------------------------------------------------------------------
 gitlab-cloud-nodes:
   stage: test
-  image: golang:1.25-alpine
+  image: golang:1.26-alpine
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
     - if: '$CI_PIPELINE_SOURCE == "web"'

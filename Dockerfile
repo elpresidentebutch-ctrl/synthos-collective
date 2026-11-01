@@ -1,20 +1,22 @@
 # Reproducible build for local demo / reviewer runs.
 # Default: early access website/API backend (persists under SYNTHOS_DATA_DIR, default /data).
-FROM golang:1.25-alpine AS build
+FROM golang:1.26-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum* ./
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
+COPY cometapp/ ./cometapp/
 ENV CGO_ENABLED=0
 RUN go build -trimpath -ldflags="-s -w" -o /out/rpcnode ./cmd/rpcnode \
   && go build -trimpath -ldflags="-s -w" -o /out/devnet ./cmd/devnet \
   && go build -trimpath -ldflags="-s -w" -o /out/synthosd ./cmd/synthosd \
   && go build -trimpath -ldflags="-s -w" -o /out/cloudless-registry ./cmd/cloudless-registry \
+  && (cd cometapp && go build -trimpath -ldflags="-s -w" -o /out/synthos-comet .) \
   && GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/silentnode.exe ./cmd/silentnode
 
 FROM alpine:3.19
 RUN apk add --no-cache ca-certificates
-COPY --from=build /out/rpcnode /out/devnet /out/synthosd /out/cloudless-registry /usr/local/bin/
+COPY --from=build /out/rpcnode /out/devnet /out/synthosd /out/synthos-comet /out/cloudless-registry /usr/local/bin/
 COPY --from=build /out/silentnode.exe /downloads/silentnode.exe
 COPY website/ /website/
 # The RPC/validator binaries load genesis and node configuration from /config

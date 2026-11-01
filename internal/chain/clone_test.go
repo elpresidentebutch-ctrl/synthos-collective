@@ -43,7 +43,6 @@ func TestStateClone_CopiesEveryExportedField(t *testing.T) {
 		VotesFor: 10, IsActive: true, Voters: map[Address]bool{addr1: true},
 	}
 	s.GovernanceFounder = addr1
-<<<<<<< HEAD
 	s.DEXPools["NGOT"] = &Pool{
 		AssetID:      "NGOT",
 		SynReserve:   1000,
@@ -51,13 +50,11 @@ func TestStateClone_CopiesEveryExportedField(t *testing.T) {
 		TotalShares:  500,
 		Shares:       map[Address]uint64{addr1: 500},
 	}
-=======
 	s.Validators[addr2] = ValidatorRecord{
 		Operator: addr2, ConsensusPubKey: "0xabc", SelfBond: 5000, FirstBondHeight: 3,
 		Unbonding: []UnbondingEntry{{Amount: 10, CompleteAtHeight: 20}},
 	}
 	s.ValidatorSetSnapshot = []ActiveValidator{{Operator: addr2, ConsensusPubKey: "0xabc", Power: 5000}}
->>>>>>> origin/main
 
 	clone := s.Clone()
 

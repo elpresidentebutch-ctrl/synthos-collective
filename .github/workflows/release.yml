@@ -5,16 +5,15 @@ name: Release node binaries
 # a SYNTHOS node binary can trace it back to the exact commit that built it
 # -- rather than depending on some separate, unaudited build process.
 #
-# Two binaries are published, and they are NOT the same thing:
+# Three binaries are published:
 #   - synthos-node-<os>-<arch>[.exe]   built from cmd/silentnode: the
 #     outbound-only Proof-of-Uptime candidate client (no open ports, no
 #     consensus participation). This is what the public "run a node"
-#     download should point at for someone just getting started.
-#   - synthosd-<os>-<arch>[.exe]       built from cmd/synthosd: the real
-#     validator/consensus binary. Running this does not by itself make
-#     anyone an active validator -- joining the live validator set is
-#     still a separate, deliberate operator step (shared genesis, peer
-#     registration, consensus tokens), not something this workflow grants.
+#     download points at for operators getting started.
+#   - synthos-comet-<os>-<arch>[.exe]  built from cometapp: the production
+#     CometBFT validator/consensus binary (live chain since Oct 22, 2026).
+#   - synthosd-<os>-<arch>[.exe]       built from cmd/synthosd: the legacy
+#     pre-CometBFT standalone node engine, kept for archive and migration reference.
 #
 # Triggers:
 #   - Pushing a tag like v1.2.3 publishes a real GitHub Release.
@@ -29,7 +28,7 @@ on:
   workflow_dispatch: {}
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -68,7 +67,17 @@ jobs:
           go build -trimpath -ldflags="-s -w" -o "$out" ./cmd/silentnode
           echo "built $out"
 
-      - name: Build synthosd (cmd/synthosd -- real validator/consensus binary)
+      - name: Build synthos-comet (cometapp -- production CometBFT validator node)
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          out="dist/synthos-comet-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
+          (cd cometapp && go build -trimpath -ldflags="-s -w" -o "../$out" .)
+          echo "built $out"
+
+      - name: Build synthosd (cmd/synthosd -- legacy consensus binary)
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
@@ -87,6 +96,8 @@ jobs:
   checksums-and-release:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:

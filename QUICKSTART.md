@@ -1,368 +1,102 @@
 # SYNTHOS Collective - Quick Start Guide
 
-## 5-Minute Setup
+This guide covers running the production Go and CometBFT node, running a candidate Proof-of-Uptime node, running the local registry, and running the historical Python prototype.
 
-### 1. Prerequisites
+---
+
+## 1. Production Node: CometBFT (`synthos-comet`)
+
+The live Synthos Collective network has operated on CometBFT consensus since October 22, 2026. The production node lives in `cometapp/` and compiles to `synthos-comet`.
+
+### Prerequisites
+- Go 1.26 or later (`go version`)
+- Git
+
+### Build and Test
+```bash
+# Clone the repository
+git clone https://github.com/elpresidentebutch-ctrl/synthos-collective.git
+cd synthos-collective/cometapp
+
+# Run all ABCI and in-process network consensus tests
+go test -v ./...
+
+# Build the node binary
+go build -trimpath -ldflags="-s -w" -o synthos-comet .
+```
+
+### Basic Node Operations
+```bash
+# Create or display this node's validator key
+./synthos-comet validator-key --home ~/.synthos-comet
+
+# Display node P2P identity
+./synthos-comet node-id --home ~/.synthos-comet
+
+# Initialize node from network genesis
+./synthos-comet join --home ~/.synthos-comet --genesis-file validators-mainnet.json
+
+# Start node and expose local RPC/API
+./synthos-comet start --home ~/.synthos-comet --api :8545
+```
+
+---
+
+## 2. Candidate Node: Outbound-Only Proof-of-Uptime (`synthos-node`)
+
+For home or desktop operators who want to build uptime history toward validator eligibility without opening inbound router ports or obtaining static IPs:
 
 ```bash
-# Python 3.8+
-python --version
+# Run silent candidate node
+go run ./cmd/silentnode -id "my-operator-node" -relay "https://synthos-www.onrender.com"
+```
 
-# Install dependencies
+The node connects outbound via HTTPS, generates a local Ed25519 keypair in `.synthos/`, and sends signed periodic heartbeats to the network registry.
+
+---
+
+## 3. Local Peer Registry Backend (`cmd/cloudless-registry`)
+
+To run the full registry and website backend locally:
+
+```bash
+# Development mode (bypasses required REGISTRY_SECRET for testing)
+go run ./cmd/cloudless-registry -listen :8090 --insecure-dev
+
+# Check backend health
+curl http://127.0.0.1:8090/health
+```
+
+---
+
+## 4. Running the Full Go Test Suite
+
+```bash
+# Root module tests (chain state machine, crypto, rpc, storage)
+go test ./...
+
+# CometBFT production node tests
+(cd cometapp && go test -race -count=1 ./...)
+```
+
+---
+
+## 5. Prototype Python Framework (Historical / Archive)
+
+The original conceptual prototype of the 7-role agent network is in `src/`.
+
+### Prerequisites
+- Python 3.8+
+```bash
 pip install -r requirements.txt
-```
-
-### 2. Run Example
-
-```bash
-# From project root
-python example.py
-```
-
-This will:
-- Create a test agent
-- Demonstrate transaction flow
-- Show governance voting
-- Monitor agent status
-- Review performance metrics
-
-### 3. Run Tests
-
-```bash
-# Install test dependencies
 pip install pytest pytest-asyncio
-
-# Run all tests
-pytest tests/ -v
-
-# Run core tests only
-pytest tests/test_core.py -v
-
-# Run role tests only
-pytest tests/test_roles.py -v
 ```
 
-## Project Structure
-
-```
-THE COLLECTIVE/
-├── src/
-│   ├── core/              # Core framework (agent, state, events)
-│   ├── roles/             # Seven core roles
-│   ├── models/            # Data models
-│   ├── consensus/         # Consensus engine
-│   ├── governance/        # Governance module
-│   ├── network/           # Network layer
-│   ├── storage/           # Storage layer
-│   └── utils/             # Utilities
-├── config/
-│   └── validator.py       # Configuration validation
-├── tests/
-│   ├── test_core.py       # Core framework tests
-│   └── test_roles.py      # Role tests
-├── docs/                  # Documentation
-├── example.py             # Working examples
-├── TESTING.md             # Testing guide
-└── README.md              # Project overview
-```
-
-## Usage Examples
-
-### Create an Agent
-
-```python
-import asyncio
-from src.core import SyntHOSAgent, AgentConfig
-from src.roles import ValidatorRole, CitizenRole
-
-async def main():
-    # Create config
-    config = AgentConfig(
-        id="my-agent",
-        network="testnet",
-        log_level="INFO"
-    )
-    
-    # Create agent
-    agent = SyntHOSAgent(config)
-    
-    # Register roles
-    agent.register_role(ValidatorRole(agent))
-    agent.register_role(CitizenRole(agent))
-    
-    # Initialize
-    await agent.initialize()
-    
-    # Use agent
-    citizen = agent.get_role("Citizen")
-    await citizen.stake_tokens(100)
-    
-    # Check status
-    status = agent.get_status()
-    print(status)
-    
-    # Cleanup
-    await agent.stop()
-
-asyncio.run(main())
-```
-
-### Submit a Transaction
-
-```python
-from src.models import Transaction
-
-tx = Transaction(
-    sender="alice",
-    recipient="bob",
-    amount=100,
-    fee=1
-)
-
-# Via agent
-await agent.submit_transaction(tx)
-
-# Or via Citizen role
-citizen = agent.get_role("Citizen")
-await citizen.submit_transaction(tx)
-```
-
-### Create a Proposal
-
-```python
-from src.models import Proposal
-
-proposal = Proposal(
-    id="prop-001",
-    proposer=agent.id,
-    change_type="FEE_ADJUSTMENT",
-    parameters={"new_fee": 2}
-)
-
-# Submit via Governor
-governor = agent.get_role("Governor")
-proposal_id = await governor.propose_change(proposal)
-
-# Vote
-await governor.vote(proposal_id, vote_value=True)
-
-# Finalize
-passed = await governor.finalize_vote(proposal_id)
-```
-
-### Check Agent Status
-
-```python
-status = agent.get_status()
-
-print(f"ID: {status['id']}")
-print(f"Network: {status['network']}")
-print(f"Roles: {list(status['roles'].keys())}")
-print(f"State version: {status['state']['version']}")
-```
-
-## Core Components
-
-### Agent (`src/core/agent.py`)
-- Central orchestrator for all roles
-- Manages state and event bus
-- Coordinates role execution
-
-### State (`src/core/state.py`)
-- Transactional state management
-- Versioning and snapshots
-- Rollback support
-
-### EventBus (`src/core/event.py`)
-- Pub/sub event system
-- Event history tracking
-- Priority queuing
-
-### Roles (7 total)
-1. **Validator** - Transaction/block validation
-2. **Economist** - Fee and reward management
-3. **Governor** - Governance and voting
-4. **Communicator** - P2P communication
-5. **Simulator** - Scenario modeling
-6. **Enforcer** - Compliance and penalties
-7. **Citizen** - User participation
-
-## Configuration
-
-### Validate Configuration
-
-```python
-from config.validator import ConfigValidator
-from src.core import AgentConfig
-
-config = AgentConfig(
-    id="my-agent",
-    network="testnet",
-    consensus_timeout_ms=4000,
-    max_peers=50
-)
-
-is_valid, errors = ConfigValidator.validate_config(config)
-
-if not is_valid:
-    for error in errors:
-        print(f"Error: {error}")
-else:
-    print("Configuration valid!")
-```
-
-### Get Recommended Config
-
-```python
-from config.validator import ConfigValidator
-
-# For testnet
-config = ConfigValidator.get_recommended_config("testnet")
-
-# For mainnet
-config = ConfigValidator.get_recommended_config("mainnet")
-
-# For devnet
-config = ConfigValidator.get_recommended_config("devnet")
-```
-
-## Testing
-
-### Run All Tests
-
+### Run Example & Tests
 ```bash
+# Run Python simulation example
+python example.py
+
+# Run Python unit tests
 pytest tests/ -v
 ```
-
-### Run Specific Test Category
-
-```bash
-# Core tests
-pytest tests/test_core.py -v
-
-# Role tests
-pytest tests/test_roles.py -v
-
-# Specific role
-pytest tests/test_roles.py::TestValidatorRole -v
-```
-
-### Test Coverage
-
-- Core framework: 50+ tests
-- Roles: 30+ tests
-- Configuration: 10+ tests
-- Event system: 15+ tests
-- Total: 100+ test cases
-
-## Common Tasks
-
-### Monitor Agent
-
-```python
-# Real-time status
-status = agent.get_status()
-
-# Recent events
-events = await agent.get_event_history(limit=20)
-
-# Role metrics
-validator = agent.get_role("Validator")
-print(validator._validation_stats)
-```
-
-### Checkpoint State
-
-```python
-# Create checkpoint
-checkpoint = await agent.create_state_checkpoint()
-
-# Restore checkpoint
-await agent.restore_state_checkpoint(version=42)
-```
-
-### Enable/Disable Roles
-
-```python
-# Disable a role
-agent.disable_role("Validator")
-
-# Enable a role
-agent.enable_role("Validator")
-```
-
-## Performance Tips
-
-- Use appropriate consensus_timeout_ms for your network
-- Adjust max_peers based on hardware constraints
-- Monitor event queue size with `event_bus.get_event_history()`
-- Create periodic checkpoints for large deployments
-
-## Troubleshooting
-
-### Agent won't initialize
-```python
-# Check config validation
-from config.validator import ConfigValidator
-ConfigValidator.print_validation_report(config)
-```
-
-### Role not responding
-```python
-# Check role status
-role = agent.get_role("RoleName")
-if role:
-    print(role.get_state())
-else:
-    print("Role not registered")
-```
-
-### High memory usage
-```python
-# Reduce event history size
-agent.event_bus.max_history = 1000  # default is 10000
-
-# Create periodic checkpoints
-checkpoint = await agent.create_state_checkpoint()
-```
-
-## Next Steps
-
-1. **Read the docs**
-   - [Architecture](docs/FRAMEWORK_DESIGN.md)
-   - [Agent Specs](docs/AGENTS_SPECIFICATION.md)
-   - [Implementation Guide](docs/IMPLEMENTATION_GUIDE.md)
-
-2. **Explore examples**
-   - Run `python example.py`
-   - Review example scenarios
-   - Customize for your use case
-
-3. **Run tests**
-   - `pytest tests/ -v`
-   - Review test coverage
-   - Add custom tests
-
-4. **Deploy**
-   - Validate configuration
-   - Deploy agent nodes
-   - Monitor metrics
-
-## Getting Help
-
-- Check [TESTING.md](TESTING.md) for test documentation
-- Review [docs/](docs/) for architecture details
-- Look at [example.py](example.py) for usage patterns
-- Review role implementations in [src/roles/](src/roles/)
-
----
-
-**Happy decentralized agent building! 🚀**
-
----
-
-## Legal notice
-
-SYNTHOS Collective source code and repository materials covered by the root `LICENSE` file are licensed under the **Apache License, Version 2.0**. SYNTHOS Collective, SYNTHOS, and related names, marks, and logos remain reserved except as permitted by that license for describing the origin of the work.
-
-This document is informational only and is not legal, financial, or investment advice. The canonical legal notice is in **docs/LEGAL_NOTICE.md** in the SYNTHOS Collective repository.
