@@ -169,11 +169,15 @@ func TestAuthorizedConstantTimeComparison(t *testing.T) {
 		t.Fatal("expected a missing header to be rejected when a secret is configured")
 	}
 
-	// No secret configured at all: always authorized (unchanged behavior).
-	open := &server{secret: ""}
+	// No secret configured: fails closed unless in explicit insecureDev mode.
+	failClosed := &server{secret: "", insecureDev: false}
 	req = httptest.NewRequest(http.MethodPost, "/register", nil)
+	if failClosed.authorized(req) {
+		t.Fatal("expected an unconfigured secret to fail closed by default")
+	}
+	open := &server{secret: "", insecureDev: true}
 	if !open.authorized(req) {
-		t.Fatal("expected an unconfigured secret to leave the endpoint open, as before")
+		t.Fatal("expected insecureDev mode to allow requests when secret is unset")
 	}
 }
 

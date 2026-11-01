@@ -13,6 +13,7 @@ import (
 
 func newEmptyRegistry() *server {
 	return &server{
+		insecureDev: true,
 		state: registryState{
 			Peers:               map[string]peer{},
 			Mailbox:             map[string][]mailboxMessage{},

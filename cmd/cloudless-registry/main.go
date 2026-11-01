@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -16,12 +18,14 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"synthos-collective/internal/chain"
@@ -162,13 +166,14 @@ type registryState struct {
 }
 
 type server struct {
-	mu         sync.RWMutex
-	persistMu  sync.Mutex
-	state      registryState
-	secret     string
-	stateFile  string
-	startedAt  time.Time
-	maxMailbox int
+	mu          sync.RWMutex
+	persistMu   sync.Mutex
+	state       registryState
+	secret      string
+	insecureDev bool
+	stateFile   string
+	startedAt   time.Time
+	maxMailbox  int
 }
 
 type networkSnapshot struct {
@@ -190,9 +195,11 @@ func main() {
 	var listen string
 	var stateFile string
 	var secret string
+	var insecureDev bool
 	flag.StringVar(&listen, "listen", defaultListen(":8090"), "HTTP listen address")
 	flag.StringVar(&stateFile, "state", env("SYNTHOS_REGISTRY_STATE", ".synthos/cloudless-registry.json"), "registry state JSON path")
-	flag.StringVar(&secret, "secret", os.Getenv("REGISTRY_SECRET"), "optional registry admin/mailbox secret")
+	flag.StringVar(&secret, "secret", os.Getenv("REGISTRY_SECRET"), "registry admin/mailbox secret")
+	flag.BoolVar(&insecureDev, "insecure-dev", envBool("SYNTHOS_INSECURE_DEV", false), "allow unauthenticated admin access in local dev when REGISTRY_SECRET is unset")
 	newRewardKey := flag.String("new-reward-key", "", "create the reward keeper's own wallet key at this path, print its address, and exit")
 	flag.Parse()
 	if *newRewardKey != "" {
@@ -204,6 +211,13 @@ func main() {
 		return
 	}
 
+	if secret == "" {
+		if !insecureDev {
+			log.Fatalf("FATAL: REGISTRY_SECRET is not set. Cloudless registry refuses to start with unauthenticated protected actions. Set REGISTRY_SECRET or pass --insecure-dev / SYNTHOS_INSECURE_DEV=true for local development.")
+		}
+		log.Printf("WARNING: Running in INSECURE DEV MODE: REGISTRY_SECRET is unset. Destructive and admin endpoints are open without authentication.")
+	}
+
 	s := &server{
 		state: registryState{
 			Peers:               map[string]peer{},
@@ -211,10 +225,11 @@ func main() {
 			Contacts:            []contactMessage{},
 			EarlyAccessPayments: map[string]earlyAccessPaymentIntent{},
 		},
-		secret:     secret,
-		stateFile:  stateFile,
-		startedAt:  time.Now(),
-		maxMailbox: 100,
+		secret:      secret,
+		insecureDev: insecureDev,
+		stateFile:   stateFile,
+		startedAt:   time.Now(),
+		maxMailbox:  100,
 	}
 	if err := s.load(); err != nil {
 		log.Printf("registry state load warning: %v", err)
@@ -308,11 +323,32 @@ func main() {
 
 	log.Printf("SYNTHOS cloudless registry listening on %s", listen)
 	log.Printf("state file: %s", stateFile)
-	if secret == "" {
-		log.Printf("REGISTRY_SECRET is not set; destructive/mailbox writes are open for local/dev use")
-	}
+
 	limiter := newRegistryRateLimiter()
-	if err := http.ListenAndServe(listen, cors(limitRequest(limiter, mux))); err != nil {
+	handler := cors(limitRequest(limiter, mux))
+	srv := &http.Server{
+		Addr:              listen,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		<-ctx.Done()
+		log.Printf("Shutting down registry server gracefully...")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			log.Printf("Registry server shutdown error: %v", err)
+		}
+	}()
+
+	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}
 }
@@ -2786,7 +2822,7 @@ func (s *server) handleGenericRPC(w http.ResponseWriter, r *http.Request) {
 // differ.
 func (s *server) authorized(r *http.Request) bool {
 	if s.secret == "" {
-		return true
+		return s.insecureDev
 	}
 	given := r.Header.Get("X-Registry-Secret")
 	return given != "" && subtle.ConstantTimeCompare([]byte(given), []byte(s.secret)) == 1
@@ -4063,6 +4099,13 @@ func nextProposer(peers []peer) string {
 func env(name, fallback string) string {
 	if value := os.Getenv(name); value != "" {
 		return value
+	}
+	return fallback
+}
+
+func envBool(name string, fallback bool) bool {
+	if value := os.Getenv(name); value != "" {
+		return value == "1" || strings.EqualFold(value, "true") || strings.EqualFold(value, "yes")
 	}
 	return fallback
 }

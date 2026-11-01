@@ -14,6 +14,7 @@ import (
 // persist() is a no-op and these tests never touch disk.
 func newSecurityTestServer() *server {
 	return &server{
+		insecureDev: true,
 		state: registryState{
 			Peers:                   map[string]peer{},
 			Mailbox:                 map[string][]mailboxMessage{},

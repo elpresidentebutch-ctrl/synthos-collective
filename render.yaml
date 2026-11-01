@@ -28,6 +28,8 @@ services:
         value: https://www.ishamwilliamsblockchains.com,https://ishamwilliamsblockchains.com,https://lovable.dev
       - key: SYNTHOS_EARLY_ACCESS_WIDGET_PATH
         value: /website/assets/early-access-sale.js
+      - key: REGISTRY_SECRET
+        sync: false
       - key: SYNTHOS_DISTRIBUTION_AGENT_PRIVATE_KEY
         sync: false
       - key: SYNTHOS_EARLY_ACCESS_ALLOCATION_PRIVATE_KEY
