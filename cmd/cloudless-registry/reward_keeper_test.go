@@ -350,3 +350,21 @@ func TestFounderFleetAndPreCutoffNodesExcluded(t *testing.T) {
 		t.Fatalf("founder fleet node should not be paid")
 	}
 }
+
+func TestMonthlyRewardHalvingStartsIn2028(t *testing.T) {
+	cases := []struct {
+		when time.Time
+		want uint64
+	}{
+		{time.Date(2026, 11, 20, 0, 0, 0, 0, time.UTC), 5000},
+		{time.Date(2027, 12, 31, 23, 0, 0, 0, time.UTC), 5000},
+		{time.Date(2028, 1, 1, 0, 0, 0, 0, time.UTC), 2500},
+		{time.Date(2029, 12, 1, 0, 0, 0, 0, time.UTC), 2500},
+		{time.Date(2030, 1, 2, 0, 0, 0, 0, time.UTC), 1250},
+	}
+	for _, c := range cases {
+		if got := monthlyRewardAmount(c.when); got != c.want {
+			t.Errorf("%s: got %d SYN, want %d", c.when.Format("2006-01-02"), got, c.want)
+		}
+	}
+}

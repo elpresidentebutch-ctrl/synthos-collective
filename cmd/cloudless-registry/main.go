@@ -693,7 +693,7 @@ func (s *server) handlePrunePeers(w http.ResponseWriter, r *http.Request) {
 }
 
 func monthlyRewardAmount(now time.Time) uint64 {
-	halvingStart := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
+	halvingStart := time.Date(2028, 1, 1, 0, 0, 0, 0, time.UTC)
 	base := uint64(validatorMonthlyBaseRewardSYN)
 	if now.Before(halvingStart) {
 		return base
