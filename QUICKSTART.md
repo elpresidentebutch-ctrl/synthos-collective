@@ -26,18 +26,44 @@ go build -trimpath -ldflags="-s -w" -o synthos-comet .
 ```
 
 ### Basic Node Operations
+
+#### 1. Identity & Keys
 ```bash
-# Create or display this node's validator key
+# Create or display this node's validator consensus key
 ./synthos-comet validator-key --home ~/.synthos-comet
 
 # Display node P2P identity
 ./synthos-comet node-id --home ~/.synthos-comet
+```
 
-# Initialize node from network genesis
-./synthos-comet join --home ~/.synthos-comet --genesis-file validators-mainnet.json
+#### 2. Network Genesis Setup
+To join an existing network, `join` requires the network's full CometBFT `genesis.json` (not just an app genesis or validator roster):
 
-# Start node and expose local RPC/API
-./synthos-comet start --home ~/.synthos-comet --api :8545
+- **Joining Testnet**:
+  Use the committed testnet genesis document:
+  ```bash
+  ./synthos-comet join --home ~/.synthos-comet --genesis-file ../networks/synthos-testnet-1/genesis.json
+  ```
+
+- **Joining Mainnet**:
+  Obtain the canonical mainnet `genesis.json` from the network RPC or seed node, then install:
+  ```bash
+  # Install genesis and initialize home directory
+  ./synthos-comet join --home ~/.synthos-comet --genesis-file /path/to/mainnet-genesis.json
+  ```
+
+- **Initializing a New Network / Local Devnet**:
+  To initialize a fresh network from a SYNTHOS app genesis template:
+  ```bash
+  ./synthos-comet init --home ~/.synthos-comet --genesis app-genesis-mainnet.json
+  ```
+
+#### 3. Starting the Node
+```bash
+# Start node with persistent peers and expose the synthosd-compatible API
+./synthos-comet start --home ~/.synthos-comet \
+  --peers "514928022ac348f9648fba4be0d60235876e69f8@82.29.54.7:26656,4b2d706807e5cd6487548c54e686c67f872896aa@82.29.130.11:26656" \
+  --api :8545
 ```
 
 ---
@@ -48,7 +74,7 @@ For home or desktop operators who want to build uptime history toward validator 
 
 ```bash
 # Run silent candidate node
-go run ./cmd/silentnode -id "my-operator-node" -relay "https://synthos-www.onrender.com"
+go run ./cmd/silentnode -id "my-operator-node" -relay "https://82-29-54-7.sslip.io"
 ```
 
 The node connects outbound via HTTPS, generates a local Ed25519 keypair in `.synthos/`, and sends signed periodic heartbeats to the network registry.
@@ -62,6 +88,9 @@ To run the full registry and website backend locally:
 ```bash
 # Development mode (bypasses required REGISTRY_SECRET for testing)
 go run ./cmd/cloudless-registry -listen :8090 --insecure-dev
+
+# Production mode (fails closed if REGISTRY_SECRET is not set):
+REGISTRY_SECRET="your-secure-secret" go run ./cmd/cloudless-registry -listen :8090
 
 # Check backend health
 curl http://127.0.0.1:8090/health

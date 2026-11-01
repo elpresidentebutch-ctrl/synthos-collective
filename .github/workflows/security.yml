@@ -93,7 +93,7 @@ jobs:
       - name: Run Slither Analysis
         run: |
           cd contracts
-          slither . --filter-paths "node_modules|artifacts|cache|test" --severity high
+          slither . --filter-paths "node_modules|artifacts|cache|test" --fail-high
       
       # NPM Audit: Dependency check (fails on critical issues)
       - name: NPM Dependency Audit

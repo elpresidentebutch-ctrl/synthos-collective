@@ -170,7 +170,9 @@ func main() {
 		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 		<-sig
 		if srv != nil {
-			_ = srv.Close()
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			_ = srv.Shutdown(shutdownCtx)
 		}
 		_ = n.Stop()
 		n.Wait()

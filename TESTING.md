@@ -1,346 +1,122 @@
 # SYNTHOS Collective - Testing Guide
 
-## Overview
+This guide details the test suites across the SYNTHOS Collective codebase, covering the production Go chain engine, the CometBFT consensus application, the smart contract workspace, and the historical Python prototype.
 
-This document describes the comprehensive testing suite for the SYNTHOS Collective framework.
+---
 
-## Test Structure
+## Testing Architecture
 
-Tests are organized into two main categories:
+The codebase contains four distinct test domains:
 
-### 1. Core Tests (`tests/test_core.py`)
+| Domain | Directory | Language / Runner | Scope |
+| :--- | :--- | :--- | :--- |
+| **CometBFT Production Node** | `cometapp/` | Go 1.26 (`go test`) | ABCI application, live in-process CometBFT networks, consensus rotation, state export, legacy API |
+| **L1 Core & Registry** | `internal/`, `cmd/` | Go 1.26 (`go test`) | State machine, block execution, cryptographic signatures, peer registry, fail-closed auth, bridge relayer |
+| **Smart Contracts** | `contracts/` | Solidity / Hardhat (`npm test`) | `SynthosAnchor` on Base L2, ERC20 tokens, sale & staking contracts |
+| **Agent Prototype (Archive)** | `src/`, `tests/` | Python 3.8+ (`pytest`) | Historical 7-role agent conceptual simulation |
 
-Tests for core framework components:
+---
 
-- **TestAgentConfig** - Configuration handling and defaults
-- **TestAgentState** - State management, transactions, snapshots
-- **TestEventSystem** - Event bus, subscriptions, history
-- **TestSyntHOSAgent** - Agent initialization, role management, status
+## 1. CometBFT Production Node Tests (`cometapp/`)
 
-### 2. Role Tests (`tests/test_roles.py`)
+The tests in `cometapp/` validate the application state machine against ABCI calls as well as spinning up real, multi-node in-process CometBFT networks.
 
-Tests for all seven core roles:
-
-- **TestValidatorRole** - Transaction/block validation
-- **TestEconomistRole** - Fee calculation, reward distribution
-- **TestGovernorRole** - Proposal creation, voting
-- **TestCommunicatorRole** - Peer connections, messaging
-- **TestEnforcerRole** - Penalty application, compliance
-- **TestSimulatorRole** - Protocol and economic simulations
-- **TestCitizenRole** - Transaction submission, staking, rewards
-
-## Running Tests
-
-### Prerequisites
-
-Install test dependencies:
-
+### Run All CometBFT Tests
 ```bash
-pip install pytest pytest-asyncio
+cd cometapp
+go test -v ./...
 ```
 
-### Run All Tests
+### Run with Race Detector
+```bash
+cd cometapp
+go test -race -count=1 ./...
+```
+
+### Key Test Packages:
+- **`cometapp/app`**:
+  - `TestGenesisRulesForCometBFT`: Genesis constraints and validation.
+  - `TestTransferPaysFeeToProposerOperator`: Fee attribution to block producers.
+  - `TestBondJoinsValidatorSetAtEpochBoundary`: Validator staking and voting power transitions.
+  - `TestFullUnbondRemovesValidatorAtEpoch`: Unbonding queues and validator exit.
+  - `TestCometMisbehaviorSlashesAndRemovesImmediately`: Slashing for double-signing evidence.
+  - `TestTwoNodesReachIdenticalAppHashes`: Deterministic AppHash verification across nodes.
+  - `TestRestartResumesFromDisk`: Persistent storage recovery across restarts.
+- **`cometapp/devnode`**:
+  - `TestSingleNodeDevnet`: Spins up an in-process CometBFT single-node network and produces blocks.
+  - `TestValidatorNetwork`: Spins up a multi-node validator consensus network, tests peer discovery, newcomer bonding, and validator offline failover.
+- **`cometapp/export`**:
+  - `TestExportKeepsEveryAccountAndStake`: Migration verification ensuring every account and balance is preserved.
+- **`cometapp/legacyapi`**:
+  - Tests for `/status`, `/account`, `/balance`, `/submitTx`, rate limiting, and faucet funding.
+
+---
+
+## 2. Core Chain & Registry Tests (`internal/`, `cmd/`)
+
+### Run All Root Tests
+```bash
+# Run unit and race tests across all internal and cmd packages
+go test -race -count=1 ./internal/... ./cmd/...
+```
+
+### Run Repeat Consensus Tests (Reproducibility Gate)
+```bash
+go test -count=25 ./internal/consensus ./internal/chain
+```
+
+### Key Test Suites:
+- **`internal/chain`**:
+  - State machine transitions, Merkle tree odd-leaf hashing, transactions, blocks, citizen staking, and state cloning.
+- **`cmd/cloudless-registry`**:
+  - Signed node heartbeats, hardware deduplication (`hardware_test.go`), network status computation, reward keeper payouts, and fail-closed secret authentication (`registry_hardening_test.go`).
+- **`cmd/synthosd`**:
+  - Node keys persistence, mailbox relaying, and validator roster synchronization.
+- **`cmd/bridgerelayer`**:
+  - Base anchor contract event parsing and EVM transaction submission.
+
+---
+
+## 3. Smart Contracts Tests (`contracts/`)
+
+Smart contracts are tested using Hardhat and Mocha/Chai.
 
 ```bash
+cd contracts
+npm ci --legacy-peer-deps
+npm run compile
+npm test
+```
+
+### Security Scans:
+Run static analysis with Slither (configured to fail on high-severity findings):
+```bash
+slither . --filter-paths "node_modules|artifacts|cache|test" --fail-high
+```
+
+---
+
+## 4. Automated CI Security & Linting Policies
+
+The CI workflows ([`.github/workflows/`](.github/workflows/)) enforce strict testing gates:
+- **`go.yml`**: Formats with `gofmt`, vets with `go vet`, runs race detector, builds all commands, and runs `l1check` across both root and `cometapp` modules.
+- **`security.yml`**:
+  - **GoSec**: Static analysis pinned to `v2.22.11` failing on high severity findings.
+  - **Go Vulnerability Audit**: `govulncheck@v1.1.4` scanning both root and `cometapp` dependencies.
+  - **Coverage Threshold**: Enforces a minimum of 15% code coverage across the Go codebase.
+  - **Slither**: Static analysis on contracts with `--fail-high`.
+
+---
+
+## 5. Prototype Python Framework Tests (Historical / Archive)
+
+The original Python prototype tests live in `tests/test_core.py` and `tests/test_roles.py`.
+
+### Setup and Run
+```bash
+pip install -r requirements.txt
+pip install pytest pytest-asyncio
+
+# Run prototype test suite
 pytest tests/ -v
 ```
-
-### Run Specific Test File
-
-```bash
-# Core tests
-pytest tests/test_core.py -v
-
-# Role tests
-pytest tests/test_roles.py -v
-```
-
-### Run Specific Test Class
-
-```bash
-pytest tests/test_core.py::TestAgentConfig -v
-pytest tests/test_roles.py::TestValidatorRole -v
-```
-
-### Run Specific Test
-
-```bash
-pytest tests/test_core.py::TestAgentConfig::test_agent_config_creation -v
-```
-
-## Testing Coverage
-
-### Core Infrastructure (test_core.py)
-
-#### Configuration Tests
-- ✓ AgentConfig creation with all parameters
-- ✓ AgentConfig with default values
-- ✓ Configuration validation
-
-#### State Management Tests
-- ✓ Set and get state values
-- ✓ Balance operations
-- ✓ Transaction begin/commit
-- ✓ Transaction rollback
-- ✓ State snapshots
-- ✓ State restoration
-- ✓ Fork at version
-
-#### Event System Tests
-- ✓ Event creation with attributes
-- ✓ Event bus subscription
-- ✓ Event publishing and dispatch
-- ✓ Event history tracking
-- ✓ Event filtering by type
-
-#### Agent Tests
-- ✓ Agent initialization
-- ✓ Role registration
-- ✓ Agent status reporting
-- ✓ State checkpoints
-- ✓ Event history retrieval
-- ✓ Role enable/disable
-
-### Roles (test_roles.py)
-
-#### Validator Role
-- ✓ Transaction validation logic
-- ✓ Block validation
-- ✓ Signature verification
-- ✓ Nonce checking
-- ✓ Fee validation
-
-#### Economist Role
-- ✓ Fee calculation based on transaction size
-- ✓ Block reward calculation
-- ✓ Reward distribution to addresses
-- ✓ Economic metrics tracking
-
-#### Governor Role
-- ✓ Proposal creation and storage
-- ✓ Voting mechanics (yes/no)
-- ✓ Vote counting
-- ✓ Proposal finalization
-- ✓ Governance metrics
-
-#### Communicator Role
-- ✓ Peer connection management
-- ✓ Peer disconnection
-- ✓ Message sending (unicast)
-- ✓ Message broadcasting
-- ✓ Network metrics tracking
-
-#### Enforcer Role
-- ✓ Penalty application to violators
-- ✓ Balance reduction on violations
-- ✓ Slashing events
-- ✓ Compliance checking
-
-#### Simulator Role
-- ✓ Protocol change simulation
-- ✓ Economic scenario simulation
-- ✓ Network condition simulation
-- ✓ Simulation metrics tracking
-
-#### Citizen Role
-- ✓ Transaction submission
-- ✓ Token staking
-- ✓ Reward claiming
-- ✓ Governance participation
-- ✓ Citizen metrics
-
-## Test Execution Examples
-
-### Example 1: Test Configuration Management
-
-```bash
-pytest tests/test_core.py::TestAgentConfig -v
-
-# Output:
-# test_agent_config_creation PASSED
-# test_agent_config_defaults PASSED
-```
-
-### Example 2: Test Role Functionality
-
-```bash
-pytest tests/test_roles.py::TestValidatorRole -v
-
-# Output:
-# test_validator_initialization PASSED
-# test_transaction_validation PASSED
-```
-
-### Example 3: Run All Tests with Coverage
-
-```bash
-pytest tests/ -v --tb=short
-
-# Shows:
-# - Test results for all components
-# - Failure details if any
-# - Coverage summary
-```
-
-## Asynchronous Testing
-
-All tests that use async/await are marked with `@pytest.mark.asyncio`:
-
-```python
-@pytest.mark.asyncio
-async def test_state_transaction():
-    """Test state transactions"""
-    state = AgentState()
-    await state.begin_transaction()
-    # ... test code ...
-```
-
-The pytest-asyncio plugin automatically handles the event loop.
-
-## Test Fixtures
-
-Common test fixture patterns:
-
-```python
-async def create_test_agent():
-    """Helper to create properly initialized agent"""
-    config = AgentConfig(id="test-agent", network="testnet")
-    agent = SyntHOSAgent(config)
-    
-    # Register all roles
-    agent.register_role(ValidatorRole(agent))
-    # ... register other roles ...
-    
-    await agent.initialize()
-    return agent
-```
-
-## Performance Considerations
-
-- Tests complete in < 2 seconds total
-- Individual test cases typically < 100ms
-- Async tests use proper event loop handling
-- No blocking I/O operations in tests
-
-## Extending the Test Suite
-
-### Adding New Tests
-
-1. Create test function in appropriate test file
-2. Mark async tests with `@pytest.mark.asyncio`
-3. Follow naming convention: `test_<feature_being_tested>`
-4. Use descriptive docstrings
-5. Include setup, execution, and assertions
-
-Example:
-
-```python
-@pytest.mark.asyncio
-async def test_new_feature():
-    """Test description"""
-    # Setup
-    agent = await create_test_agent()
-    
-    # Execute
-    result = await agent.some_method()
-    
-    # Assert
-    assert result == expected_value
-```
-
-## Debugging Tests
-
-### Verbose Output
-
-```bash
-pytest tests/ -v -s
-```
-
-The `-s` flag shows print statements and logging output.
-
-### Stop on First Failure
-
-```bash
-pytest tests/ -x
-```
-
-### Show Variables in Traceback
-
-```bash
-pytest tests/ -l
-```
-
-### Run Tests in Parallel
-
-```bash
-pytest tests/ -n auto
-```
-
-(Requires `pytest-xdist` package)
-
-## Continuous Integration
-
-These tests are designed to run in CI/CD pipelines:
-
-```yaml
-# Example GitHub Actions workflow
-- name: Run Tests
-  run: |
-    pip install pytest pytest-asyncio
-    pytest tests/ -v --tb=short
-```
-
-## Known Limitations
-
-1. Tests use placeholder implementations for some role methods
-2. Network simulation is minimal (no real P2P)
-3. Cryptographic operations are mocked
-4. Storage is in-memory only
-
-## Future Enhancements
-
-- [ ] Add performance benchmarks
-- [ ] Add integration tests with real consensus
-- [ ] Add stress tests with many agents
-- [ ] Add network simulation tests
-- [ ] Add security audit tests
-
-## Troubleshooting
-
-### pytest-asyncio issues
-
-If tests fail with "event loop" errors:
-
-```bash
-pip install --upgrade pytest-asyncio
-export PYTEST_TIMEOUT=300
-```
-
-### Import errors
-
-Ensure you run pytest from project root:
-
-```bash
-cd /path/to/SYNTHOS\ COLLECTIVE
-pytest tests/
-```
-
-### Timeout errors
-
-For slow systems, increase timeout:
-
-```bash
-pytest tests/ --timeout=5
-```
-
----
-
-**For more information, see [docs/IMPLEMENTATION_GUIDE.md](../docs/IMPLEMENTATION_GUIDE.md)**
-
----
-
-## Legal notice
-
-SYNTHOS Collective source code and repository materials covered by the root `LICENSE` file are licensed under the **Apache License, Version 2.0**. SYNTHOS Collective, SYNTHOS, and related names, marks, and logos remain reserved except as permitted by that license for describing the origin of the work.
-
-This document is informational only and is not legal, financial, or investment advice. The canonical legal notice is in **docs/LEGAL_NOTICE.md** in the SYNTHOS Collective repository.
