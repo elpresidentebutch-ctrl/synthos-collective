@@ -150,7 +150,14 @@ func main() {
 			warmCtx, stopWarm := context.WithCancel(context.Background())
 			defer stopWarm()
 			go srvAPI.WarmActivity(warmCtx)
-			srv = &http.Server{Addr: *api, Handler: h, ReadHeaderTimeout: 10 * time.Second}
+			srv = &http.Server{
+				Addr:              *api,
+				Handler:           h,
+				ReadHeaderTimeout: 10 * time.Second,
+				ReadTimeout:       30 * time.Second,
+				WriteTimeout:      60 * time.Second,
+				IdleTimeout:       120 * time.Second,
+			}
 			go func() {
 				if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 					fmt.Fprintln(os.Stderr, "api server:", err)
