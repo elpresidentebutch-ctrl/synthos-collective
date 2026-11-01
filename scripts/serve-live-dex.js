@@ -7,7 +7,7 @@ const port = Number(process.env.SYNTHOS_DEX_PORT || 8899);
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${port}`);
-  const pathname = url.pathname === "/" ? "/THE_COLLECTIVE_DEX_LIVE.html" : url.pathname;
+  const pathname = url.pathname === "/" ? "/archive/legacy-root-files/THE_COLLECTIVE_DEX_LIVE.html" : url.pathname;
   const file = path.normalize(path.join(root, pathname));
 
   if (!file.startsWith(root)) {

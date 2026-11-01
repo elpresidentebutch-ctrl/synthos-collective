@@ -13,7 +13,7 @@ The codebase contains four distinct test domains:
 | **CometBFT Production Node** | `cometapp/` | Go 1.26 (`go test`) | ABCI application, live in-process CometBFT networks, consensus rotation, state export, legacy API |
 | **L1 Core & Registry** | `internal/`, `cmd/` | Go 1.26 (`go test`) | State machine, block execution, cryptographic signatures, peer registry, fail-closed auth, bridge relayer |
 | **Smart Contracts** | `contracts/` | Solidity / Hardhat (`npm test`) | `SynthosAnchor` on Base L2, ERC20 tokens, sale & staking contracts |
-| **Agent Prototype (Archive)** | `src/`, `tests/` | Python 3.8+ (`pytest`) | Historical 7-role agent conceptual simulation |
+| **Agent Prototype (Archive)** | `archive/python-prototype/` | Python 3.8+ (`pytest`) | Historical 7-role agent conceptual simulation |
 
 ---
 
@@ -110,10 +110,11 @@ The CI workflows ([`.github/workflows/`](.github/workflows/)) enforce strict tes
 
 ## 5. Prototype Python Framework Tests (Historical / Archive)
 
-The original Python prototype tests live in `tests/test_core.py` and `tests/test_roles.py`.
+The original Python prototype tests live in `archive/python-prototype/tests/`.
 
 ### Setup and Run
 ```bash
+cd archive/python-prototype
 pip install -r requirements.txt
 pip install pytest pytest-asyncio
 

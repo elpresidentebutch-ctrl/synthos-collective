@@ -112,18 +112,19 @@ go test ./...
 
 ## 5. Prototype Python Framework (Historical / Archive)
 
-The original conceptual prototype of the 7-role agent network is in `src/`.
+The original conceptual prototype of the 7-role agent network is archived in `archive/python-prototype/`.
 
 ### Prerequisites
 - Python 3.8+
 ```bash
+cd archive/python-prototype
 pip install -r requirements.txt
 pip install pytest pytest-asyncio
 ```
 
 ### Run Example & Tests
 ```bash
-# Run Python simulation example
+# From archive/python-prototype: run the Python simulation example
 python example.py
 
 # Run Python unit tests

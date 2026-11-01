@@ -7,7 +7,7 @@ This is the path to a real SYNTHOS DEX launch.
 - `SYNTHOSDex.sol`: deployable constant-product AMM.
 - `SynCoin.sol`: fixed 100B SYN supply with 29B locked DEX liquidity allocation.
 - `deploy-synthos.js`: deploys SYN, governance, adopter rewards, founder vesting, and the DEX.
-- `THE_COLLECTIVE_DEX_LIVE.html`: wallet-facing DEX page for deployed contracts.
+- `archive/legacy-root-files/THE_COLLECTIVE_DEX_LIVE.html`: wallet-facing DEX page for deployed contracts (archived; DEX swaps are disabled on the CometBFT chain).
 - `cmd/silentnode`: adopter node process with no inbound ports.
 
 ## Architecture Rule

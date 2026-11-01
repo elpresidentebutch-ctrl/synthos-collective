@@ -43,7 +43,7 @@ docs/                Architecture, onboarding, tokenomics, and validator runbook
 deploy/              Deployment configurations and runbooks
 scripts/             Operational automation and helper scripts
 Dockerfile           Container build for cloudless-registry and node binaries
-src/                 Legacy Python framework prototype (archived)
+archive/             Legacy Python prototype and retired pages (history only)
 ```
 
 ## Quick Start
