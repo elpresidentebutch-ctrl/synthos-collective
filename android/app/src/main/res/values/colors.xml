@@ -1,0 +1,10 @@
+<resources>
+    <color name="bg_dark">#0a0e17</color>
+    <color name="card_dark">#121824</color>
+    <color name="card_border">#1e293b</color>
+    <color name="accent_teal">#2ed5a9</color>
+    <color name="accent_sky">#38bdf8</color>
+    <color name="text_white">#f8fafc</color>
+    <color name="text_muted">#94a3b8</color>
+    <color name="danger_red">#ff6b8a</color>
+</resources>

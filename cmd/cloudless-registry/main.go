@@ -2521,12 +2521,19 @@ func (s *server) handleSilentNodeBinary(w http.ResponseWriter, r *http.Request) 
 	case "synthos-node-linux-amd64":
 		diskPath = "/downloads/synthos-node-linux-amd64"
 		downloadName = "synthos-node-linux-amd64"
+	case "synthos-node-linux-arm64":
+		diskPath = "/downloads/synthos-node-linux-arm64"
+		downloadName = "synthos-node-linux-arm64"
 	case "synthos-node-darwin-arm64":
 		diskPath = "/downloads/synthos-node-darwin-arm64"
 		downloadName = "synthos-node-darwin-arm64"
 	case "synthos-node-darwin-amd64":
 		diskPath = "/downloads/synthos-node-darwin-amd64"
 		downloadName = "synthos-node-darwin-amd64"
+	case "synthos-node.apk":
+		diskPath = "/downloads/synthos-node.apk"
+		downloadName = "synthos-node.apk"
+		contentType = "application/vnd.android.package-archive"
 	case "SHA256SUMS":
 		diskPath = "/downloads/SHA256SUMS"
 		downloadName = "SHA256SUMS"
