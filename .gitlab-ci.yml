@@ -47,6 +47,10 @@ android-apk-build:
   image: ghcr.io/cirruslabs/android-sdk:34
   needs: []
   script:
+    - apt-get update -y && apt-get install -y wget unzip
+    - wget -q https://services.gradle.org/distributions/gradle-8.4-bin.zip
+    - unzip -q gradle-8.4-bin.zip
+    - export PATH=$PWD/gradle-8.4/bin:$PATH
     - cd android
     - gradle assembleDebug --stacktrace
     - mkdir -p ../dist
