@@ -83,6 +83,7 @@ public class MainActivity extends AppCompatActivity {
             updateUI();
             Toast.makeText(this, "SYNTHOS Validator Stopped", Toast.LENGTH_SHORT).show();
         } else {
+            requestBatteryOptimizationExemption();
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(serviceIntent);
             } else {

@@ -1,5 +1,6 @@
 package com.synthoscollective.node;
 
+import android.app.AlarmManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -8,9 +9,11 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
+import android.os.SystemClock;
 import android.util.Log;
 
 import androidx.annotation.Nullable;
@@ -42,8 +45,10 @@ import java.util.concurrent.TimeUnit;
 public class NodeForegroundService extends Service {
     private static final String TAG = "SynthosNodeService";
     public static final String ACTION_STATUS_UPDATE = "com.synthoscollective.node.STATUS_UPDATE";
+    public static final String ACTION_HEARTBEAT_PULSE = "com.synthoscollective.node.HEARTBEAT_PULSE";
     public static final String CHANNEL_ID = "synthos_validator_channel";
     public static final int NOTIFICATION_ID = 2026;
+    private static final int ALARM_REQ_CODE = 4040;
 
     private static final String RELAY_URL = "https://82-29-54-7.sslip.io";
     private static final int HEARTBEAT_INTERVAL_SEC = 15;
@@ -55,6 +60,7 @@ public class NodeForegroundService extends Service {
     public static String nodeId = "";
 
     private PowerManager.WakeLock wakeLock;
+    private WifiManager.WifiLock wifiLock;
     private ScheduledExecutorService executor;
     private Ed25519PrivateKeyParameters privateKey;
     private String publicKeyHex = "";
@@ -65,15 +71,43 @@ public class NodeForegroundService extends Service {
         createNotificationChannel();
         initOrLoadKeys();
 
-        PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
-        if (powerManager != null) {
-            wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SynthosNode::ValidatorLock");
-            wakeLock.acquire();
+        // 1. CPU WakeLock - Non reference counted so it never drops accidentally
+        try {
+            PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            if (powerManager != null) {
+                wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SynthosNode::ValidatorCpuLock");
+                wakeLock.setReferenceCounted(false);
+                wakeLock.acquire();
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to acquire CPU WakeLock: " + e.getMessage());
+        }
+
+        // 2. High-Performance Wi-Fi Lock - Prevents Android from putting Wi-Fi radio to sleep
+        try {
+            WifiManager wifiManager = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+            if (wifiManager != null) {
+                int mode = WifiManager.WIFI_MODE_FULL_HIGH_PERF;
+                wifiLock = wifiManager.createWifiLock(mode, "SynthosNode::ValidatorWifiLock");
+                wifiLock.setReferenceCounted(false);
+                wifiLock.acquire();
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to acquire Wi-Fi Lock: " + e.getMessage());
         }
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent != null && ACTION_HEARTBEAT_PULSE.equals(intent.getAction())) {
+            // Hardware Alarm triggered to pierce Android deep Doze mode
+            if (isRunning) {
+                triggerPulseAsync();
+                scheduleNextAlarm();
+            }
+            return START_STICKY;
+        }
+
         if (!isRunning) {
             isRunning = true;
             startTime = System.currentTimeMillis();
@@ -81,12 +115,53 @@ public class NodeForegroundService extends Service {
 
             executor = Executors.newSingleThreadScheduledExecutor();
             executor.scheduleWithFixedDelay(this::runHeartbeatCycle, 0, HEARTBEAT_INTERVAL_SEC, TimeUnit.SECONDS);
+
+            // Hardware alarm failsafe (runs every 15s to keep heartbeat alive even if executor sleeps)
+            scheduleNextAlarm();
         }
         return START_STICKY;
     }
 
-    private void runHeartbeatCycle() {
+    private void scheduleNextAlarm() {
         try {
+            AlarmManager alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+            if (alarmManager == null) return;
+
+            Intent intent = new Intent(this, NodeForegroundService.class);
+            intent.setAction(ACTION_HEARTBEAT_PULSE);
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                flags |= PendingIntent.FLAG_IMMUTABLE;
+            }
+            PendingIntent pi = PendingIntent.getService(this, ALARM_REQ_CODE, intent, flags);
+
+            long triggerAt = SystemClock.elapsedRealtime() + (HEARTBEAT_INTERVAL_SEC * 1000L);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi);
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                alarmManager.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi);
+            } else {
+                alarmManager.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Alarm schedule: " + e.getMessage());
+        }
+    }
+
+    private void triggerPulseAsync() {
+        new Thread(() -> {
+            try {
+                runHeartbeatCycle();
+            } catch (Exception ignored) {}
+        }).start();
+    }
+
+    private synchronized void runHeartbeatCycle() {
+        try {
+            // Refresh locks if somehow lost
+            if (wakeLock != null && !wakeLock.isHeld()) wakeLock.acquire();
+            if (wifiLock != null && !wifiLock.isHeld()) wifiLock.acquire();
+
             // 1. Fetch chain tip
             JSONObject status = httpGet(RELAY_URL + "/status");
             long height = 0;
@@ -99,8 +174,8 @@ public class NodeForegroundService extends Service {
                 currentHeight = height;
             }
 
-            // 2. Register node if needed
-            if (heartbeatCount == 0 || heartbeatCount % 100 == 0) {
+            // 2. Register node if first time or every 50 heartbeats
+            if (heartbeatCount == 0 || heartbeatCount % 50 == 0) {
                 JSONObject regPayload = new JSONObject();
                 regPayload.put("publicId", nodeId);
                 regPayload.put("public_key", publicKeyHex);
@@ -248,12 +323,14 @@ public class NodeForegroundService extends Service {
     }
 
     private JSONObject httpGet(String urlStr) {
+        HttpURLConnection conn = null;
         try {
             URL url = new URL(urlStr);
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("GET");
             conn.setConnectTimeout(8000);
             conn.setReadTimeout(8000);
+            conn.setRequestProperty("Connection", "close");
             if (conn.getResponseCode() == 200) {
                 BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
                 StringBuilder sb = new StringBuilder();
@@ -262,25 +339,33 @@ public class NodeForegroundService extends Service {
                 reader.close();
                 return new JSONObject(sb.toString());
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
         return null;
     }
 
     private boolean httpPost(String urlStr, String jsonBody) {
+        HttpURLConnection conn = null;
         try {
             URL url = new URL(urlStr);
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("POST");
             conn.setConnectTimeout(8000);
             conn.setReadTimeout(8000);
             conn.setRequestProperty("Content-Type", "application/json");
+            conn.setRequestProperty("Connection", "close");
             conn.setDoOutput(true);
             try (OutputStream os = conn.getOutputStream()) {
                 os.write(jsonBody.getBytes(StandardCharsets.UTF_8));
             }
             int code = conn.getResponseCode();
             return code >= 200 && code < 300;
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
         return false;
     }
 
@@ -308,8 +393,25 @@ public class NodeForegroundService extends Service {
         if (executor != null) {
             executor.shutdownNow();
         }
+        try {
+            AlarmManager alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+            if (alarmManager != null) {
+                Intent intent = new Intent(this, NodeForegroundService.class);
+                intent.setAction(ACTION_HEARTBEAT_PULSE);
+                int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    flags |= PendingIntent.FLAG_IMMUTABLE;
+                }
+                PendingIntent pi = PendingIntent.getService(this, ALARM_REQ_CODE, intent, flags);
+                alarmManager.cancel(pi);
+            }
+        } catch (Exception ignored) {}
+
         if (wakeLock != null && wakeLock.isHeld()) {
             wakeLock.release();
+        }
+        if (wifiLock != null && wifiLock.isHeld()) {
+            wifiLock.release();
         }
         broadcastUpdate();
         super.onDestroy();
