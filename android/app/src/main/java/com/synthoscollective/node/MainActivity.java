@@ -89,7 +89,6 @@ public class MainActivity extends AppCompatActivity {
             } else {
                 startService(serviceIntent);
             }
-            NodeForegroundService.isRunning = true;
             updateUI();
             Toast.makeText(this, "SYNTHOS Validator Started (0.5% CPU)", Toast.LENGTH_SHORT).show();
         }

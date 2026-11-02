@@ -108,17 +108,21 @@ public class NodeForegroundService extends Service {
             return START_STICKY;
         }
 
-        if (!isRunning) {
-            isRunning = true;
+        // Initialize and start background loop
+        isRunning = true;
+        if (startTime == 0) {
             startTime = System.currentTimeMillis();
-            startForeground(NOTIFICATION_ID, buildNotification("SYNTHOS Node Initializing..."));
+        }
+        startForeground(NOTIFICATION_ID, buildNotification("SYNTHOS Node Initializing..."));
 
+        if (executor == null || executor.isShutdown()) {
             executor = Executors.newSingleThreadScheduledExecutor();
             executor.scheduleWithFixedDelay(this::runHeartbeatCycle, 0, HEARTBEAT_INTERVAL_SEC, TimeUnit.SECONDS);
-
-            // Hardware alarm failsafe (runs every 15s to keep heartbeat alive even if executor sleeps)
-            scheduleNextAlarm();
         }
+
+        // Hardware alarm failsafe (runs every 15s to keep heartbeat alive even if executor sleeps)
+        scheduleNextAlarm();
+        broadcastUpdate();
         return START_STICKY;
     }
 
@@ -390,6 +394,7 @@ public class NodeForegroundService extends Service {
     @Override
     public void onDestroy() {
         isRunning = false;
+        startTime = 0;
         if (executor != null) {
             executor.shutdownNow();
         }

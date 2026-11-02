@@ -151,6 +151,78 @@ func TestApplyBlockEconomics_UnresolvableProposerBurnsFeeEntirely(t *testing.T) 
 	}
 }
 
+
+// TestApplyBlockEconomics_CreditsTreasuryWhenConfigured verifies that when
+// TreasuryAddress is configured in genesis/state, all transaction fee rewards
+// flow directly into the Protocol Treasury rather than the individual proposer.
+func TestApplyBlockEconomics_CreditsTreasuryWhenConfigured(t *testing.T) {
+	senderPub, senderPriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	senderAddr := AddressFromPublicKey(senderPub)
+	treasuryAddr := Address("0xtreasury0000000000000000000000000000000")
+
+	g := Genesis{
+		ChainID:  "test-chain",
+		Alloc:    map[Address]uint64{senderAddr: 1_000},
+		Metadata: map[string]any{"treasury_address": string(treasuryAddr)},
+	}
+	c, err := NewChain(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	proposerPub, proposerPriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proposerID := "synthos-validator-1"
+	proposerAddr := AddressFromPublicKey(proposerPub)
+	c.SetValidatorSet(map[string]ed25519.PublicKey{proposerID: proposerPub}, 1)
+
+	tx := Tx{
+		ChainID: c.TransactionChainID(),
+		From:    senderAddr,
+		To:      senderAddr,
+		Amount:  1,
+		Fee:     100,
+		Nonce:   0,
+	}
+	tx.PublicKey = "0x" + bytesToHex(senderPub)
+	if err := tx.Sign(senderPriv); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SubmitTx(tx); err != nil {
+		t.Fatalf("SubmitTx: %v", err)
+	}
+
+	b, err := c.BuildBlock(proposerID, "", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.ComputeHash(); err != nil {
+		t.Fatal(err)
+	}
+	b.ProposerSignature = "0x" + bytesToHex(ed25519.Sign(proposerPriv, []byte(b.Hash)))
+	b.QuorumSignatures = map[string]string{
+		proposerID: "0x" + bytesToHex(ed25519.Sign(proposerPriv, b.QuorumApprovalMessage())),
+	}
+	if err := c.FinalizeBlock(b); err != nil {
+		t.Fatalf("FinalizeBlock: %v", err)
+	}
+
+	treasuryBalance := c.State.Get(treasuryAddr).Balance
+	proposerBalance := c.State.Get(proposerAddr).Balance
+	if treasuryBalance == 0 {
+		t.Fatalf("expected treasury to receive fee reward, got %d", treasuryBalance)
+	}
+	if proposerBalance != 0 {
+		t.Fatalf("expected individual proposer to receive 0 direct fees under treasury model, got %d", proposerBalance)
+	}
+	t.Logf("treasury correctly received %d fees, individual proposer received 0 direct fees", treasuryBalance)
+}
+
 func bytesToHex(b []byte) string {
 	const hexdigits = "0123456789abcdef"
 	out := make([]byte, len(b)*2)

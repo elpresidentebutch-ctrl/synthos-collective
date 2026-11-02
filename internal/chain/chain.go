@@ -980,19 +980,34 @@ func applyBlockEconomics(st *State, txs []Tx, proposerAddr Address) error {
 			return fmt.Errorf("block fee overflow: %w", err)
 		}
 	}
-	if totalFees == 0 || proposerAddr == "" {
+	if totalFees == 0 {
 		return nil
 	}
 
 	burnAmount := (totalFees * BURN_PERCENT) / 100
 	rewardAmount := totalFees - burnAmount
-	proposer := st.Get(proposerAddr)
-	nextBalance, err := safeAdd(proposer.Balance, rewardAmount)
-	if err != nil {
-		return fmt.Errorf("proposer reward overflow: %w", err)
+	if rewardAmount == 0 {
+		return nil
 	}
-	proposer.Balance = nextBalance
-	st.Set(proposerAddr, proposer)
+
+	// Treasury-Centric Model: All protocol transaction fees flow directly into the
+	// decentralized Protocol Treasury (st.TreasuryAddress) to build reserve backing
+	// for the SYNTHOS ecosystem and fund programmatic validator staking disbursements.
+	recipientAddr := st.TreasuryAddress
+	if recipientAddr == "" {
+		recipientAddr = proposerAddr
+	}
+	if recipientAddr == "" {
+		return nil
+	}
+
+	recipient := st.Get(recipientAddr)
+	nextBalance, err := safeAdd(recipient.Balance, rewardAmount)
+	if err != nil {
+		return fmt.Errorf("fee reward overflow: %w", err)
+	}
+	recipient.Balance = nextBalance
+	st.Set(recipientAddr, recipient)
 	return nil
 }
 
