@@ -47,6 +47,28 @@ public class MainActivity extends AppCompatActivity {
     private final BroadcastReceiver updateReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
+            if (intent != null) {
+                if (intent.hasExtra("isRunning")) {
+                    NodeForegroundService.isRunning = intent.getBooleanExtra("isRunning", NodeForegroundService.isRunning);
+                }
+                if (intent.hasExtra("heartbeats")) {
+                    NodeForegroundService.heartbeatCount = intent.getLongExtra("heartbeats", NodeForegroundService.heartbeatCount);
+                }
+                if (intent.hasExtra("height")) {
+                    NodeForegroundService.currentHeight = intent.getLongExtra("height", NodeForegroundService.currentHeight);
+                }
+                if (intent.hasExtra("nodeId")) {
+                    String nId = intent.getStringExtra("nodeId");
+                    if (nId != null && !nId.isEmpty()) NodeForegroundService.nodeId = nId;
+                }
+                if (intent.hasExtra("startTime")) {
+                    long st = intent.getLongExtra("startTime", 0);
+                    if (st > 0) NodeForegroundService.startTime = st;
+                }
+                if (intent.hasExtra("identityDecryptionFailed")) {
+                    NodeForegroundService.identityDecryptionFailed = intent.getBooleanExtra("identityDecryptionFailed", false);
+                }
+            }
             updateUI();
         }
     };
@@ -81,12 +103,17 @@ public class MainActivity extends AppCompatActivity {
         if (NodeForegroundService.isRunning) {
             stopService(serviceIntent);
             NodeForegroundService.isRunning = false;
+            NodeForegroundService.startTime = 0;
             prefs.edit().putBoolean(BootReceiver.PREF_NODE_ENABLED, false).apply();
             updateUI();
             Toast.makeText(this, "SYNTHOS Candidate Node Stopped", Toast.LENGTH_SHORT).show();
         } else {
             requestBatteryOptimizationExemption();
             prefs.edit().putBoolean(BootReceiver.PREF_NODE_ENABLED, true).apply();
+            NodeForegroundService.isRunning = true;
+            if (NodeForegroundService.startTime == 0) {
+                NodeForegroundService.startTime = System.currentTimeMillis();
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(serviceIntent);
             } else {
@@ -136,6 +163,7 @@ public class MainActivity extends AppCompatActivity {
         uptimeHandler.postDelayed(new Runnable() {
             @Override
             public void run() {
+                updateUI();
                 if (NodeForegroundService.isRunning && NodeForegroundService.startTime > 0) {
                     long diff = System.currentTimeMillis() - NodeForegroundService.startTime;
                     long seconds = (diff / 1000) % 60;

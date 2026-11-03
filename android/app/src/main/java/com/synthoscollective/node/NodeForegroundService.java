@@ -9,6 +9,7 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ServiceInfo;
 import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.IBinder;
@@ -126,7 +127,11 @@ public class NodeForegroundService extends Service {
         if (startTime == 0) {
             startTime = System.currentTimeMillis();
         }
-        startForeground(NOTIFICATION_ID, buildNotification("SYNTHOS Node Initializing..."));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, buildNotification("SYNTHOS Node Initializing..."), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+        } else {
+            startForeground(NOTIFICATION_ID, buildNotification("SYNTHOS Node Initializing..."));
+        }
 
         if (executor == null || executor.isShutdown()) {
             executor = Executors.newSingleThreadScheduledExecutor();
@@ -146,14 +151,27 @@ public class NodeForegroundService extends Service {
 
             Intent intent = new Intent(this, NodeForegroundService.class);
             intent.setAction(ACTION_HEARTBEAT_PULSE);
+            intent.setPackage(getPackageName());
             int flags = PendingIntent.FLAG_UPDATE_CURRENT;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 flags |= PendingIntent.FLAG_IMMUTABLE;
             }
-            PendingIntent pi = PendingIntent.getService(this, ALARM_REQ_CODE, intent, flags);
+
+            PendingIntent pi;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                pi = PendingIntent.getForegroundService(this, ALARM_REQ_CODE, intent, flags);
+            } else {
+                pi = PendingIntent.getService(this, ALARM_REQ_CODE, intent, flags);
+            }
 
             long triggerAt = SystemClock.elapsedRealtime() + (HEARTBEAT_INTERVAL_SEC * 1000L);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                if (alarmManager.canScheduleExactAlarms()) {
+                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi);
+                } else {
+                    alarmManager.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi);
+                }
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 alarmManager.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi);
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
                 alarmManager.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi);
@@ -167,9 +185,21 @@ public class NodeForegroundService extends Service {
 
     private void triggerPulseAsync() {
         new Thread(() -> {
+            PowerManager.WakeLock pulseLock = null;
             try {
+                PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+                if (pm != null) {
+                    pulseLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SynthosNode::PulseLock");
+                    pulseLock.acquire(25000L);
+                }
                 runHeartbeatCycle();
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                Log.w(TAG, "Pulse execution: " + e.getMessage());
+            } finally {
+                if (pulseLock != null && pulseLock.isHeld()) {
+                    try { pulseLock.release(); } catch (Exception ignored) {}
+                }
+            }
         }).start();
     }
 
@@ -291,6 +321,7 @@ public class NodeForegroundService extends Service {
 
     private void broadcastUpdate() {
         Intent intent = new Intent(ACTION_STATUS_UPDATE);
+        intent.setPackage(getPackageName());
         intent.putExtra("isRunning", isRunning);
         intent.putExtra("heartbeats", heartbeatCount);
         intent.putExtra("height", currentHeight);
@@ -519,16 +550,21 @@ public class NodeForegroundService extends Service {
             conn.setRequestMethod("GET");
             conn.setConnectTimeout(8000);
             conn.setReadTimeout(8000);
+            conn.setRequestProperty("User-Agent", "SynthosAndroidNode/1.0");
             conn.setRequestProperty("Connection", "close");
-            if (conn.getResponseCode() == 200) {
+            int respCode = conn.getResponseCode();
+            if (respCode == 200) {
                 BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
                 StringBuilder sb = new StringBuilder();
                 String line;
                 while ((line = reader.readLine()) != null) sb.append(line);
                 reader.close();
                 return new JSONObject(sb.toString());
+            } else {
+                Log.w(TAG, "httpGet failed with code " + respCode + " for " + urlStr);
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            Log.e(TAG, "httpGet error for " + urlStr + ": " + e.getMessage());
         } finally {
             if (conn != null) conn.disconnect();
         }
@@ -543,6 +579,7 @@ public class NodeForegroundService extends Service {
             conn.setRequestMethod("POST");
             conn.setConnectTimeout(8000);
             conn.setReadTimeout(8000);
+            conn.setRequestProperty("User-Agent", "SynthosAndroidNode/1.0");
             conn.setRequestProperty("Content-Type", "application/json");
             conn.setRequestProperty("Connection", "close");
             conn.setDoOutput(true);
@@ -550,8 +587,13 @@ public class NodeForegroundService extends Service {
                 os.write(jsonBody.getBytes(StandardCharsets.UTF_8));
             }
             int code = conn.getResponseCode();
-            return code >= 200 && code < 300;
-        } catch (Exception ignored) {
+            if (code >= 200 && code < 300) {
+                return true;
+            } else {
+                Log.w(TAG, "httpPost failed with code " + code + " for " + urlStr);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "httpPost error for " + urlStr + ": " + e.getMessage());
         } finally {
             if (conn != null) conn.disconnect();
         }
