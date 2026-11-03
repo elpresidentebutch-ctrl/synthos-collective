@@ -205,3 +205,10 @@ scratch/*.local.txt
 scratch/*.local.json
 
 cometapp/vendor/
+
+# Android build outputs
+android/.gradle/
+android/build/
+android/app/build/
+android/*.keystore
+dist/

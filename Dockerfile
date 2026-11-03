@@ -26,6 +26,7 @@ RUN apk add --no-cache ca-certificates su-exec \
 COPY --from=build /out/rpcnode /out/devnet /out/synthosd /out/synthos-comet /out/cloudless-registry /usr/local/bin/
 COPY --from=build /out/downloads/ /downloads/
 COPY website/ /website/
+RUN cp -f /website/downloads/synthos-node.apk /downloads/synthos-node.apk 2>/dev/null || true
 # The RPC/validator binaries load genesis and node configuration from /config
 # when deployed as containers.
 COPY config/*.json /config/
