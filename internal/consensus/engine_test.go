@@ -720,4 +720,3 @@ func TestProposalProcessor_ABCIInvariants(t *testing.T) {
 		t.Fatal("expected error on proposal timestamp drifting into future")
 	}
 }
-

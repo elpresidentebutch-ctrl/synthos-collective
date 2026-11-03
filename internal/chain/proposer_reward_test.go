@@ -151,7 +151,6 @@ func TestApplyBlockEconomics_UnresolvableProposerBurnsFeeEntirely(t *testing.T) 
 	}
 }
 
-
 // TestApplyBlockEconomics_CreditsTreasuryWhenConfigured verifies that when
 // TreasuryAddress is configured in genesis/state, all transaction fee rewards
 // flow directly into the Protocol Treasury rather than the individual proposer.

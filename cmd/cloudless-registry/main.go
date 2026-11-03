@@ -696,7 +696,7 @@ func monthlyRewardAmount(now time.Time) uint64 {
 		return base
 	}
 	yearsSince := now.Sub(halvingStart).Hours() / (24 * 365.25)
-	halvings := int(yearsSince / 2.0) + 1
+	halvings := int(yearsSince/2.0) + 1
 	for i := 0; i < halvings; i++ {
 		base /= 2
 		if base == 0 {
@@ -1364,14 +1364,14 @@ func (s *server) handleAPINodeHeartbeat(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var body struct {
-		NodeID       string   `json:"node_id"`
-		NodeIDCamel  string   `json:"nodeId"`
-		Height       int64    `json:"height"`
-		Tip          string   `json:"tip"`
-		StateRoot    string   `json:"state_root"`
-		StateRootAlt string   `json:"stateRoot"`
-		Timestamp    string   `json:"timestamp"`
-		Nonce        string   `json:"nonce"`
+		NodeID             string   `json:"node_id"`
+		NodeIDCamel        string   `json:"nodeId"`
+		Height             int64    `json:"height"`
+		Tip                string   `json:"tip"`
+		StateRoot          string   `json:"state_root"`
+		StateRootAlt       string   `json:"stateRoot"`
+		Timestamp          string   `json:"timestamp"`
+		Nonce              string   `json:"nonce"`
 		Capabilities       []string `json:"capabilities"`
 		Signature          string   `json:"signature"`
 		Endpoint           string   `json:"endpoint"`
@@ -1891,11 +1891,11 @@ func (s *server) handleAPIValidatorsStaking(w http.ResponseWriter, r *http.Reque
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":                       true,
-		"minimum_validator_bond":   validatorMinimumBondSYN,
-		"total_locked":             totalLocked,
-		"authorizing_set":          authorizing,
-		"validators":               validators,
+		"ok":                        true,
+		"minimum_validator_bond":    validatorMinimumBondSYN,
+		"total_locked":              totalLocked,
+		"authorizing_set":           authorizing,
+		"validators":                validators,
 		"early_access_purchase_url": "https://82-29-54-7.sslip.io/early-access",
 	})
 }
@@ -1996,28 +1996,28 @@ func (s *server) handleAPIEarlyAccessConfig(w http.ResponseWriter, r *http.Reque
 	saleOpen := strings.ToLower(strings.TrimSpace(env("SYNTHOS_EARLY_ACCESS_SALE_OPEN", "true"))) != "false"
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":                        true,
-		"saleOpen":                  saleOpen,
-		"saleStatus":                map[bool]string{true: "open — early adopter & validator stake tranche active", false: "closed — sale on hold"}[saleOpen],
-		"walletOnboarding":          true,
-		"configured":                saleOpen,
-		"paymentRails":              saleOpen,
-		"paymentIntentUrl":          "/api/early-access/payment-intents",
-		"validatorStakeUrl":         "/api/validators/stake",
-		"minimumValidatorBondSyn":   validatorMinimumBondSYN,
-		"minimumValidatorBondUsd":   "$1,000",
-		"chainId":                   chainID,
-		"chainName":                 env("SYNTHOS_EARLY_ACCESS_CHAIN_NAME", "SYNTHOS"),
-		"rpcUrls":                   splitCSV(env("SYNTHOS_EARLY_ACCESS_RPC_URLS", "https://82-29-54-7.sslip.io")),
-		"saleContract":              saleContract,
-		"complianceRegistry":        complianceRegistry,
-		"treasuryWallet":            env("SYNTHOS_EARLY_ACCESS_TREASURY_WALLET", "0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2"),
-		"distributionAgent":         distributor,
-		"tokenPriceUsd":             "0.10",
-		"activeTrancheSyn":          "250,000,000",
-		"maxTrancheUsd":             "$25,000,000",
-		"maxTrancheValueUsd":        "25000000",
-		"campaignReserveSyn":        "1,750,000,000",
+		"ok":                      true,
+		"saleOpen":                saleOpen,
+		"saleStatus":              map[bool]string{true: "open — early adopter & validator stake tranche active", false: "closed — sale on hold"}[saleOpen],
+		"walletOnboarding":        true,
+		"configured":              saleOpen,
+		"paymentRails":            saleOpen,
+		"paymentIntentUrl":        "/api/early-access/payment-intents",
+		"validatorStakeUrl":       "/api/validators/stake",
+		"minimumValidatorBondSyn": validatorMinimumBondSYN,
+		"minimumValidatorBondUsd": "$1,000",
+		"chainId":                 chainID,
+		"chainName":               env("SYNTHOS_EARLY_ACCESS_CHAIN_NAME", "SYNTHOS"),
+		"rpcUrls":                 splitCSV(env("SYNTHOS_EARLY_ACCESS_RPC_URLS", "https://82-29-54-7.sslip.io")),
+		"saleContract":            saleContract,
+		"complianceRegistry":      complianceRegistry,
+		"treasuryWallet":          env("SYNTHOS_EARLY_ACCESS_TREASURY_WALLET", "0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2"),
+		"distributionAgent":       distributor,
+		"tokenPriceUsd":           "0.10",
+		"activeTrancheSyn":        "250,000,000",
+		"maxTrancheUsd":           "$25,000,000",
+		"maxTrancheValueUsd":      "25000000",
+		"campaignReserveSyn":      "1,750,000,000",
 		"communitySourceBucket": env(
 			"SYNTHOS_EARLY_ACCESS_SOURCE_BUCKET",
 			"COMMUNITY_EARLY_ADOPTER_CAMPAIGNS",
@@ -2549,6 +2549,11 @@ func (s *server) handleSilentNodeBinary(w http.ResponseWriter, r *http.Request) 
 			if fallbackURL == "" {
 				fallbackURL = "https://github.com/elpresidentebutch-ctrl/synthos-collective/releases/latest/download/synthos-node.apk"
 			}
+			http.Redirect(w, r, fallbackURL, http.StatusTemporaryRedirect)
+			return
+		}
+		if name == "SHA256SUMS" {
+			fallbackURL := "https://github.com/elpresidentebutch-ctrl/synthos-collective/releases/latest/download/SHA256SUMS"
 			http.Redirect(w, r, fallbackURL, http.StatusTemporaryRedirect)
 			return
 		}

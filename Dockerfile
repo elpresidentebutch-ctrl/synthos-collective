@@ -17,11 +17,12 @@ RUN mkdir -p /out/downloads \
   && GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/downloads/synthos-node-linux-amd64 ./cmd/silentnode \
   && GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o /out/downloads/synthos-node-linux-arm64 ./cmd/silentnode \
   && GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o /out/downloads/synthos-node-darwin-arm64 ./cmd/silentnode \
-  && GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/downloads/synthos-node-darwin-amd64 ./cmd/silentnode \
-  && cd /out/downloads && sha256sum * > SHA256SUMS
+  && GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/downloads/synthos-node-darwin-amd64 ./cmd/silentnode
 
 FROM alpine:3.19
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates \
+  && addgroup -g 10001 -S synthos \
+  && adduser -u 10001 -S synthos -G synthos
 COPY --from=build /out/rpcnode /out/devnet /out/synthosd /out/synthos-comet /out/cloudless-registry /usr/local/bin/
 COPY --from=build /out/downloads/ /downloads/
 COPY website/ /website/
@@ -33,6 +34,8 @@ ENV SYNTHOS_EARLY_ACCESS_WIDGET_PATH=/website/assets/early-access-sale.js
 ENV GOMEMLIMIT=256MiB
 ENV GOGC=30
 ENV SYNTHOS_MAX_HOT_BLOCKS=250
-RUN mkdir -p /data
+RUN mkdir -p /data /downloads \
+  && chown -R synthos:synthos /data /downloads /website /config
+USER synthos
 EXPOSE 8080
 CMD ["/usr/local/bin/cloudless-registry"]

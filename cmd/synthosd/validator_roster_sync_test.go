@@ -77,7 +77,7 @@ func TestMergeValidatorRoster_SkipsSelfEmptyAndMalformedEntries(t *testing.T) {
 	hexKey, _ := mustPubKeyHex(t)
 	roster := []rosterEntry{
 		{NodeID: "self", PublicKey: hexKey, Reachable: true, PublicURL: "https://self.example.com"}, // self -- skip
-		{NodeID: "", PublicKey: hexKey},                                                             // empty id -- skip
+		{NodeID: "", PublicKey: hexKey}, // empty id -- skip
 		{NodeID: "bad-key", PublicKey: "not-hex", Reachable: true, PublicURL: "https://bad.example.com"},
 		{NodeID: "short-key", PublicKey: "aabbcc", Reachable: true, PublicURL: "https://short.example.com"},
 	}

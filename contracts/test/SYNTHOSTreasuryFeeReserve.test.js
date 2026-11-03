@@ -247,6 +247,63 @@ describe("SYNTHOSTreasuryFeeReserve", function () {
     });
   });
 
+  describe("sweepSurplusTokens", function () {
+    let otherToken;
+
+    beforeEach(async function () {
+      const MockERC20 = await ethers.getContractFactory("MockERC20");
+      otherToken = await MockERC20.deploy("Random Token", "RND", owner.address, ethers.parseUnits("1000", 18));
+      await otherToken.waitForDeployment();
+    });
+
+    it("sweeps plain transferred SYN that was not accounted for in reserves", async function () {
+      // 1. Fee deposit of 1000 SYN: burn 100, validator 700, ecosystem 200 (accounted = 900)
+      await treasuryReserve.connect(feePayer).depositProtocolFees(FEE_AMOUNT);
+
+      // 2. Someone accidentally plain-transfers 50 SYN directly to the treasury contract
+      const accidentalAmount = ethers.parseUnits("50", 18);
+      await synToken.transfer(await treasuryReserve.getAddress(), accidentalAmount);
+
+      const preBalance = await synToken.balanceOf(ecosystemRecipient.address);
+
+      // 3. Sweep surplus SYN: exactly 50 SYN is swept, leaving accounted reserves intact
+      await expect(
+        treasuryReserve.connect(owner).sweepSurplusTokens(await synToken.getAddress(), ecosystemRecipient.address)
+      ).to.emit(treasuryReserve, "SurplusTokensSwept")
+        .withArgs(await synToken.getAddress(), ecosystemRecipient.address, accidentalAmount, (val) => val > 0n);
+
+      expect(await synToken.balanceOf(ecosystemRecipient.address)).to.equal(preBalance + accidentalAmount);
+      // Verify accounted reserves are untouched
+      expect(await treasuryReserve.validatorReserveBalance()).to.equal(ethers.parseUnits("700", 18));
+      expect(await treasuryReserve.ecosystemReserveBalance()).to.equal(ethers.parseUnits("200", 18));
+    });
+
+    it("reverts if attempting to sweep SYN when there is no unallocated surplus", async function () {
+      await treasuryReserve.connect(feePayer).depositProtocolFees(FEE_AMOUNT);
+      await expect(
+        treasuryReserve.connect(owner).sweepSurplusTokens(await synToken.getAddress(), ecosystemRecipient.address)
+      ).to.be.revertedWith("No surplus SYN to sweep");
+    });
+
+    it("sweeps non-SYN third-party ERC20 tokens sent to the contract", async function () {
+      const sendAmount = ethers.parseUnits("250", 18);
+      await otherToken.transfer(await treasuryReserve.getAddress(), sendAmount);
+
+      await expect(
+        treasuryReserve.connect(owner).sweepSurplusTokens(await otherToken.getAddress(), ecosystemRecipient.address)
+      ).to.emit(treasuryReserve, "SurplusTokensSwept")
+        .withArgs(await otherToken.getAddress(), ecosystemRecipient.address, sendAmount, (val) => val > 0n);
+
+      expect(await otherToken.balanceOf(ecosystemRecipient.address)).to.equal(sendAmount);
+    });
+
+    it("rejects unauthorized sweep caller", async function () {
+      await expect(
+        treasuryReserve.connect(unauthorized).sweepSurplusTokens(await synToken.getAddress(), ecosystemRecipient.address)
+      ).to.be.revertedWith("Caller is not authorized");
+    });
+  });
+
   describe("Administrative & Configuration Functions", function () {
     it("sets stakingContract and emits StakingContractUpdated", async function () {
       await expect(treasuryReserve.connect(owner).setStakingContract(stakingContract.address))

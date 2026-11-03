@@ -82,4 +82,3 @@ func keepSystemAwakeAllowScreenSleep() {
 		_ = exec.Command("caffeinate", "-i", "-w", fmt.Sprintf("%d", os.Getpid())).Start()
 	}
 }
-

@@ -15,7 +15,6 @@ import (
 	"strconv"
 	"strings"
 
-
 	abcitypes "github.com/cometbft/cometbft/abci/types"
 
 	"synthos-collective/cometapp/app"
@@ -123,7 +122,6 @@ func newestBlock(dir string) (*chain.Block, bool) {
 	}
 	return &b, true
 }
-
 
 // Totals summarizes where every SYN in a state is.
 type Totals struct {

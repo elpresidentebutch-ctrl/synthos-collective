@@ -763,13 +763,13 @@ func (s *Server) handleDEXSwap(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tx := chain.Tx{
-		ChainID:   s.Chain.TxChainID,
-		From:      derivedFrom,
-		To:        chain.PoolAddress(assetID),
-		Amount:    req.AmountIn,
-		Fee:       chain.MIN_FEE,
-		Nonce:     s.Chain.State.GetNextNonce(derivedFrom),
-		AssetID:   txAssetID,
+		ChainID: s.Chain.TxChainID,
+		From:    derivedFrom,
+		To:      chain.PoolAddress(assetID),
+		Amount:  req.AmountIn,
+		Fee:     chain.MIN_FEE,
+		Nonce:   s.Chain.State.GetNextNonce(derivedFrom),
+		AssetID: txAssetID,
 		Metadata: []chain.KeyValuePair{
 			{Key: "type", Value: "dex_swap"},
 			{Key: "asset_id", Value: assetID},
@@ -1006,13 +1006,13 @@ func (s *Server) handleDEXIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tx := chain.Tx{
-		ChainID:   s.Chain.TxChainID,
-		From:      derivedFrom,
-		To:        derivedFrom,
-		Amount:    req.Amount,
-		Fee:       chain.MIN_FEE,
-		Nonce:     s.Chain.State.GetNextNonce(derivedFrom),
-		AssetID:   assetID,
+		ChainID: s.Chain.TxChainID,
+		From:    derivedFrom,
+		To:      derivedFrom,
+		Amount:  req.Amount,
+		Fee:     chain.MIN_FEE,
+		Nonce:   s.Chain.State.GetNextNonce(derivedFrom),
+		AssetID: assetID,
 		Metadata: []chain.KeyValuePair{
 			{Key: "type", Value: "asset_issue"},
 			{Key: "asset_id", Value: assetID},

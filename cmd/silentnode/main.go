@@ -50,31 +50,31 @@ var cliForeground bool
 var cliPayoutAddress string
 
 type nodeKey struct {
-	NodeID     string `json:"node_id"`
-	PublicKey  string `json:"public_key"`
-	PrivateKey string `json:"private_key"`
-	CreatedAt  string `json:"created_at"`
+	NodeID        string `json:"node_id"`
+	PublicKey     string `json:"public_key"`
+	PrivateKey    string `json:"private_key"`
+	CreatedAt     string `json:"created_at"`
 	Format        string `json:"format"`
 	PayoutAddress string `json:"payout_address,omitempty"`
 }
 
 type silentNode struct {
-	NodeID              string   `json:"node_id"`
-	PublicKey           string   `json:"public_key"`
-	HardwareCommitment  string   `json:"hardware_commitment"`
-	Mode                string   `json:"mode"`
-	StartedAt           string   `json:"started_at"`
-	PID                 int      `json:"pid"`
-	HeartbeatCount      uint64   `json:"heartbeat_count"`
-	BlocksValidated     uint64   `json:"blocks_validated"`
-	VotesCast           uint64   `json:"votes_cast"`
-	LastNonce           string   `json:"last_nonce"`
-	LastTip             string   `json:"last_tip"`
-	LastStateRoot       string   `json:"last_state_root"`
-	LastHeight          int64    `json:"last_height"`
-	RelayURLs           []string `json:"relay_urls"`
-	LastRelayOK         []string `json:"last_relay_ok"`
-	LastRelayFailed     []string `json:"last_relay_failed"`
+	NodeID              string    `json:"node_id"`
+	PublicKey           string    `json:"public_key"`
+	HardwareCommitment  string    `json:"hardware_commitment"`
+	Mode                string    `json:"mode"`
+	StartedAt           string    `json:"started_at"`
+	PID                 int       `json:"pid"`
+	HeartbeatCount      uint64    `json:"heartbeat_count"`
+	BlocksValidated     uint64    `json:"blocks_validated"`
+	VotesCast           uint64    `json:"votes_cast"`
+	LastNonce           string    `json:"last_nonce"`
+	LastTip             string    `json:"last_tip"`
+	LastStateRoot       string    `json:"last_state_root"`
+	LastHeight          int64     `json:"last_height"`
+	RelayURLs           []string  `json:"relay_urls"`
+	LastRelayOK         []string  `json:"last_relay_ok"`
+	LastRelayFailed     []string  `json:"last_relay_failed"`
 	StatusPath          string    `json:"status_path"`
 	KeyPath             string    `json:"key_path"`
 	RealSignedHeartbeat bool      `json:"real_signed_heartbeat"`
@@ -283,10 +283,10 @@ func loadOrCreateNodeKey() (nodeKey, ed25519.PrivateKey, bool, error) {
 		nodeID = "syn-" + hex.EncodeToString(h[:6])
 	}
 	key := nodeKey{
-		NodeID:     nodeID,
-		PublicKey:  hex.EncodeToString(publicKey),
-		PrivateKey: hex.EncodeToString(privateKey),
-		CreatedAt:  time.Now().UTC().Format(time.RFC3339),
+		NodeID:        nodeID,
+		PublicKey:     hex.EncodeToString(publicKey),
+		PrivateKey:    hex.EncodeToString(privateKey),
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
 		Format:        "synthos-validating-ed25519-v1",
 		PayoutAddress: cliPayoutAddress,
 	}
@@ -441,13 +441,13 @@ func heartbeat(ctx context.Context, relayURL string, node *silentNode, privateKe
 	message := canonicalHeartbeatMessage(node.NodeID, node.LastHeight, node.LastTip, node.LastStateRoot, timestamp, node.LastNonce)
 	signature := ed25519.Sign(privateKey, []byte(message))
 	payload := map[string]any{
-		"node_id":      node.NodeID,
-		"height":       node.LastHeight,
-		"tip":          node.LastTip,
-		"state_root":   node.LastStateRoot,
-		"timestamp":    timestamp,
-		"nonce":        node.LastNonce,
-		"signature":    hex.EncodeToString(signature),
+		"node_id":          node.NodeID,
+		"height":           node.LastHeight,
+		"tip":              node.LastTip,
+		"state_root":       node.LastStateRoot,
+		"timestamp":        timestamp,
+		"nonce":            node.LastNonce,
+		"signature":        hex.EncodeToString(signature),
 		"capabilities":     coreCapabilities,
 		"payout_address":   node.PayoutAddress,
 		"operator_address": node.PayoutAddress,

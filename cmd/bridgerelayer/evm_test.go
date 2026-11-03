@@ -150,7 +150,7 @@ func TestProofFromSynBurnedLog(t *testing.T) {
 	log := evmLog{
 		Topics: []string{
 			synBurnedForNativeReleaseTopic,
-			"0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", // burnId
+			"0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",   // burnId
 			"0x0000000000000000000000005555555555555555555555555555555555555555", // sender
 		},
 		Data:            data,

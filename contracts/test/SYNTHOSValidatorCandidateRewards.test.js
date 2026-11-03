@@ -34,9 +34,11 @@ describe("SYNTHOSValidatorCandidateRewards", function () {
   describe("Candidate Registration", function () {
     it("allows a validator candidate to register", async function () {
       const nodeKey = ethers.keccak256(ethers.toUtf8Bytes("node-key-candidate-1"));
+      const expectedTime = (await time.latest()) + 1;
+      await time.setNextBlockTimestamp(expectedTime);
       await expect(rewardsContract.connect(candidate1).registerCandidate(nodeKey))
         .to.emit(rewardsContract, "CandidateRegistered")
-        .withArgs(candidate1.address, nodeKey, await time.latest() + 1);
+        .withArgs(candidate1.address, nodeKey, expectedTime);
 
       const candidateData = await rewardsContract.getCandidate(candidate1.address);
       expect(candidateData.operator).to.equal(candidate1.address);

@@ -192,4 +192,3 @@ func TestNetworkStatus_PrunesInactivePeersAndComputesAccurateMajority(t *testing
 		t.Errorf("majority_reachable = %v, want %v", got, want)
 	}
 }
-

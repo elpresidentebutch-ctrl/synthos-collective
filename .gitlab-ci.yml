@@ -53,13 +53,21 @@ android-apk-build:
     - export PATH=$PWD/gradle-8.4/bin:$PATH
     - cd android
     - |
-      if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
-        echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > app/release.keystore
-        export ANDROID_KEYSTORE_FILE=release.keystore
+      if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+        echo "ERROR: ANDROID_KEYSTORE_BASE64 secret is not configured in GitLab CI/CD Variables."
+        echo "A persistent release keystore is required to build signed, updateable release APKs."
+        exit 1
       fi
+      echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > app/release.keystore
+      export ANDROID_KEYSTORE_FILE=release.keystore
     - gradle assembleRelease --stacktrace
     - mkdir -p ../dist
-    - cp app/build/outputs/apk/release/app-release.apk ../dist/synthos-node.apk
+    - |
+      if [ ! -f app/build/outputs/apk/release/app-release.apk ]; then
+        echo "ERROR: Release APK was not generated at expected path."
+        exit 1
+      fi
+      cp app/build/outputs/apk/release/app-release.apk ../dist/synthos-node.apk
   artifacts:
     name: synthos-node-apk
     paths:

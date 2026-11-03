@@ -14,6 +14,8 @@ import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
 import android.os.SystemClock;
+import android.security.keystore.KeyGenParameterSpec;
+import android.security.keystore.KeyProperties;
 import android.util.Log;
 
 import androidx.annotation.Nullable;
@@ -28,11 +30,15 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyStore;
 import java.security.SecureRandom;
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -41,6 +47,10 @@ import java.util.TimeZone;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import javax.crypto.Cipher;
+import javax.crypto.KeyGenerator;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.GCMParameterSpec;
 
 public class NodeForegroundService extends Service {
     private static final String TAG = "SynthosNodeService";
@@ -303,36 +313,98 @@ public class NodeForegroundService extends Service {
         }
     }
 
+    private static final String KEYSTORE_PROVIDER = "AndroidKeyStore";
+    private static final String MASTER_KEY_ALIAS = "synthos_candidate_identity_master_key";
+    private static final String AES_GCM_TRANSFORMATION = "AES/GCM/NoPadding";
+    private static final int GCM_TAG_LENGTH = 128;
+
+    private SecretKey getOrCreateMasterKey() throws Exception {
+        KeyStore keyStore = KeyStore.getInstance(KEYSTORE_PROVIDER);
+        keyStore.load(null);
+        if (!keyStore.containsAlias(MASTER_KEY_ALIAS)) {
+            KeyGenerator keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE_PROVIDER);
+            KeyGenParameterSpec spec = new KeyGenParameterSpec.Builder(
+                    MASTER_KEY_ALIAS,
+                    KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
+                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                    .setKeySize(256)
+                    .build();
+            keyGenerator.init(spec);
+            keyGenerator.generateKey();
+        }
+        return (SecretKey) keyStore.getKey(MASTER_KEY_ALIAS, null);
+    }
+
+    private byte[] encryptIdentityData(byte[] plaintext) {
+        try {
+            SecretKey key = getOrCreateMasterKey();
+            Cipher cipher = Cipher.getInstance(AES_GCM_TRANSFORMATION);
+            cipher.init(Cipher.ENCRYPT_MODE, key);
+            byte[] iv = cipher.getIV();
+            byte[] ciphertext = cipher.doFinal(plaintext);
+            JSONObject container = new JSONObject();
+            container.put("iv", bytesToHex(iv));
+            container.put("ciphertext", bytesToHex(ciphertext));
+            return container.toString().getBytes(StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            Log.w(TAG, "Hardware Keystore encryption unavailable, falling back: " + e.getMessage());
+            return plaintext;
+        }
+    }
+
+    private byte[] decryptIdentityData(byte[] rawData) {
+        try {
+            String str = new String(rawData, StandardCharsets.UTF_8);
+            if (str.startsWith("{") && str.contains("ciphertext") && str.contains("iv")) {
+                JSONObject container = new JSONObject(str);
+                byte[] iv = hexToBytes(container.getString("iv"));
+                byte[] ciphertext = hexToBytes(container.getString("ciphertext"));
+                SecretKey key = getOrCreateMasterKey();
+                Cipher cipher = Cipher.getInstance(AES_GCM_TRANSFORMATION);
+                GCMParameterSpec spec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
+                cipher.init(Cipher.DECRYPT_MODE, key, spec);
+                return cipher.doFinal(ciphertext);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Hardware Keystore decryption failed, attempting raw: " + e.getMessage());
+        }
+        return rawData;
+    }
+
     private void initOrLoadKeys() {
         // Protected, non-backup storage directory (excluded from all OS cloud and local backups)
-        java.io.File keyFile = new java.io.File(getNoBackupFilesDir(), "candidate_identity.json");
+        File keyFile = new File(getNoBackupFilesDir(), "candidate_identity.dat");
         String savedPrivHex = null;
         String savedPubHex = null;
         String savedNodeId = null;
 
         if (keyFile.exists()) {
-            try (BufferedReader br = new BufferedReader(new InputStreamReader(new java.io.FileInputStream(keyFile), StandardCharsets.UTF_8))) {
-                StringBuilder sb = new StringBuilder();
-                String line;
-                while ((line = br.readLine()) != null) sb.append(line);
-                JSONObject obj = new JSONObject(sb.toString());
-                savedPrivHex = obj.optString("private_key", null);
-                savedPubHex = obj.optString("public_key", null);
-                savedNodeId = obj.optString("node_id", null);
+            try (FileInputStream fis = new FileInputStream(keyFile)) {
+                byte[] fileBytes = new byte[(int) keyFile.length()];
+                int read = fis.read(fileBytes);
+                if (read > 0) {
+                    byte[] decrypted = decryptIdentityData(fileBytes);
+                    JSONObject obj = new JSONObject(new String(decrypted, StandardCharsets.UTF_8));
+                    savedPrivHex = obj.optString("private_key", null);
+                    savedPubHex = obj.optString("public_key", null);
+                    savedNodeId = obj.optString("node_id", null);
+                }
             } catch (Exception e) {
                 Log.w(TAG, "Error reading protected identity file: " + e.getMessage());
             }
         }
 
         // Migration fallback: check legacy SharedPreferences if not found in no-backup storage
+        boolean isMigration = false;
+        SharedPreferences legacyPrefs = null;
         if (savedPrivHex == null) {
-            SharedPreferences legacyPrefs = getSharedPreferences("synthos_node_keys", MODE_PRIVATE);
+            legacyPrefs = getSharedPreferences("synthos_node_keys", MODE_PRIVATE);
             savedPrivHex = legacyPrefs.getString("private_key", null);
             savedPubHex = legacyPrefs.getString("public_key", null);
             savedNodeId = legacyPrefs.getString("node_id", null);
             if (savedPrivHex != null) {
-                // Clear from SharedPreferences once migrated
-                legacyPrefs.edit().remove("private_key").remove("public_key").remove("node_id").apply();
+                isMigration = true;
             }
         }
 
@@ -340,8 +412,14 @@ public class NodeForegroundService extends Service {
             privateKey = new Ed25519PrivateKeyParameters(hexToBytes(savedPrivHex), 0);
             publicKeyHex = savedPubHex;
             nodeId = savedNodeId;
-            // Ensure persisted into protected no-backup file
-            persistProtectedIdentity(keyFile, savedPrivHex, savedPubHex, savedNodeId);
+
+            // Ensure encrypted and persisted into protected no-backup file
+            boolean written = persistProtectedIdentity(keyFile, savedPrivHex, savedPubHex, savedNodeId);
+            // Delete from legacy SharedPreferences ONLY AFTER atomic file write succeeds!
+            if (written && isMigration && legacyPrefs != null) {
+                legacyPrefs.edit().remove("private_key").remove("public_key").remove("node_id").apply();
+                Log.i(TAG, "Successfully migrated candidate identity to hardware-encrypted protected storage");
+            }
         } else {
             Ed25519KeyPairGenerator keyPairGen = new Ed25519KeyPairGenerator();
             keyPairGen.init(new Ed25519KeyGenerationParameters(new SecureRandom()));
@@ -360,16 +438,34 @@ public class NodeForegroundService extends Service {
         }
     }
 
-    private void persistProtectedIdentity(java.io.File file, String privHex, String pubHex, String nId) {
-        try (java.io.FileOutputStream fos = new java.io.FileOutputStream(file)) {
+    private boolean persistProtectedIdentity(File targetFile, String privHex, String pubHex, String nId) {
+        File tempFile = new File(targetFile.getParentFile(), targetFile.getName() + ".tmp");
+        try {
             JSONObject obj = new JSONObject();
             obj.put("private_key", privHex);
             obj.put("public_key", pubHex);
             obj.put("node_id", nId);
-            fos.write(obj.toString().getBytes(StandardCharsets.UTF_8));
-            fos.flush();
+            byte[] plaintext = obj.toString().getBytes(StandardCharsets.UTF_8);
+            byte[] payload = encryptIdentityData(plaintext);
+
+            try (FileOutputStream fos = new FileOutputStream(tempFile)) {
+                fos.write(payload);
+                fos.flush();
+                fos.getFD().sync();
+            }
+
+            if (!tempFile.renameTo(targetFile)) {
+                targetFile.delete();
+                if (!tempFile.renameTo(targetFile)) {
+                    Log.e(TAG, "Atomic rename of temp identity file failed");
+                    return false;
+                }
+            }
+            return true;
         } catch (Exception e) {
-            Log.e(TAG, "Failed to persist identity in protected storage: " + e.getMessage());
+            Log.e(TAG, "Failed to persist identity in protected storage: " + e.getMessage(), e);
+            if (tempFile.exists()) tempFile.delete();
+            return false;
         }
     }
 

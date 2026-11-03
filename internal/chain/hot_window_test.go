@@ -407,4 +407,3 @@ func TestHotWindow_BlocksRange(t *testing.T) {
 		t.Fatalf("expected 5 blocks for unbounded range, got %d", len(resAll))
 	}
 }
-

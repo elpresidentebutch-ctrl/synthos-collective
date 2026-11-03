@@ -55,6 +55,7 @@ contract SYNTHOSTreasuryFeeReserve is Ownable, Pausable, ReentrancyGuard {
     event ValidatorEpochFunded(address indexed stakingContract, uint256 amount, uint256 timestamp);
     event EcosystemDisbursed(address indexed recipient, uint256 amount, uint256 timestamp);
     event NativeFeeDisbursed(address indexed recipient, uint256 amount, uint256 timestamp);
+    event SurplusTokensSwept(address indexed token, address indexed recipient, uint256 amount, uint256 timestamp);
     event FeesBurned(uint256 amount, uint256 timestamp);
     event AllocationUpdated(uint256 burnBps, uint256 validatorReserveBps, uint256 ecosystemGrowthBps);
     event StakingContractUpdated(address indexed newStakingContract);
@@ -162,6 +163,33 @@ contract SYNTHOSTreasuryFeeReserve is Ownable, Pausable, ReentrancyGuard {
         require(success, "Native transfer failed");
 
         emit NativeFeeDisbursed(recipient, amount, block.timestamp);
+    }
+
+    /**
+     * @dev Sweeps surplus or accidentally transferred ERC20 tokens.
+     * Prevents plain ERC20 transfers from becoming permanently trapped in the contract.
+     * For synToken, it only permits sweeping the unallocated surplus balance
+     * beyond what is accounted for in validatorReserveBalance and ecosystemReserveBalance.
+     * @param token Address of the token to sweep
+     * @param recipient Destination address for the swept tokens
+     */
+    function sweepSurplusTokens(address token, address recipient) external onlyGovernanceOrOwner nonReentrant {
+        require(token != address(0), "Invalid token address");
+        require(recipient != address(0), "Invalid recipient address");
+
+        uint256 sweepAmount;
+        if (token == address(synToken)) {
+            uint256 currentBalance = synToken.balanceOf(address(this));
+            uint256 accountedReserves = validatorReserveBalance + ecosystemReserveBalance;
+            require(currentBalance > accountedReserves, "No surplus SYN to sweep");
+            sweepAmount = currentBalance - accountedReserves;
+        } else {
+            sweepAmount = IERC20(token).balanceOf(address(this));
+            require(sweepAmount > 0, "No token balance to sweep");
+        }
+
+        IERC20(token).safeTransfer(recipient, sweepAmount);
+        emit SurplusTokensSwept(token, recipient, sweepAmount, block.timestamp);
     }
 
     /**

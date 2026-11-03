@@ -103,10 +103,10 @@ type SlashingTracker struct {
 	mu              sync.RWMutex
 	params          SlashingParams
 	events          []SlashingEvent
-	validatorStakes map[string]uint64    // Validator -> stake amount
-	jailedUntil     map[string]time.Time // Validator -> jail end time
-	signedBlocks    map[string][]uint64  // Validator -> heights of blocks signed (for double-sign detection)
-	missedBlocks    map[string]uint64    // Validator -> count of blocks missed in window
+	validatorStakes map[string]uint64            // Validator -> stake amount
+	jailedUntil     map[string]time.Time         // Validator -> jail end time
+	signedBlocks    map[string][]uint64          // Validator -> heights of blocks signed (for double-sign detection)
+	missedBlocks    map[string]uint64            // Validator -> count of blocks missed in window
 	votedHashes     map[string]map[uint64]string // Validator -> height -> first block hash voted for (equivocation detection)
 
 	// executeSlash, when set, is called with the real penalty amount right
