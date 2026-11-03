@@ -77,20 +77,23 @@ public class MainActivity extends AppCompatActivity {
 
     private void toggleNodeService() {
         Intent serviceIntent = new Intent(this, NodeForegroundService.class);
+        android.content.SharedPreferences prefs = getSharedPreferences("synthos_node_keys", MODE_PRIVATE);
         if (NodeForegroundService.isRunning) {
             stopService(serviceIntent);
             NodeForegroundService.isRunning = false;
+            prefs.edit().putBoolean(BootReceiver.PREF_NODE_ENABLED, false).apply();
             updateUI();
-            Toast.makeText(this, "SYNTHOS Validator Stopped", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "SYNTHOS Candidate Node Stopped", Toast.LENGTH_SHORT).show();
         } else {
             requestBatteryOptimizationExemption();
+            prefs.edit().putBoolean(BootReceiver.PREF_NODE_ENABLED, true).apply();
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(serviceIntent);
             } else {
                 startService(serviceIntent);
             }
             updateUI();
-            Toast.makeText(this, "SYNTHOS Validator Started (0.5% CPU)", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "SYNTHOS Candidate Node Started (0.5% CPU)", Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -100,13 +103,13 @@ public class MainActivity extends AppCompatActivity {
             statusIndicator.setBackgroundColor(ContextCompat.getColor(this, R.color.accent_teal));
             statusText.setText(R.string.status_validating);
             statusText.setTextColor(ContextCompat.getColor(this, R.color.accent_teal));
-            toggleButton.setText("STOP VALIDATOR NODE");
+            toggleButton.setText("STOP CANDIDATE NODE");
             toggleButton.setBackgroundTintList(ContextCompat.getColorStateList(this, R.color.danger_red));
         } else {
             statusIndicator.setBackgroundColor(ContextCompat.getColor(this, R.color.danger_red));
             statusText.setText(R.string.status_stopped);
             statusText.setTextColor(ContextCompat.getColor(this, R.color.danger_red));
-            toggleButton.setText("START VALIDATOR NODE");
+            toggleButton.setText("START CANDIDATE NODE");
             toggleButton.setBackgroundTintList(ContextCompat.getColorStateList(this, R.color.accent_teal));
         }
 

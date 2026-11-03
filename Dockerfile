@@ -7,17 +7,23 @@ COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 COPY cometapp/ ./cometapp/
 ENV CGO_ENABLED=0
-RUN go build -trimpath -ldflags="-s -w" -o /out/rpcnode ./cmd/rpcnode \
+RUN mkdir -p /out/downloads \
+  && go build -trimpath -ldflags="-s -w" -o /out/rpcnode ./cmd/rpcnode \
   && go build -trimpath -ldflags="-s -w" -o /out/devnet ./cmd/devnet \
   && go build -trimpath -ldflags="-s -w" -o /out/synthosd ./cmd/synthosd \
   && go build -trimpath -ldflags="-s -w" -o /out/cloudless-registry ./cmd/cloudless-registry \
   && (cd cometapp && go build -trimpath -ldflags="-s -w" -o /out/synthos-comet .) \
-  && GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/silentnode.exe ./cmd/silentnode
+  && GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/downloads/silentnode.exe ./cmd/silentnode \
+  && GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/downloads/synthos-node-linux-amd64 ./cmd/silentnode \
+  && GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o /out/downloads/synthos-node-linux-arm64 ./cmd/silentnode \
+  && GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o /out/downloads/synthos-node-darwin-arm64 ./cmd/silentnode \
+  && GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/downloads/synthos-node-darwin-amd64 ./cmd/silentnode \
+  && cd /out/downloads && sha256sum * > SHA256SUMS
 
 FROM alpine:3.19
 RUN apk add --no-cache ca-certificates
 COPY --from=build /out/rpcnode /out/devnet /out/synthosd /out/synthos-comet /out/cloudless-registry /usr/local/bin/
-COPY --from=build /out/silentnode.exe /downloads/silentnode.exe
+COPY --from=build /out/downloads/ /downloads/
 COPY website/ /website/
 # The RPC/validator binaries load genesis and node configuration from /config
 # when deployed as containers.

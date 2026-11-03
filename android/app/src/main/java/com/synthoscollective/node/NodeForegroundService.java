@@ -64,6 +64,8 @@ public class NodeForegroundService extends Service {
     private ScheduledExecutorService executor;
     private Ed25519PrivateKeyParameters privateKey;
     private String publicKeyHex = "";
+    private volatile boolean isRegistered = false;
+    private final java.util.concurrent.atomic.AtomicBoolean isHeartbeatRunning = new java.util.concurrent.atomic.AtomicBoolean(false);
 
     @Override
     public void onCreate() {
@@ -161,6 +163,9 @@ public class NodeForegroundService extends Service {
     }
 
     private synchronized void runHeartbeatCycle() {
+        if (!isHeartbeatRunning.compareAndSet(false, true)) {
+            return;
+        }
         try {
             // Refresh locks if somehow lost
             if (wakeLock != null && !wakeLock.isHeld()) wakeLock.acquire();
@@ -178,8 +183,8 @@ public class NodeForegroundService extends Service {
                 currentHeight = height;
             }
 
-            // 2. Register node if first time or every 50 heartbeats
-            if (heartbeatCount == 0 || heartbeatCount % 50 == 0) {
+            // 2. Register node if not yet registered or periodically every 50 heartbeats
+            if (!isRegistered || heartbeatCount % 50 == 0) {
                 JSONObject regPayload = new JSONObject();
                 regPayload.put("publicId", nodeId);
                 regPayload.put("public_key", publicKeyHex);
@@ -199,7 +204,9 @@ public class NodeForegroundService extends Service {
                 caps.put("enforcer");
                 caps.put("citizen");
                 regPayload.put("capabilities", caps);
-                httpPost(RELAY_URL + "/api/nodes/register", regPayload.toString());
+                if (httpPost(RELAY_URL + "/api/nodes/register", regPayload.toString())) {
+                    isRegistered = true;
+                }
             }
 
             // 3. Build & sign heartbeat
@@ -240,7 +247,7 @@ public class NodeForegroundService extends Service {
             httpPost(RELAY_URL + "/api/nodes/heartbeat", hbPayload.toString());
 
             // 4. Update notification & broadcast
-            String notifText = String.format(Locale.US, "Validating Height #%d • Heartbeats: %d", currentHeight, heartbeatCount);
+            String notifText = String.format(Locale.US, "Reporting Uptime Height #%d • Heartbeats: %d", currentHeight, heartbeatCount);
             NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
             if (nm != null) {
                 nm.notify(NOTIFICATION_ID, buildNotification(notifText));
@@ -249,6 +256,8 @@ public class NodeForegroundService extends Service {
             broadcastUpdate();
         } catch (Exception e) {
             Log.e(TAG, "Heartbeat cycle error: " + e.getMessage(), e);
+        } finally {
+            isHeartbeatRunning.set(false);
         }
     }
 
@@ -270,7 +279,7 @@ public class NodeForegroundService extends Service {
         );
 
         return new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("SYNTHOS Node Active (0.5% CPU)")
+                .setContentTitle("SYNTHOS Candidate Node Active (0.5% CPU)")
                 .setContentText(text)
                 .setSmallIcon(R.drawable.ic_launcher_foreground)
                 .setContentIntent(pendingIntent)
@@ -283,10 +292,10 @@ public class NodeForegroundService extends Service {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
                     CHANNEL_ID,
-                    "SYNTHOS Validator Channel",
+                    "SYNTHOS Candidate Node Channel",
                     NotificationManager.IMPORTANCE_LOW
             );
-            channel.setDescription("Shows active background validation status");
+            channel.setDescription("Shows active Proof-of-Uptime candidate status");
             NotificationManager manager = getSystemService(NotificationManager.class);
             if (manager != null) {
                 manager.createNotificationChannel(channel);
@@ -295,15 +304,44 @@ public class NodeForegroundService extends Service {
     }
 
     private void initOrLoadKeys() {
-        SharedPreferences prefs = getSharedPreferences("synthos_node_keys", MODE_PRIVATE);
-        String savedPrivHex = prefs.getString("private_key", null);
-        String savedPubHex = prefs.getString("public_key", null);
-        String savedNodeId = prefs.getString("node_id", null);
+        // Protected, non-backup storage directory (excluded from all OS cloud and local backups)
+        java.io.File keyFile = new java.io.File(getNoBackupFilesDir(), "candidate_identity.json");
+        String savedPrivHex = null;
+        String savedPubHex = null;
+        String savedNodeId = null;
+
+        if (keyFile.exists()) {
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(new java.io.FileInputStream(keyFile), StandardCharsets.UTF_8))) {
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = br.readLine()) != null) sb.append(line);
+                JSONObject obj = new JSONObject(sb.toString());
+                savedPrivHex = obj.optString("private_key", null);
+                savedPubHex = obj.optString("public_key", null);
+                savedNodeId = obj.optString("node_id", null);
+            } catch (Exception e) {
+                Log.w(TAG, "Error reading protected identity file: " + e.getMessage());
+            }
+        }
+
+        // Migration fallback: check legacy SharedPreferences if not found in no-backup storage
+        if (savedPrivHex == null) {
+            SharedPreferences legacyPrefs = getSharedPreferences("synthos_node_keys", MODE_PRIVATE);
+            savedPrivHex = legacyPrefs.getString("private_key", null);
+            savedPubHex = legacyPrefs.getString("public_key", null);
+            savedNodeId = legacyPrefs.getString("node_id", null);
+            if (savedPrivHex != null) {
+                // Clear from SharedPreferences once migrated
+                legacyPrefs.edit().remove("private_key").remove("public_key").remove("node_id").apply();
+            }
+        }
 
         if (savedPrivHex != null && savedPubHex != null && savedNodeId != null) {
             privateKey = new Ed25519PrivateKeyParameters(hexToBytes(savedPrivHex), 0);
             publicKeyHex = savedPubHex;
             nodeId = savedNodeId;
+            // Ensure persisted into protected no-backup file
+            persistProtectedIdentity(keyFile, savedPrivHex, savedPubHex, savedNodeId);
         } else {
             Ed25519KeyPairGenerator keyPairGen = new Ed25519KeyPairGenerator();
             keyPairGen.init(new Ed25519KeyGenerationParameters(new SecureRandom()));
@@ -318,11 +356,20 @@ public class NodeForegroundService extends Service {
             publicKeyHex = bytesToHex(pubBytes);
             nodeId = "syn-android-" + publicKeyHex.substring(0, Math.min(12, publicKeyHex.length()));
 
-            prefs.edit()
-                    .putString("private_key", bytesToHex(privBytes))
-                    .putString("public_key", publicKeyHex)
-                    .putString("node_id", nodeId)
-                    .apply();
+            persistProtectedIdentity(keyFile, bytesToHex(privBytes), publicKeyHex, nodeId);
+        }
+    }
+
+    private void persistProtectedIdentity(java.io.File file, String privHex, String pubHex, String nId) {
+        try (java.io.FileOutputStream fos = new java.io.FileOutputStream(file)) {
+            JSONObject obj = new JSONObject();
+            obj.put("private_key", privHex);
+            obj.put("public_key", pubHex);
+            obj.put("node_id", nId);
+            fos.write(obj.toString().getBytes(StandardCharsets.UTF_8));
+            fos.flush();
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to persist identity in protected storage: " + e.getMessage());
         }
     }
 
@@ -412,12 +459,16 @@ public class NodeForegroundService extends Service {
             }
         } catch (Exception ignored) {}
 
-        if (wakeLock != null && wakeLock.isHeld()) {
-            wakeLock.release();
-        }
-        if (wifiLock != null && wifiLock.isHeld()) {
-            wifiLock.release();
-        }
+        try {
+            if (wakeLock != null && wakeLock.isHeld()) {
+                wakeLock.release();
+            }
+        } catch (Exception ignored) {}
+        try {
+            if (wifiLock != null && wifiLock.isHeld()) {
+                wifiLock.release();
+            }
+        } catch (Exception ignored) {}
         broadcastUpdate();
         super.onDestroy();
     }

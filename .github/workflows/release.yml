@@ -39,6 +39,9 @@ jobs:
           - goos: linux
             goarch: amd64
             ext: ""
+          - goos: linux
+            goarch: arm64
+            ext: ""
           - goos: darwin
             goarch: arm64
             ext: ""

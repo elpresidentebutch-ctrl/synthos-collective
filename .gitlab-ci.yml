@@ -52,7 +52,11 @@ android-apk-build:
     - unzip -q gradle-8.4-bin.zip
     - export PATH=$PWD/gradle-8.4/bin:$PATH
     - cd android
-    - keytool -genkeypair -v -keystore app/synthos-release.keystore -alias synthos -keyalg RSA -keysize 2048 -validity 10000 -storepass synthos2026 -keypass synthos2026 -dname "CN=SYNTHOS Collective, O=SYNTHOS, C=US"
+    - |
+      if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+        echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > app/release.keystore
+        export ANDROID_KEYSTORE_FILE=release.keystore
+      fi
     - gradle assembleRelease --stacktrace
     - mkdir -p ../dist
     - cp app/build/outputs/apk/release/app-release.apk ../dist/synthos-node.apk

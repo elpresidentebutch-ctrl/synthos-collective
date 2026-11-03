@@ -1,7 +1,7 @@
 <resources>
-    <string name="app_name">SYNTHOS Node</string>
-    <string name="channel_name">SYNTHOS Validator Channel</string>
-    <string name="channel_desc">Maintains persistent foreground validation while screen sleeps</string>
-    <string name="status_validating">VALIDATING (0.5% CPU)</string>
+    <string name="app_name">SYNTHOS Candidate Node</string>
+    <string name="channel_name">SYNTHOS Candidate Uptime Channel</string>
+    <string name="channel_desc">Maintains persistent Proof-of-Uptime candidate reporting while screen sleeps</string>
+    <string name="status_validating">UPTIME REPORTING (0.5% CPU)</string>
     <string name="status_stopped">STOPPED</string>
 </resources>

@@ -32,12 +32,39 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
-      - name: Build Android Debug APK
+      - name: Prepare Signing Keystore from Secrets
+        id: prep-keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
+            echo "has_keystore=true" >> "$GITHUB_OUTPUT"
+            echo "Keystore successfully configured from CI secrets."
+          else
+            echo "has_keystore=false" >> "$GITHUB_OUTPUT"
+            echo "No ANDROID_KEYSTORE_BASE64 secret found; building un-signed release."
+          fi
+
+      - name: Build Android Release APK
+        env:
+          ANDROID_KEYSTORE_FILE: release.keystore
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           cd android
-          gradle assembleDebug --stacktrace
+          gradle assembleRelease --stacktrace
           mkdir -p ../dist
-          cp app/build/outputs/apk/debug/app-debug.apk ../dist/synthos-node.apk
+          cp app/build/outputs/apk/release/app-release*.apk ../dist/synthos-node.apk
+
+      - name: Verify Signed APK
+        if: steps.prep-keystore.outputs.has_keystore == 'true'
+        run: |
+          BUILD_TOOLS_VERSION=$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)
+          APKSIGNER="$ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION/apksigner"
+          echo "Verifying APK with $APKSIGNER..."
+          "$APKSIGNER" verify --verbose dist/synthos-node.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
@@ -45,8 +72,8 @@ jobs:
           name: synthos-node-apk
           path: dist/synthos-node.apk
 
-      - name: Attach APK to GitHub Release (on release)
-        if: github.event_name == 'release'
+      - name: Attach Verified Release APK to GitHub Release
+        if: github.event_name == 'release' && steps.prep-keystore.outputs.has_keystore == 'true'
         uses: softprops/action-gh-release@v2
         with:
           files: dist/synthos-node.apk

@@ -276,8 +276,9 @@ func TestGovernanceExecute_MovesRealFundsOnceQuorumReachedAndNotTwice(t *testing
 
 	treasuryAfter := f.server.Chain.State.Get("0xtreasury000000000000000000000000000000").Balance
 	recipientAfter := f.server.Chain.State.Get("0xrecipient00000000000000000000000000000").Balance
-	if treasuryBefore-treasuryAfter != 500 {
-		t.Fatalf("expected treasury debited by 500, got %d -> %d", treasuryBefore, treasuryAfter)
+	expectedDebit := uint64(500) - (chain.MIN_FEE - (chain.MIN_FEE*chain.BURN_PERCENT)/100)
+	if treasuryBefore-treasuryAfter != expectedDebit {
+		t.Fatalf("expected treasury debited by %d (500 payout minus fee reward), got %d -> %d", expectedDebit, treasuryBefore, treasuryAfter)
 	}
 	if recipientAfter-recipientBefore != 500 {
 		t.Fatalf("expected recipient credited by 500, got %d -> %d", recipientBefore, recipientAfter)

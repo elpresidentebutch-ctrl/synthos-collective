@@ -320,7 +320,22 @@ Before launch, the liquidity plan should clearly state:
 
 SYNTHOS allocates **13,000,000,000 SYN** to the ecosystem treasury (see the Ecosystem Treasury row in the allocation table in section 2, which this figure was previously out of sync with).
 
-The SYNTHOS treasury and governance system should control long-term ecosystem resources through a transparent process.
+The SYNTHOS treasury and governance system controls long-term ecosystem resources and protocol reserves through a transparent, decentralized process.
+
+### 12.1 Treasury-Centric Fee Model & SYNTHOSTreasuryFeeReserve
+
+To establish sound tokenomics and maintain regulatory compliance, SYNTHOS operates under a **Treasury-Centric Fee Model** implemented in the state machine and via the `SYNTHOSTreasuryFeeReserve.sol` smart contract:
+
+1. **Fee Ingestion**:
+   - 100% of network execution fees, transaction fees, and native gas route directly into the decentralized Protocol Treasury Reserve.
+   - Individual block proposers **never** skim direct commercial fees or trading dividends.
+2. **Deterministic Fee Allocation Parameters** (Default: `MAX_BPS = 10000`):
+   - **10% Deflationary Burn (`burnBps = 1000`)**: Automatically burned on deposit to the burn address (`0x...dEaD`), permanently reducing circulating SYN supply.
+   - **70% Validator Reserve (`validatorReserveBps = 7000`)**: Earmarked to fund the Validator Staking Contract (`SYNTHOSStaking.sol`) and Candidate Rewards (`SYNTHOSValidatorCandidateRewards.sol`).
+   - **20% Ecosystem Liquidity & Backing (`ecosystemGrowthBps = 2000`)**: Retained as permanent treasury reserve liquidity and cryptographic balance-sheet backing.
+3. **Programmatic Validator Disbursements**:
+   - Validators are compensated as independent infrastructure providers for verified hardware uptime, signature aggregation, and Byzantine consensus duties.
+   - Disbursements are funded programmatically via `fundValidatorEpoch` calls by Governance or authorized Keepers, preserving regulatory integrity under the Howey Test.
 
 Before public launch, SYNTHOS should define:
 

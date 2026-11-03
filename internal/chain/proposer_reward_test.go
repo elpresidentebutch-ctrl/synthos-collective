@@ -223,6 +223,88 @@ func TestApplyBlockEconomics_CreditsTreasuryWhenConfigured(t *testing.T) {
 	t.Logf("treasury correctly received %d fees, individual proposer received 0 direct fees", treasuryBalance)
 }
 
+func TestApplyBlockEconomics_ZeroFeesNoOp(t *testing.T) {
+	st := NewState()
+	st.TreasuryAddress = "0xtreasury0000000000000000000000000000000"
+	proposer := Address("0xproposer000000000000000000000000000000")
+
+	// Empty txs
+	if err := applyBlockEconomics(st, nil, proposer); err != nil {
+		t.Fatalf("unexpected error on nil txs: %v", err)
+	}
+	if bal := st.Get(st.TreasuryAddress).Balance; bal != 0 {
+		t.Fatalf("expected 0 treasury balance on empty txs, got %d", bal)
+	}
+
+	// Txs with 0 fee
+	txs := []Tx{
+		{Fee: 0},
+		{Fee: 0},
+	}
+	if err := applyBlockEconomics(st, txs, proposer); err != nil {
+		t.Fatalf("unexpected error on 0 fee txs: %v", err)
+	}
+	if bal := st.Get(st.TreasuryAddress).Balance; bal != 0 {
+		t.Fatalf("expected 0 treasury balance on 0-fee txs, got %d", bal)
+	}
+}
+
+func TestApplyBlockEconomics_FallbackToProposerWhenNoTreasury(t *testing.T) {
+	st := NewState()
+	st.TreasuryAddress = "" // No treasury configured
+	proposer := Address("0xproposer000000000000000000000000000000")
+
+	txs := []Tx{{Fee: 100}}
+	if err := applyBlockEconomics(st, txs, proposer); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// 50% burn, 50% reward to proposer
+	proposerBal := st.Get(proposer).Balance
+	if proposerBal != 50 {
+		t.Fatalf("expected proposer to receive 50, got %d", proposerBal)
+	}
+}
+
+func TestApplyBlockEconomics_BoundaryAndBurnFractions(t *testing.T) {
+	st := NewState()
+	treasury := Address("0xtreasury0000000000000000000000000000000")
+	st.TreasuryAddress = treasury
+
+	// Fee = 1: burn = (1 * 50) / 100 = 0, reward = 1 - 0 = 1
+	txs := []Tx{{Fee: 1}}
+	if err := applyBlockEconomics(st, txs, ""); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if bal := st.Get(treasury).Balance; bal != 1 {
+		t.Fatalf("expected treasury balance 1 on 1 fee, got %d", bal)
+	}
+
+	// Fee = 3: total fees = 4? Wait, this is second block, tx fee = 3
+	// burn = (3 * 50) / 100 = 1, reward = 3 - 1 = 2
+	txs = []Tx{{Fee: 3}}
+	if err := applyBlockEconomics(st, txs, ""); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Prior balance 1 + 2 = 3
+	if bal := st.Get(treasury).Balance; bal != 3 {
+		t.Fatalf("expected treasury balance 3, got %d", bal)
+	}
+}
+
+func TestApplyBlockEconomics_FeeOverflowGuarded(t *testing.T) {
+	st := NewState()
+	st.TreasuryAddress = "0xtreasury0000000000000000000000000000000"
+
+	txs := []Tx{
+		{Fee: ^uint64(0)},
+		{Fee: 1},
+	}
+	if err := applyBlockEconomics(st, txs, ""); err == nil {
+		t.Fatal("expected error on total fee overflow, got nil")
+	}
+}
+
 func bytesToHex(b []byte) string {
 	const hexdigits = "0123456789abcdef"
 	out := make([]byte, len(b)*2)

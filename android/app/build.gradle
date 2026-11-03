@@ -18,18 +18,28 @@ android {
 
     signingConfigs {
         release {
-            storeFile file("synthos-release.keystore")
-            storePassword "synthos2026"
-            keyAlias "synthos"
-            keyPassword "synthos2026"
-            v1SigningEnabled true
-            v2SigningEnabled true
+            def keystorePath = System.getenv("ANDROID_KEYSTORE_FILE") ?: project.findProperty("SYNTHOS_KEYSTORE_FILE") ?: "synthos-release.keystore"
+            def keystorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD") ?: project.findProperty("SYNTHOS_KEYSTORE_PASSWORD") ?: ""
+            def keyAliasVal = System.getenv("ANDROID_KEY_ALIAS") ?: project.findProperty("SYNTHOS_KEY_ALIAS") ?: ""
+            def keyPasswordVal = System.getenv("ANDROID_KEY_PASSWORD") ?: project.findProperty("SYNTHOS_KEY_PASSWORD") ?: ""
+
+            if (file(keystorePath).exists() && keystorePassword) {
+                storeFile file(keystorePath)
+                storePassword keystorePassword
+                keyAlias keyAliasVal
+                keyPassword keyPasswordVal
+                v1SigningEnabled true
+                v2SigningEnabled true
+            }
         }
     }
 
     buildTypes {
         release {
-            signingConfig signingConfigs.release
+            def hasSigning = signingConfigs.release.storeFile != null && signingConfigs.release.storePassword != null
+            if (hasSigning) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }

@@ -19,7 +19,7 @@ describe("SYNTHOSValidatorCandidateRewards", function () {
 
     // Deploy a mock or real SynCoin / MockERC20
     const MockERC20 = await ethers.getContractFactory("MockERC20");
-    synToken = await MockERC20.deploy("SYNTHOS", "SYN", 18, ethers.parseUnits("100000000", 18));
+    synToken = await MockERC20.deploy("SYNTHOS", "SYN", owner.address, ethers.parseUnits("100000000", 18));
     await synToken.waitForDeployment();
 
     // Deploy SYNTHOSValidatorCandidateRewards

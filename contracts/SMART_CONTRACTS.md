@@ -413,6 +413,36 @@ distributor.claimReward(0);
 
 ---
 
+### 5. SYNTHOSTreasuryFeeReserve
+
+**File**: `contracts/src/synthos/SYNTHOSTreasuryFeeReserve.sol`
+**Network**: SYNTHOS Chain
+**Purpose**: Central protocol fee reserve vault implementing deterministic allocation accounting.
+
+#### Features
+
+- **Direct Protocol Ingestion**: Ingests protocol transaction fees and native gas.
+- **Automated Deflationary Burn**: Default 10% auto-burn to `0x...dEaD` (`burnBps = 1000`).
+- **Deterministic Allocation Accounting**: Internal accounting for `validatorReserveBalance` (70%) and `ecosystemReserveBalance` (20%).
+- **Enforced Allocation Caps**: Disbursements for validator epochs and ecosystem growth cannot exceed accumulated sub-reserve balances.
+- **Native Currency Handling**: Native gas fees received via `receive()` are tracked and disbursable via `disburseNativeFees()`.
+- **Configurable Basis Points**: Owner/Governance can re-balance allocations subject to the `MAX_BPS == 10000` (100%) invariant.
+
+#### Key Functions
+
+```solidity
+function depositProtocolFees(uint256 amount) external
+function fundValidatorEpoch(uint256 amount) external
+function disburseEcosystemGrowth(address recipient, uint256 amount) external
+function disburseNativeFees(address payable recipient, uint256 amount) external
+function setAllocation(uint256 _burnBps, uint256 _validatorReserveBps, uint256 _ecosystemGrowthBps) external
+function setStakingContract(address _stakingContract) external
+function setGovernanceContract(address _governanceContract) external
+function getReserveBalance() external view returns (uint256 synBalance, uint256 nativeBalance)
+function pause() / unpause()
+```
+---
+
 ## Deployment Guide
 
 ### Prerequisites
