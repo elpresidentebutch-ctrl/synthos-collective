@@ -16,5 +16,5 @@ This Space runs `synthosd` in Docker on Hugging Face's free tier (2 vCPUs, 16 GB
 
 ### Live Network
 - **Consensus**: 2/3 Byzantine Fault Tolerant (BFT)
-- **Primary Cluster**: `https://synthos-rpc.onrender.com`
+- **Primary Cluster**: `https://82-29-54-7.sslip.io`
 - **Chain Explorer**: `https://www.ishamwilliamsblockchains.com/explorer`

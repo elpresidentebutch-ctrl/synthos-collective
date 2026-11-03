@@ -25,7 +25,7 @@ import (
 	"synthos-collective/internal/consensus"
 )
 
-const defaultRelayURLs = "https://82-29-54-7.sslip.io,https://synthos-www.onrender.com,http://127.0.0.1:8085"
+const defaultRelayURLs = "https://82-29-54-7.sslip.io,http://127.0.0.1:8085"
 const defaultChainRPC = "https://rpc.ishamwilliamsblockchains.com"
 const heartbeatEvery = 15 * time.Second
 const provingTargetDays = 30.0
@@ -354,12 +354,11 @@ func syncRealMainnetTip(ctx context.Context, relayURLs []string, node *silentNod
 		Tip       string `json:"tip"`
 		StateRoot string `json:"state_root"`
 	}
-	endpoints := make([]string, 0, len(relayURLs)+2)
+	endpoints := make([]string, 0, len(relayURLs)+1)
 	for _, r := range relayURLs {
 		endpoints = append(endpoints, strings.TrimRight(r, "/")+"/api/chain/status")
 	}
 	endpoints = append(endpoints, defaultChainRPC+"/status")
-	endpoints = append(endpoints, "https://synthos-www.onrender.com/status")
 
 	for _, ep := range endpoints {
 		reqCtx, cancel := context.WithTimeout(ctx, 4*time.Second)

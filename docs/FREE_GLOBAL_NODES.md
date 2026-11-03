@@ -2,18 +2,14 @@
 
 This guide documents how to launch autonomous validating and immune nodes across four global cloud providers completely for free ($0.00/month).
 
-All nodes automatically connect to the primary consensus cluster (`synthos-validator-12`, `synthos-validator-13`, `synthos-rpc`), synchronize chain state, and report heartbeat proofs to `https://synthos-www.onrender.com`.
+All nodes automatically connect to the primary consensus cluster (`synthos-validator-12`, `synthos-validator-13`, `synthos-rpc`), synchronize chain state, and report heartbeat proofs to `https://82-29-54-7.sslip.io`.
 
 ---
 
-## 1. Render Multi-Region (Frankfurt & Singapore)
+## 1. Render Multi-Region (Decommissioned)
 
-- **Config**: Already defined in root `render.yaml`.
-- **Services**:
-  - `synthos-node-europe` (Region: `frankfurt`)
-  - `synthos-node-asia` (Region: `singapore`)
-- **Cost**: $0.00 (Render Free Plan).
-- **Deployment**: Automatic when `render.yaml` is deployed/synced in your Render Dashboard Blueprint.
+> [!NOTE]
+> Render hosting has been decommissioned in favor of direct VPS and sovereign node deployments to avoid split-brain state on `cloudless-registry.json` and eliminate unnecessary cloud hosting costs. Use Koyeb, Hugging Face, or Oracle Cloud below.
 
 ---
 
@@ -70,7 +66,7 @@ All nodes automatically connect to the primary consensus cluster (`synthos-valid
 Check if your new nodes are active and registered with the network:
 
 ```bash
-curl https://synthos-www.onrender.com/api/nodes
+curl https://82-29-54-7.sslip.io/api/nodes
 ```
 
 Or view the live fleet on the web dashboard:

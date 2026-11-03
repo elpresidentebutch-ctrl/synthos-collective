@@ -124,12 +124,10 @@ func main() {
 	// The old fallback here was "http://synthos-anchor-1.world:8080" -- a
 	// placeholder domain that was never registered and has never resolved,
 	// so any operator who ran this binary without setting SYNTHOS_RELAY
-	// silently talked to nothing. The real default now matches the same
-	// production backend every other entrypoint (cmd/silentnode, the
-	// installer scripts) falls back to: SYNTHOS_REGISTRY_URL/synthos-www's
-	// public host, https://synthos-www.onrender.com. SYNTHOS_RELAY still
+	// silently talked to nothing. The real default now matches the primary
+	// production backend: https://82-29-54-7.sslip.io. SYNTHOS_RELAY still
 	// overrides it for local/dev use against a different backend.
-	const defaultRelayURL = "https://synthos-www.onrender.com"
+	const defaultRelayURL = "https://82-29-54-7.sslip.io"
 	registryURL := os.Getenv("SYNTHOS_RELAY")
 	if registryURL == "" {
 		registryURL = defaultRelayURL

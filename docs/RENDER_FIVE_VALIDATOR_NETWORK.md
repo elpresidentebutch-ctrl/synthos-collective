@@ -1,6 +1,9 @@
-# SYNTHOS Render Five-Validator Network
+# SYNTHOS Render Five-Validator Network (Decommissioned)
 
-This repository's root `render.yaml` defines five persistent Render validator services:
+> [!NOTE]
+> Render hosting has been decommissioned in favor of direct VPS and sovereign node deployments to avoid split-brain state on `cloudless-registry.json` and eliminate unnecessary cloud hosting costs. This document is retained for historical architectural reference.
+
+This repository previously defined five persistent Render validator services:
 
 - `synthos-validator-11`
 - `synthos-validator-12`
@@ -8,7 +11,7 @@ This repository's root `render.yaml` defines five persistent Render validator se
 - `synthos-validator-14`
 - `synthos-validator-15`
 
-Each service runs `/usr/local/bin/synthosd`, mounts its own `/data` disk, loads a matching `/config/render-validator-XX.json`, registers with `synthos-www`, and syncs blocks with the other validators over HTTPS using `/gossip/block` and `/blocks?from=N`.
+Each service ran `/usr/local/bin/synthosd`, mounted its own `/data` disk, loaded a matching `/config/render-validator-XX.json`, registered with the primary relay, and synced blocks with the other validators over HTTPS using `/gossip/block` and `/blocks?from=N`.
 
 ## Secrets
 
@@ -16,10 +19,10 @@ Set a unique `SYNTHOS_PRIVATE_KEY` secret on every validator service for stable 
 
 ## Verify
 
-After Render finishes deploying, run:
+Run:
 
 ```bash
 node scripts/verify-render-network.mjs
 ```
 
-The network is healthy when all five endpoints return the same `height`, `tip`, and `state_root`.
+The network is healthy when all endpoints return the same `height`, `tip`, and `state_root`.

@@ -314,7 +314,7 @@ func announce(args []string) {
 	keyFile := fs.String("key", "", "key file whose address the website accepts as announcer (required)")
 	network := fs.String("network", "", "test network chain ID, e.g. synthos-testnet-2 (required)")
 	apiURL := fs.String("url", "", "the node's public https address (required)")
-	to := fs.String("to", "https://synthos-www.onrender.com/api/testnet/announce", "website endpoint")
+	to := fs.String("to", "https://82-29-54-7.sslip.io/api/testnet/announce", "website endpoint")
 	_ = fs.Parse(args)
 	if *keyFile == "" || *network == "" || *apiURL == "" {
 		fail("announce needs --key, --network and --url")

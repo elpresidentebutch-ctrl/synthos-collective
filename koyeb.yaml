@@ -25,7 +25,7 @@ services:
       - key: SYNTHOS_NODE_ID
         value: synthos-koyeb-node-1
       - key: SYNTHOS_REGISTRY_URL
-        value: https://synthos-www.onrender.com
+        value: https://82-29-54-7.sslip.io
       - key: SYNTHOS_BOOTSTRAP_IMMUNE_NODE
         value: "true"
     instance_types:

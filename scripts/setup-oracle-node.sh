@@ -56,7 +56,7 @@ ExecStart=/usr/bin/docker run --name synthos-node \
   -e SYNTHOS_CONFIG=/config/global-node.json \
   -e SYNTHOS_DATA_DIR=/data \
   -e SYNTHOS_NODE_ID=synthos-oracle-node \
-  -e SYNTHOS_REGISTRY_URL=https://synthos-www.onrender.com \
+  -e SYNTHOS_REGISTRY_URL=https://82-29-54-7.sslip.io \
   -e SYNTHOS_BOOTSTRAP_IMMUNE_NODE=true \
   synthos:latest /usr/local/bin/synthosd
 ExecStop=/usr/bin/docker stop synthos-node

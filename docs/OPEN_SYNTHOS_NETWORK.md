@@ -155,26 +155,9 @@ Invoke-RestMethod https://rpc.ishamwilliamsblockchains.com/status
 Invoke-RestMethod https://api.ishamwilliamsblockchains.com/api/early-access/config
 ```
 
-## Render Blueprint
+## Deployment (Direct Host / VPS)
 
-The repo root includes `render.yaml`, so Render can configure this repository as
-a Blueprint. In Render:
-
-1. Create a new Blueprint.
-2. Connect `elpresidentebutch-ctrl/synthos-collective`.
-3. Select branch `codex/security-foundation`.
-4. Render will read `render.yaml`.
-5. Fill the private values Render asks for:
-   - `SYNTHOS_EARLY_ACCESS_ALLOCATION_PRIVATE_KEY`
-   - `SYNTHOS_EARLY_ACCESS_ASSETS_JSON`
-
-Use your local file for those private values:
-
-```text
-.synthos/early-access-keys/early-access.env
-```
-
-Do not commit or upload that env file publicly.
+Deploy using Docker or a direct systemd service on your host or VPS. Render hosting has been decommissioned.
 
 ## Connect Website And Explorer
 

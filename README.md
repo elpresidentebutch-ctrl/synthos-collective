@@ -20,7 +20,7 @@ Status as of October 31, 2026:
 - **Native Coin**: `SYN` (fixed supply: 100,000,000,000 SYN)
 
 ### Live Services
-- **Registry & Backend Service**: `https://synthos-www.onrender.com` (deployed from `Dockerfile` via Render blueprint `render.yaml`). Serves the peer registry, node heartbeat endpoints, explorer backend, and early-access routes.
+- **Registry, Explorer & Relay Service**: `https://82-29-54-7.sslip.io` (deployed from `Dockerfile`). Serves the peer registry, candidate node heartbeat endpoints, explorer backend, and early-access routes.
 - **Public Website**: `https://www.ishamwilliamsblockchains.com`
 - **Live Explorer**: `https://82-29-54-7.sslip.io`
 
@@ -42,7 +42,6 @@ website/             Static web pages and assets served by the registry backend
 docs/                Architecture, onboarding, tokenomics, and validator runbooks
 deploy/              Deployment configurations and runbooks
 scripts/             Operational automation and helper scripts
-render.yaml          Render blueprint deployment configuration
 Dockerfile           Container build for cloudless-registry and node binaries
 src/                 Legacy Python framework prototype (archived)
 ```
@@ -70,7 +69,7 @@ go build -o synthos-comet .
 To connect to the live network as a Proof-of-Uptime candidate node without opening inbound ports:
 
 ```bash
-go run ./cmd/silentnode -id "my-node-1" -relay "https://synthos-www.onrender.com"
+go run ./cmd/silentnode -id "my-node-1" -relay "https://82-29-54-7.sslip.io"
 ```
 
 ### 3. Run the Peer Registry / Backend Locally

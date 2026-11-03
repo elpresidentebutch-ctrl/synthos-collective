@@ -14,7 +14,7 @@ COPY --from=build /src/config/*.json /config/
 ENV SYNTHOS_CONFIG=/config/global-node.json
 ENV SYNTHOS_DATA_DIR=/data
 ENV SYNTHOS_NODE_ID=synthos-hf-space-1
-ENV SYNTHOS_REGISTRY_URL=https://synthos-www.onrender.com
+ENV SYNTHOS_REGISTRY_URL=https://82-29-54-7.sslip.io
 ENV SYNTHOS_BOOTSTRAP_IMMUNE_NODE=true
 
 RUN mkdir -p /data
