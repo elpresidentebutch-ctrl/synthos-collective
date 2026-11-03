@@ -99,7 +99,13 @@ public class MainActivity extends AppCompatActivity {
 
     private void updateUI() {
         boolean running = NodeForegroundService.isRunning;
-        if (running) {
+        if (NodeForegroundService.identityDecryptionFailed) {
+            statusIndicator.setBackgroundColor(ContextCompat.getColor(this, R.color.danger_red));
+            statusText.setText("KEYSTORE LOCKED / ERROR");
+            statusText.setTextColor(ContextCompat.getColor(this, R.color.danger_red));
+            toggleButton.setText("RETRY NODE");
+            toggleButton.setBackgroundTintList(ContextCompat.getColorStateList(this, R.color.accent_teal));
+        } else if (running) {
             statusIndicator.setBackgroundColor(ContextCompat.getColor(this, R.color.accent_teal));
             statusText.setText(R.string.status_validating);
             statusText.setTextColor(ContextCompat.getColor(this, R.color.accent_teal));

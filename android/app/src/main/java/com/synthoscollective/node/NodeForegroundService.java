@@ -68,6 +68,7 @@ public class NodeForegroundService extends Service {
     public static long heartbeatCount = 0;
     public static long currentHeight = 0;
     public static String nodeId = "";
+    public static volatile boolean identityDecryptionFailed = false;
 
     private PowerManager.WakeLock wakeLock;
     private WifiManager.WifiLock wifiLock;
@@ -177,6 +178,23 @@ public class NodeForegroundService extends Service {
             return;
         }
         try {
+            // Guard: ensure signing keys are unlocked and available before doing any network cycles
+            if (privateKey == null) {
+                initOrLoadKeys();
+                if (privateKey == null) {
+                    String errorMsg = identityDecryptionFailed
+                            ? "Keystore Locked / Decryption Error (Keys Preserved)"
+                            : "Candidate Identity Not Initialized";
+                    Log.w(TAG, "Heartbeat cycle skipped: " + errorMsg);
+                    NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                    if (nm != null) {
+                        nm.notify(NOTIFICATION_ID, buildNotification("SYNTHOS Paused: " + errorMsg));
+                    }
+                    broadcastUpdate();
+                    return;
+                }
+            }
+
             // Refresh locks if somehow lost
             if (wakeLock != null && !wakeLock.isHeld()) wakeLock.acquire();
             if (wifiLock != null && !wifiLock.isHeld()) wifiLock.acquire();
@@ -278,6 +296,7 @@ public class NodeForegroundService extends Service {
         intent.putExtra("height", currentHeight);
         intent.putExtra("nodeId", nodeId);
         intent.putExtra("startTime", startTime);
+        intent.putExtra("identityDecryptionFailed", identityDecryptionFailed);
         sendBroadcast(intent);
     }
 
@@ -353,52 +372,60 @@ public class NodeForegroundService extends Service {
         }
     }
 
-    private byte[] decryptIdentityData(byte[] rawData) {
-        try {
-            String str = new String(rawData, StandardCharsets.UTF_8);
-            if (str.startsWith("{") && str.contains("ciphertext") && str.contains("iv")) {
-                JSONObject container = new JSONObject(str);
-                byte[] iv = hexToBytes(container.getString("iv"));
-                byte[] ciphertext = hexToBytes(container.getString("ciphertext"));
-                SecretKey key = getOrCreateMasterKey();
-                Cipher cipher = Cipher.getInstance(AES_GCM_TRANSFORMATION);
-                GCMParameterSpec spec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
-                cipher.init(Cipher.DECRYPT_MODE, key, spec);
-                return cipher.doFinal(ciphertext);
-            }
-        } catch (Exception e) {
-            Log.w(TAG, "Hardware Keystore decryption failed, attempting raw: " + e.getMessage());
+    private byte[] decryptIdentityData(byte[] rawData) throws Exception {
+        String str = new String(rawData, StandardCharsets.UTF_8);
+        if (str.startsWith("{") && str.contains("ciphertext") && str.contains("iv")) {
+            JSONObject container = new JSONObject(str);
+            byte[] iv = hexToBytes(container.getString("iv"));
+            byte[] ciphertext = hexToBytes(container.getString("ciphertext"));
+            SecretKey key = getOrCreateMasterKey();
+            Cipher cipher = Cipher.getInstance(AES_GCM_TRANSFORMATION);
+            GCMParameterSpec spec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
+            cipher.init(Cipher.DECRYPT_MODE, key, spec);
+            return cipher.doFinal(ciphertext);
         }
-        return rawData;
+        if (str.startsWith("{") && str.contains("private_key")) {
+            return rawData;
+        }
+        throw new IllegalStateException("Unrecognized identity file format");
     }
 
-    private void initOrLoadKeys() {
+    private synchronized void initOrLoadKeys() {
         // Protected, non-backup storage directory (excluded from all OS cloud and local backups)
         File keyFile = new File(getNoBackupFilesDir(), "candidate_identity.dat");
+        boolean keyFileExisted = keyFile.exists() && keyFile.length() > 0;
         String savedPrivHex = null;
         String savedPubHex = null;
         String savedNodeId = null;
+        boolean decryptionAttemptFailed = false;
 
-        if (keyFile.exists()) {
+        if (keyFileExisted) {
             try (FileInputStream fis = new FileInputStream(keyFile)) {
                 byte[] fileBytes = new byte[(int) keyFile.length()];
                 int read = fis.read(fileBytes);
                 if (read > 0) {
                     byte[] decrypted = decryptIdentityData(fileBytes);
+                    if (decrypted == null) {
+                        throw new IllegalStateException("Decryption returned null");
+                    }
                     JSONObject obj = new JSONObject(new String(decrypted, StandardCharsets.UTF_8));
                     savedPrivHex = obj.optString("private_key", null);
                     savedPubHex = obj.optString("public_key", null);
                     savedNodeId = obj.optString("node_id", null);
+                    if (savedPrivHex == null || savedPubHex == null || savedNodeId == null) {
+                        throw new IllegalStateException("Incomplete identity payload");
+                    }
                 }
             } catch (Exception e) {
-                Log.w(TAG, "Error reading protected identity file: " + e.getMessage());
+                decryptionAttemptFailed = true;
+                Log.e(TAG, "CRITICAL: Error reading or decrypting protected identity file: " + e.getMessage(), e);
             }
         }
 
-        // Migration fallback: check legacy SharedPreferences if not found in no-backup storage
+        // Migration fallback: check legacy SharedPreferences ONLY if keyFile never existed
         boolean isMigration = false;
         SharedPreferences legacyPrefs = null;
-        if (savedPrivHex == null) {
+        if (!keyFileExisted) {
             legacyPrefs = getSharedPreferences("synthos_node_keys", MODE_PRIVATE);
             savedPrivHex = legacyPrefs.getString("private_key", null);
             savedPubHex = legacyPrefs.getString("public_key", null);
@@ -412,29 +439,44 @@ public class NodeForegroundService extends Service {
             privateKey = new Ed25519PrivateKeyParameters(hexToBytes(savedPrivHex), 0);
             publicKeyHex = savedPubHex;
             nodeId = savedNodeId;
+            identityDecryptionFailed = false;
 
             // Ensure encrypted and persisted into protected no-backup file
-            boolean written = persistProtectedIdentity(keyFile, savedPrivHex, savedPubHex, savedNodeId);
-            // Delete from legacy SharedPreferences ONLY AFTER atomic file write succeeds!
-            if (written && isMigration && legacyPrefs != null) {
-                legacyPrefs.edit().remove("private_key").remove("public_key").remove("node_id").apply();
-                Log.i(TAG, "Successfully migrated candidate identity to hardware-encrypted protected storage");
+            if (!keyFileExisted || isMigration) {
+                boolean written = persistProtectedIdentity(keyFile, savedPrivHex, savedPubHex, savedNodeId);
+                // Delete from legacy SharedPreferences ONLY AFTER atomic file write succeeds!
+                if (written && isMigration && legacyPrefs != null) {
+                    legacyPrefs.edit().remove("private_key").remove("public_key").remove("node_id").apply();
+                    Log.i(TAG, "Successfully migrated candidate identity to hardware-encrypted protected storage");
+                }
             }
+        } else if (keyFileExisted || decryptionAttemptFailed) {
+            // SAFETY GUARANTEE: An existing identity was present on this device, but could not be decrypted.
+            // Under NO circumstance should we silently generate a new identity and overwrite the existing file!
+            identityDecryptionFailed = true;
+            Log.e(TAG, "IDENTITY PROTECTION LOCK: Existing candidate identity exists but Keystore decryption failed. Preserving file and refusing to overwrite.");
         } else {
-            Ed25519KeyPairGenerator keyPairGen = new Ed25519KeyPairGenerator();
-            keyPairGen.init(new Ed25519KeyGenerationParameters(new SecureRandom()));
-            org.bouncycastle.crypto.AsymmetricCipherKeyPair keyPair = keyPairGen.generateKeyPair();
+            // Truly a first-time clean install: neither keyFile nor legacy SharedPreferences ever existed.
+            try {
+                Ed25519KeyPairGenerator keyPairGen = new Ed25519KeyPairGenerator();
+                keyPairGen.init(new Ed25519KeyGenerationParameters(new SecureRandom()));
+                org.bouncycastle.crypto.AsymmetricCipherKeyPair keyPair = keyPairGen.generateKeyPair();
 
-            privateKey = (Ed25519PrivateKeyParameters) keyPair.getPrivate();
-            Ed25519PublicKeyParameters pubKey = (Ed25519PublicKeyParameters) keyPair.getPublic();
+                privateKey = (Ed25519PrivateKeyParameters) keyPair.getPrivate();
+                Ed25519PublicKeyParameters pubKey = (Ed25519PublicKeyParameters) keyPair.getPublic();
 
-            byte[] privBytes = privateKey.getEncoded();
-            byte[] pubBytes = pubKey.getEncoded();
+                byte[] privBytes = privateKey.getEncoded();
+                byte[] pubBytes = pubKey.getEncoded();
 
-            publicKeyHex = bytesToHex(pubBytes);
-            nodeId = "syn-android-" + publicKeyHex.substring(0, Math.min(12, publicKeyHex.length()));
+                publicKeyHex = bytesToHex(pubBytes);
+                nodeId = "syn-android-" + publicKeyHex.substring(0, Math.min(12, publicKeyHex.length()));
+                identityDecryptionFailed = false;
 
-            persistProtectedIdentity(keyFile, bytesToHex(privBytes), publicKeyHex, nodeId);
+                persistProtectedIdentity(keyFile, bytesToHex(privBytes), publicKeyHex, nodeId);
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to generate initial candidate identity: " + e.getMessage(), e);
+                identityDecryptionFailed = true;
+            }
         }
     }
 

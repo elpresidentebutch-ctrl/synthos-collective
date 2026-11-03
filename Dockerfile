@@ -20,7 +20,7 @@ RUN mkdir -p /out/downloads \
   && GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/downloads/synthos-node-darwin-amd64 ./cmd/silentnode
 
 FROM alpine:3.19
-RUN apk add --no-cache ca-certificates \
+RUN apk add --no-cache ca-certificates su-exec \
   && addgroup -g 10001 -S synthos \
   && adduser -u 10001 -S synthos -G synthos
 COPY --from=build /out/rpcnode /out/devnet /out/synthosd /out/synthos-comet /out/cloudless-registry /usr/local/bin/
@@ -29,13 +29,17 @@ COPY website/ /website/
 # The RPC/validator binaries load genesis and node configuration from /config
 # when deployed as containers.
 COPY config/*.json /config/
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
+  && mkdir -p /data /downloads \
+  && chown -R synthos:synthos /data /downloads /website /config
+
 ENV SYNTHOS_DATA_DIR=/data
 ENV SYNTHOS_EARLY_ACCESS_WIDGET_PATH=/website/assets/early-access-sale.js
 ENV GOMEMLIMIT=256MiB
 ENV GOGC=30
 ENV SYNTHOS_MAX_HOT_BLOCKS=250
-RUN mkdir -p /data /downloads \
-  && chown -R synthos:synthos /data /downloads /website /config
-USER synthos
+
 EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["/usr/local/bin/cloudless-registry"]
