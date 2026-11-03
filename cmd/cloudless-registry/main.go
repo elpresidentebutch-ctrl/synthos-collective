@@ -2558,7 +2558,7 @@ func (s *server) handleSilentNodeBinary(w http.ResponseWriter, r *http.Request) 
 		if name == "synthos-node.apk" {
 			fallbackURL := os.Getenv("SYNTHOS_APK_DOWNLOAD_URL")
 			if fallbackURL == "" {
-				fallbackURL = "https://github.com/elpresidentebutch-ctrl/synthos-collective/releases/latest/download/synthos-node.apk"
+				fallbackURL = "https://raw.githubusercontent.com/elpresidentebutch-ctrl/synthos-collective/main/website/downloads/synthos-node.apk"
 			}
 			http.Redirect(w, r, fallbackURL, http.StatusTemporaryRedirect)
 			return
