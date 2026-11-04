@@ -4,7 +4,9 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -91,5 +93,53 @@ func TestNormalizeCapabilitiesKeepsMobileCandidateTag(t *testing.T) {
 		if !want[v] {
 			t.Fatalf("unexpected capability %q survived normalization", v)
 		}
+	}
+}
+
+func TestAPIRelaysAndMobileTelemetry(t *testing.T) {
+	s := &server{
+		state: registryState{
+			Peers: map[string]peer{
+				"syn-android-test-node": {
+					Name:               "syn-android-test-node",
+					HardwareCommitment: "android-test-node",
+					Role:               "validator_candidate",
+					LastSeen:           time.Now().UnixMilli(),
+					ValidHeartbeats:    10,
+				},
+			},
+			Mailbox:  map[string][]mailboxMessage{},
+			Contacts: []contactMessage{},
+		},
+	}
+
+	snap := s.networkSnapshot(time.Now())
+	if snap.MobileNodes != 1 {
+		t.Fatalf("expected 1 mobile node in snapshot, got %d", snap.MobileNodes)
+	}
+	if snap.CandidateNodes != 1 {
+		t.Fatalf("expected 1 candidate node in snapshot, got %d", snap.CandidateNodes)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/relays", nil)
+	w := httptest.NewRecorder()
+	s.handleAPIRelays(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 from /api/relays, got %d", w.Code)
+	}
+
+	var resp struct {
+		OK          bool             `json:"ok"`
+		Relays      []map[string]any `json:"relays"`
+		MobileNodes int              `json:"mobile_nodes"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed decoding /api/relays JSON: %v", err)
+	}
+	if !resp.OK || len(resp.Relays) == 0 {
+		t.Fatalf("expected valid relays list, got: %s", w.Body.String())
+	}
+	if resp.MobileNodes != 1 {
+		t.Fatalf("expected mobile_nodes=1 in /api/relays, got %d", resp.MobileNodes)
 	}
 }

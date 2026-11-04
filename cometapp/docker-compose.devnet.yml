@@ -1,0 +1,126 @@
+version: '3.8'
+
+networks:
+  synthos-devnet:
+    driver: bridge
+
+volumes:
+  val1-data:
+  val2-data:
+  val3-data:
+  val4-data:
+
+services:
+  validator1:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    command: >
+      synthos-comet start
+      --home /data/val1
+      --p2p tcp://0.0.0.0:26656
+      --rpc tcp://0.0.0.0:26657
+      --api 0.0.0.0:8080
+      --moniker validator-1
+      --local
+      --empty-block-interval 5s
+    volumes:
+      - val1-data:/data/val1
+    ports:
+      - "26656:26656"
+      - "26657:26657"
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - synthos-devnet
+
+  validator2:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    command: >
+      synthos-comet start
+      --home /data/val2
+      --p2p tcp://0.0.0.0:26656
+      --rpc tcp://0.0.0.0:26657
+      --api 0.0.0.0:8081
+      --moniker validator-2
+      --peers validator1:26656
+      --local
+      --empty-block-interval 5s
+    volumes:
+      - val2-data:/data/val2
+    ports:
+      - "26658:26656"
+      - "26659:26657"
+      - "8081:8081"
+    depends_on:
+      validator1:
+        condition: service_healthy
+    networks:
+      - synthos-devnet
+
+  validator3:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    command: >
+      synthos-comet start
+      --home /data/val3
+      --p2p tcp://0.0.0.0:26656
+      --rpc tcp://0.0.0.0:26657
+      --api 0.0.0.0:8082
+      --moniker validator-3
+      --peers validator1:26656,validator2:26656
+      --local
+      --empty-block-interval 5s
+    volumes:
+      - val3-data:/data/val3
+    ports:
+      - "26660:26656"
+      - "26661:26657"
+      - "8082:8082"
+    depends_on:
+      validator1:
+        condition: service_healthy
+    networks:
+      - synthos-devnet
+
+  validator4:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    command: >
+      synthos-comet start
+      --home /data/val4
+      --p2p tcp://0.0.0.0:26656
+      --rpc tcp://0.0.0.0:26657
+      --api 0.0.0.0:8083
+      --moniker validator-4
+      --peers validator1:26656,validator2:26656,validator3:26656
+      --local
+      --empty-block-interval 5s
+    volumes:
+      - val4-data:/data/val4
+    ports:
+      - "26662:26656"
+      - "26663:26657"
+      - "8083:8083"
+    depends_on:
+      validator1:
+        condition: service_healthy
+    networks:
+      - synthos-devnet
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus.devnet.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    networks:
+      - synthos-devnet

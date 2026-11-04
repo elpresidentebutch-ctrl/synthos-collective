@@ -588,3 +588,26 @@ func TestVisitsSurviveRestart(t *testing.T) {
 		t.Fatal("totals changed when old days were dropped")
 	}
 }
+
+func TestHealthzAndMetricsEndpoints(t *testing.T) {
+	e := start(t, false)
+	var healthz struct {
+		Status string `json:"status"`
+		Height int64  `json:"height"`
+	}
+	if code := e.get("/healthz", &healthz); code != 200 || healthz.Status != "ok" {
+		t.Fatalf("expected /healthz 200 ok, got %d %+v", code, healthz)
+	}
+
+	req, _ := http.NewRequest(http.MethodGet, e.url+"/metrics", nil)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	body, _ := io.ReadAll(res.Body)
+	sBody := string(body)
+	if !strings.Contains(sBody, "synthos_block_height") || !strings.Contains(sBody, "synthos_validator_voting_power") {
+		t.Fatalf("expected Prometheus metrics in /metrics, got: %s", sBody)
+	}
+}

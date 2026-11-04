@@ -41,6 +41,11 @@ public class MainActivity extends AppCompatActivity {
     private TextView heightText;
     private TextView heartbeatsText;
     private TextView uptimeText;
+    private TextView rewardsText;
+    private TextView relayText;
+    private TextView relayStatusText;
+    private TextView pulseLogText;
+    private TextView latencyBadge;
     private Button toggleButton;
     private Button pinHomeButton;
     private Button batteryOptButton;
@@ -76,6 +81,20 @@ public class MainActivity extends AppCompatActivity {
                 if (intent.hasExtra("identityDecryptionFailed")) {
                     NodeForegroundService.identityDecryptionFailed = intent.getBooleanExtra("identityDecryptionFailed", false);
                 }
+                if (intent.hasExtra("activeRelay")) {
+                    String ar = intent.getStringExtra("activeRelay");
+                    if (ar != null && !ar.isEmpty()) NodeForegroundService.activeRelayUrl = ar;
+                }
+                if (intent.hasExtra("lastLatencyMs")) {
+                    NodeForegroundService.lastLatencyMs = intent.getLongExtra("lastLatencyMs", NodeForegroundService.lastLatencyMs);
+                }
+                if (intent.hasExtra("failoverCount")) {
+                    NodeForegroundService.failoverCount = intent.getIntExtra("failoverCount", NodeForegroundService.failoverCount);
+                }
+                if (intent.hasExtra("pulseLogs")) {
+                    String pl = intent.getStringExtra("pulseLogs");
+                    if (pl != null) NodeForegroundService.pulseLogsJson = pl;
+                }
             }
             updateUI();
         }
@@ -92,6 +111,11 @@ public class MainActivity extends AppCompatActivity {
         heightText = findViewById(R.id.heightText);
         heartbeatsText = findViewById(R.id.heartbeatsText);
         uptimeText = findViewById(R.id.uptimeText);
+        rewardsText = findViewById(R.id.rewardsText);
+        relayText = findViewById(R.id.relayText);
+        relayStatusText = findViewById(R.id.relayStatusText);
+        pulseLogText = findViewById(R.id.pulseLogText);
+        latencyBadge = findViewById(R.id.latencyBadge);
         toggleButton = findViewById(R.id.toggleButton);
         pinHomeButton = findViewById(R.id.pinHomeButton);
         batteryOptButton = findViewById(R.id.batteryOptButton);
@@ -285,6 +309,72 @@ public class MainActivity extends AppCompatActivity {
             long minutes = (totalUptimeSec % 3600) / 60;
             long seconds = totalUptimeSec % 60;
             uptimeText.setText(String.format(Locale.US, "%02d:%02d:%02d", hours, minutes, seconds));
+        }
+
+        // 1. Calculate estimated citizen rewards (1,000 SYN / 30 days = ~33.33 SYN/day)
+        double accruedSyn = (totalUptimeSec * 1000.0) / (30.0 * 86400.0);
+        if (rewardsText != null) {
+            if (totalUptimeSec >= 30 * 86400) {
+                rewardsText.setText(String.format(Locale.US, "%,.4f SYN (+500 Bonus)", accruedSyn + 500.0));
+            } else {
+                rewardsText.setText(String.format(Locale.US, "%,.4f SYN", accruedSyn));
+            }
+        }
+
+        // 2. Relay Status & Failover display
+        String activeRelay = NodeForegroundService.getActiveRelayUrl();
+        if (relayText != null) {
+            relayText.setText(activeRelay);
+        }
+        if (relayStatusText != null) {
+            if (running) {
+                if (NodeForegroundService.lastLatencyMs > 0) {
+                    relayStatusText.setText(String.format(Locale.US, "● Connected (%dms) • Failovers: %d",
+                            NodeForegroundService.lastLatencyMs, NodeForegroundService.failoverCount));
+                    relayStatusText.setTextColor(ContextCompat.getColor(this, R.color.accent_teal));
+                } else {
+                    relayStatusText.setText("● Connecting to relay network...");
+                    relayStatusText.setTextColor(ContextCompat.getColor(this, R.color.accent_sky));
+                }
+            } else {
+                relayStatusText.setText("○ Standby (Relay ready)");
+                relayStatusText.setTextColor(ContextCompat.getColor(this, R.color.text_muted));
+            }
+        }
+
+        // 3. Latency badge & Live Telemetry Pulse Log
+        if (latencyBadge != null) {
+            if (NodeForegroundService.lastLatencyMs > 0) {
+                latencyBadge.setText(String.format(Locale.US, "%d ms", NodeForegroundService.lastLatencyMs));
+            } else {
+                latencyBadge.setText("-- ms");
+            }
+        }
+        formatPulseLogs(NodeForegroundService.pulseLogsJson);
+    }
+
+    private void formatPulseLogs(String jsonStr) {
+        if (pulseLogText == null) return;
+        try {
+            JSONArray arr = new JSONArray(jsonStr);
+            if (arr.length() == 0) {
+                pulseLogText.setText("Waiting for first heartbeat pulse...");
+                return;
+            }
+            StringBuilder sb = new StringBuilder();
+            java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("HH:mm:ss", Locale.getDefault());
+            for (int i = 0; i < arr.length() && i < 6; i++) {
+                JSONObject obj = arr.getJSONObject(i);
+                long ts = obj.optLong("ts", 0);
+                long height = obj.optLong("height", 0);
+                long latency = obj.optLong("latency", 0);
+                String status = obj.optString("status", "OK");
+                String timeStr = ts > 0 ? sdf.format(new java.util.Date(ts)) : "--:--:--";
+                sb.append(String.format(Locale.US, "[%s] Height #%,d • %dms • %s\n", timeStr, height, latency, status));
+            }
+            pulseLogText.setText(sb.toString().trim());
+        } catch (Exception e) {
+            pulseLogText.setText("Pulse log: " + e.getMessage());
         }
     }
 

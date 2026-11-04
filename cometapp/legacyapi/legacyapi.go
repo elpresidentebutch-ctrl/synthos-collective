@@ -84,6 +84,8 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	get := map[string]http.HandlerFunc{
 		"/health":               s.health,
+		"/healthz":              s.healthz,
+		"/metrics":              s.metrics,
 		"/status":               s.status,
 		"/sync/status":          s.syncStatus,
 		"/account":              s.account,
@@ -150,6 +152,92 @@ func (s *Server) read(w http.ResponseWriter, fn func(app.Committed)) bool {
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true, "service": "synthos-rpc", "engine": "cometbft"})
+}
+
+func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
+	defer cancel()
+	cs, err := s.Comet.Status(ctx)
+	if err != nil {
+		http.Error(w, "unhealthy: "+err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	writeJSON(w, map[string]any{
+		"status":      "ok",
+		"service":     "synthos-comet",
+		"height":      cs.SyncInfo.LatestBlockHeight,
+		"catching_up": cs.SyncInfo.CatchingUp,
+	})
+}
+
+func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
+	defer cancel()
+
+	var height int64
+	var catchingUp int
+	var peersCount int
+	var votingPower int64
+	var isValidator int
+
+	if cs, err := s.Comet.Status(ctx); err == nil {
+		height = cs.SyncInfo.LatestBlockHeight
+		if cs.SyncInfo.CatchingUp {
+			catchingUp = 1
+		}
+		votingPower = cs.ValidatorInfo.VotingPower
+		if votingPower > 0 {
+			isValidator = 1
+		}
+	}
+	if netInfo, err := s.Comet.NetInfo(ctx); err == nil {
+		peersCount = netInfo.NPeers
+	}
+
+	var mempoolTxs int
+	if unconfirmed, err := s.Comet.UnconfirmedTxs(ctx, nil); err == nil {
+		mempoolTxs = unconfirmed.Count
+	}
+
+	var totalCoins uint64
+	var activeProposals int
+	s.read(w, func(c app.Committed) {
+		totalCoins = c.State.TotalSupply
+		activeProposals = len(c.State.GovernanceProposals)
+	})
+
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	fmt.Fprintf(w, "# HELP synthos_block_height Current CometBFT block height\n")
+	fmt.Fprintf(w, "# TYPE synthos_block_height gauge\n")
+	fmt.Fprintf(w, "synthos_block_height %d\n\n", height)
+
+	fmt.Fprintf(w, "# HELP synthos_catching_up Whether the node is catching up to the network\n")
+	fmt.Fprintf(w, "# TYPE synthos_catching_up gauge\n")
+	fmt.Fprintf(w, "synthos_catching_up %d\n\n", catchingUp)
+
+	fmt.Fprintf(w, "# HELP synthos_peers_connected Number of connected P2P peers\n")
+	fmt.Fprintf(w, "# TYPE synthos_peers_connected gauge\n")
+	fmt.Fprintf(w, "synthos_peers_connected %d\n\n", peersCount)
+
+	fmt.Fprintf(w, "# HELP synthos_mempool_unconfirmed_txs Unconfirmed transactions in mempool\n")
+	fmt.Fprintf(w, "# TYPE synthos_mempool_unconfirmed_txs gauge\n")
+	fmt.Fprintf(w, "synthos_mempool_unconfirmed_txs %d\n\n", mempoolTxs)
+
+	fmt.Fprintf(w, "# HELP synthos_validator_voting_power Current validator voting power\n")
+	fmt.Fprintf(w, "# TYPE synthos_validator_voting_power gauge\n")
+	fmt.Fprintf(w, "synthos_validator_voting_power %d\n\n", votingPower)
+
+	fmt.Fprintf(w, "# HELP synthos_is_validator Whether this node is an active validator\n")
+	fmt.Fprintf(w, "# TYPE synthos_is_validator gauge\n")
+	fmt.Fprintf(w, "synthos_is_validator %d\n\n", isValidator)
+
+	fmt.Fprintf(w, "# HELP synthos_total_supply_syn Total supply of SYN in circulation\n")
+	fmt.Fprintf(w, "# TYPE synthos_total_supply_syn gauge\n")
+	fmt.Fprintf(w, "synthos_total_supply_syn %d\n\n", totalCoins)
+
+	fmt.Fprintf(w, "# HELP synthos_active_governance_proposals Number of active governance proposals\n")
+	fmt.Fprintf(w, "# TYPE synthos_active_governance_proposals gauge\n")
+	fmt.Fprintf(w, "synthos_active_governance_proposals %d\n", activeProposals)
 }
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {

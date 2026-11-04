@@ -185,6 +185,8 @@ type networkSnapshot struct {
 	Validators      int
 	Immune          int
 	Agents          int
+	MobileNodes     int
+	CandidateNodes  int
 	HighestHeight   int64
 	Tip             string
 	StateRoot       string
@@ -252,6 +254,7 @@ func main() {
 	mux.HandleFunc("/api/explorer/mempool", s.handleAPIExplorerMempool)
 	mux.HandleFunc("/api/bridge/status", s.handleAPIBridgeStatus)
 	mux.HandleFunc("/api/bridge/events", s.handleAPIBridgeEvents)
+	mux.HandleFunc("/api/relays", s.handleAPIRelays)
 	mux.HandleFunc("/api/nodes", s.handleAPINodes)
 	mux.HandleFunc("/api/nodes/register", s.handleAPINodeRegister)
 	mux.HandleFunc("/api/nodes/heartbeat", s.handleAPINodeHeartbeat)
@@ -731,6 +734,8 @@ func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) 
 	machines := 0
 	immune := 0
 	agents := 0
+	mobileNodes := 0
+	candidateNodes := 0
 	activeTotal := 0
 	var highestHeight int64
 	for i := range peers {
@@ -749,13 +754,17 @@ func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) 
 		if peerHasCapability(peers[i], "immune_node") || peers[i].Kind == "immune" {
 			immune++
 		}
-		// Count machines, not identities: extra nodes on a machine that
-		// already has a counted node don't add a validator.
 		if (peers[i].Kind == "" || peers[i].Kind == "validator") && peers[i].SharedHardwareWith == "" {
 			validators++
 		}
 		if len(peers[i].Capabilities) > 0 {
 			agents++
+		}
+		if strings.HasPrefix(peers[i].Name, "syn-android-") || strings.HasPrefix(peers[i].HardwareCommitment, "android-") || peers[i].Kind == "android" {
+			mobileNodes++
+		}
+		if peers[i].Role == "validator_candidate" || peers[i].ProofStatus == "candidate" || strings.HasPrefix(peers[i].Name, "syn-") {
+			candidateNodes++
 		}
 		if peers[i].Height > highestHeight {
 			highestHeight = peers[i].Height
@@ -803,6 +812,8 @@ func (s *server) handleAPINetworkStatus(w http.ResponseWriter, r *http.Request) 
 		"fresh_heartbeats":          fresh,
 		"validators_running":        validators,
 		"immune_nodes_running":      immune,
+		"mobile_nodes_running":      mobileNodes,
+		"candidate_nodes_running":   candidateNodes,
 		"dual_role_nodes":           activeTotal,
 		"role_architecture_note":    "Every active node runs both the validator and immune defense roles.",
 		"agents_running":            agents,
@@ -1030,6 +1041,8 @@ func (s *server) handleAPIExplorerStatus(w http.ResponseWriter, r *http.Request)
 		"registered_nodes":            snapshot.RegisteredTotal,
 		"validators_running":          snapshot.Validators,
 		"immune_nodes_running":        snapshot.Immune,
+		"mobile_nodes_running":        snapshot.MobileNodes,
+		"candidate_nodes_running":     snapshot.CandidateNodes,
 		"fresh_heartbeats":            snapshot.Fresh,
 		"heartbeat_target_s":          15,
 		"latest_reported_checkpoints": snapshot.Checkpoints,
@@ -1198,6 +1211,45 @@ func (s *server) handleAPINodes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.writePeerList(w, false)
+}
+
+func (s *server) handleAPIRelays(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	snapshot := s.networkSnapshot(time.Now())
+	relays := []map[string]any{
+		{
+			"url":          "https://82-29-54-7.sslip.io",
+			"role":         "primary",
+			"status":       "healthy",
+			"type":         "public_ssl",
+			"active_nodes": snapshot.ActiveTotal,
+		},
+		{
+			"url":    "https://relay.synthos.network",
+			"role":   "fallback",
+			"status": "active",
+			"type":   "geo_dns",
+		},
+		{
+			"url":    "https://www.ishamwilliamsblockchains.com",
+			"role":   "fallback",
+			"status": "active",
+			"type":   "gateway",
+		},
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":                 true,
+		"count":              len(relays),
+		"relays":             relays,
+		"active_nodes":       snapshot.ActiveTotal,
+		"mobile_nodes":       snapshot.MobileNodes,
+		"candidate_nodes":    snapshot.CandidateNodes,
+		"target_heartbeat_s": 15,
+		"updated_at":         time.Now().UTC().Format(time.RFC3339),
+	})
 }
 
 func extractHouseholdIP(r *http.Request) string {
@@ -2530,10 +2582,12 @@ func (s *server) handleSilentNodeBinary(w http.ResponseWriter, r *http.Request) 
 	case "synthos-node-darwin-amd64":
 		diskPath = "/downloads/synthos-node-darwin-amd64"
 		downloadName = "synthos-node-darwin-amd64"
-	case "synthos-node.apk":
-		diskPath = "/downloads/synthos-node.apk"
+	case "synthos-node.apk", "synthos-node-v1.0.2.apk", "synthos-node-v1.0.3.apk":
+		diskPath = filepath.Join("/downloads", name)
 		if _, err := os.Stat(diskPath); err != nil {
 			for _, candidate := range []string{
+				filepath.Join("/website/downloads", name),
+				filepath.Join("website/downloads", name),
 				"/website/downloads/synthos-node.apk",
 				"website/downloads/synthos-node.apk",
 			} {
@@ -2543,7 +2597,7 @@ func (s *server) handleSilentNodeBinary(w http.ResponseWriter, r *http.Request) 
 				}
 			}
 		}
-		downloadName = "synthos-node.apk"
+		downloadName = name
 		contentType = "application/vnd.android.package-archive"
 	case "SHA256SUMS":
 		diskPath = "/downloads/SHA256SUMS"
@@ -2555,10 +2609,10 @@ func (s *server) handleSilentNodeBinary(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if _, err := os.Stat(diskPath); err != nil {
-		if name == "synthos-node.apk" {
+		if strings.HasSuffix(name, ".apk") {
 			fallbackURL := os.Getenv("SYNTHOS_APK_DOWNLOAD_URL")
 			if fallbackURL == "" {
-				fallbackURL = "https://raw.githubusercontent.com/elpresidentebutch-ctrl/synthos-collective/main/website/downloads/synthos-node.apk"
+				fallbackURL = "https://raw.githubusercontent.com/elpresidentebutch-ctrl/synthos-collective/main/website/downloads/" + name
 			}
 			http.Redirect(w, r, fallbackURL, http.StatusTemporaryRedirect)
 			return
@@ -2699,6 +2753,12 @@ func (s *server) networkSnapshot(now time.Time) networkSnapshot {
 		}
 		if len(p.Capabilities) > 0 {
 			out.Agents++
+		}
+		if strings.HasPrefix(p.Name, "syn-android-") || strings.HasPrefix(p.HardwareCommitment, "android-") || p.Kind == "android" {
+			out.MobileNodes++
+		}
+		if p.Role == "validator_candidate" || p.ProofStatus == "candidate" || strings.HasPrefix(p.Name, "syn-") {
+			out.CandidateNodes++
 		}
 		if p.Height > out.HighestHeight {
 			out.HighestHeight = p.Height

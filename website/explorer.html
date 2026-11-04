@@ -95,6 +95,8 @@
       <div class="stat"><dt>Chain</dt><dd data-chain>—</dd></div>
       <div class="stat"><dt>Block Height</dt><dd data-height>—</dd></div>
       <div class="stat"><dt>Immune Nodes</dt><dd data-immune>—</dd><small>active operators</small></div>
+      <div class="stat"><dt>Mobile Nodes</dt><dd data-mobile style="color:var(--green)">0</dd><small>Android Proof-of-Uptime</small></div>
+      <div class="stat"><dt>Candidate Fleet</dt><dd data-candidates style="color:var(--cyan)">—</dd><small>Silent Nodes</small></div>
       <div class="stat"><dt>AI Capabilities</dt><dd style="color:var(--green)">7/7 Active</dd><small>autonomous roles</small></div>
       <div class="stat"><dt>AEN Watchtower</dt><dd data-aen-status>Active</dd><small>live duties</small></div>
       <div class="stat"><dt>Mempool</dt><dd data-mempool>—</dd><small>pending tx</small></div>
@@ -232,6 +234,8 @@
       set("[data-chain]", s.chain_id || "—");
       set("[data-height]", (s.height!=null? Number(s.height).toLocaleString("en-US") : "—"));
       set("[data-immune]", (s.immune_nodes_running!=null)? s.immune_nodes_running : "0");
+      set("[data-mobile]", (s.mobile_nodes_running!=null)? s.mobile_nodes_running : "0");
+      set("[data-candidates]", (s.candidate_nodes_running!=null)? s.candidate_nodes_running : ((s.active_nodes!=null)? s.active_nodes : "0"));
     }catch(e){ markLive(false); }
 
     try{

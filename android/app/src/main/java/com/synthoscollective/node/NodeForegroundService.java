@@ -68,8 +68,18 @@ public class NodeForegroundService extends Service {
     public static final String KEY_HEARTBEATS = "heartbeats";
     public static final String KEY_HEIGHT = "height";
     public static final String KEY_NODE_ID = "node_id";
+    public static final String KEY_ACTIVE_RELAY = "active_relay";
+    public static final String KEY_FAILOVER_COUNT = "failover_count";
+    public static final String KEY_PULSE_LOGS = "pulse_logs";
+    public static final String KEY_LAST_LATENCY_MS = "last_latency_ms";
 
     public static final String RELAY_URL = "https://82-29-54-7.sslip.io";
+    public static final String[] DEFAULT_RELAYS = new String[]{
+            "https://82-29-54-7.sslip.io",
+            "https://relay.synthos.network",
+            "https://www.ishamwilliamsblockchains.com"
+    };
+
     private static final int HEARTBEAT_INTERVAL_SEC = 15;
 
     public static volatile NodeForegroundService instance = null;
@@ -81,6 +91,11 @@ public class NodeForegroundService extends Service {
     public static String nodeId = "";
     public static volatile boolean identityDecryptionFailed = false;
 
+    public static volatile String activeRelayUrl = RELAY_URL;
+    public static volatile long lastLatencyMs = 0;
+    public static volatile int failoverCount = 0;
+    public static volatile String pulseLogsJson = "[]";
+
     private PowerManager.WakeLock wakeLock;
     private WifiManager.WifiLock wifiLock;
     private ScheduledExecutorService executor;
@@ -88,6 +103,44 @@ public class NodeForegroundService extends Service {
     private static String publicKeyHex = "";
     private volatile boolean isRegistered = false;
     private final java.util.concurrent.atomic.AtomicBoolean isHeartbeatRunning = new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    public static String getActiveRelayUrl() {
+        return (activeRelayUrl != null && !activeRelayUrl.isEmpty()) ? activeRelayUrl : RELAY_URL;
+    }
+
+    public static synchronized void recordPulseLog(Context context, long height, long latencyMs, String relay, String status) {
+        try {
+            JSONArray arr;
+            if (pulseLogsJson != null && !pulseLogsJson.trim().isEmpty()) {
+                arr = new JSONArray(pulseLogsJson);
+            } else {
+                arr = new JSONArray();
+            }
+            JSONObject entry = new JSONObject();
+            entry.put("ts", System.currentTimeMillis());
+            entry.put("height", height);
+            entry.put("latency", latencyMs);
+            entry.put("relay", relay);
+            entry.put("status", status);
+
+            JSONArray newArr = new JSONArray();
+            newArr.put(entry);
+            int maxEntries = 12;
+            for (int i = 0; i < arr.length() && newArr.length() < maxEntries; i++) {
+                newArr.put(arr.getJSONObject(i));
+            }
+            pulseLogsJson = newArr.toString();
+            lastLatencyMs = latencyMs;
+            if (context != null) {
+                context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                        .putString(KEY_PULSE_LOGS, pulseLogsJson)
+                        .putLong(KEY_LAST_LATENCY_MS, latencyMs)
+                        .apply();
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Failed recording pulse log: " + e.getMessage());
+        }
+    }
 
     public static void loadPersistedState(Context context) {
         try {
@@ -108,6 +161,10 @@ public class NodeForegroundService extends Service {
             if (nodeId == null || nodeId.isEmpty()) {
                 nodeId = prefs.getString(KEY_NODE_ID, "");
             }
+            activeRelayUrl = prefs.getString(KEY_ACTIVE_RELAY, RELAY_URL);
+            failoverCount = prefs.getInt(KEY_FAILOVER_COUNT, 0);
+            pulseLogsJson = prefs.getString(KEY_PULSE_LOGS, "[]");
+            lastLatencyMs = prefs.getLong(KEY_LAST_LATENCY_MS, 0);
         } catch (Exception e) {
             Log.w(TAG, "Failed loading state: " + e.getMessage());
         }
@@ -123,6 +180,10 @@ public class NodeForegroundService extends Service {
                     .putLong(KEY_HEARTBEATS, heartbeatCount)
                     .putLong(KEY_HEIGHT, currentHeight)
                     .putString(KEY_NODE_ID, nodeId)
+                    .putString(KEY_ACTIVE_RELAY, activeRelayUrl)
+                    .putInt(KEY_FAILOVER_COUNT, failoverCount)
+                    .putString(KEY_PULSE_LOGS, pulseLogsJson)
+                    .putLong(KEY_LAST_LATENCY_MS, lastLatencyMs)
                     .apply();
         } catch (Exception e) {
             Log.w(TAG, "Failed persisting state: " + e.getMessage());
@@ -267,6 +328,9 @@ public class NodeForegroundService extends Service {
         if (!isHeartbeatRunning.compareAndSet(false, true)) {
             return;
         }
+        long cycleStart = SystemClock.elapsedRealtime();
+        String currentRelay = getActiveRelayUrl();
+        boolean didFailover = false;
         try {
             if (privateKey == null) {
                 initOrLoadKeys(this);
@@ -286,8 +350,29 @@ public class NodeForegroundService extends Service {
 
             acquireLocks();
 
-            // 1. Fetch chain tip
-            JSONObject status = httpGet(RELAY_URL + "/status");
+            // 1. Fetch chain tip with multi-relay failover support
+            JSONObject status = httpGet(currentRelay + "/status");
+            if (status == null) {
+                Log.w(TAG, "Relay " + currentRelay + " unresponsive; testing fallbacks...");
+                for (String fallback : DEFAULT_RELAYS) {
+                    if (fallback.equals(currentRelay)) continue;
+                    JSONObject fallbackStatus = httpGet(fallback + "/status");
+                    if (fallbackStatus != null) {
+                        Log.i(TAG, "Relay failover successful -> " + fallback);
+                        currentRelay = fallback;
+                        activeRelayUrl = fallback;
+                        status = fallbackStatus;
+                        failoverCount++;
+                        didFailover = true;
+                        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                                .putString(KEY_ACTIVE_RELAY, activeRelayUrl)
+                                .putInt(KEY_FAILOVER_COUNT, failoverCount)
+                                .apply();
+                        break;
+                    }
+                }
+            }
+
             long height = 0;
             String tip = "";
             String stateRoot = "";
@@ -321,7 +406,7 @@ public class NodeForegroundService extends Service {
                 caps.put("enforcer");
                 caps.put("citizen");
                 regPayload.put("capabilities", caps);
-                if (httpPost(RELAY_URL + "/api/nodes/register", regPayload.toString())) {
+                if (httpPost(currentRelay + "/api/nodes/register", regPayload.toString())) {
                     isRegistered = true;
                 }
             }
@@ -361,12 +446,17 @@ public class NodeForegroundService extends Service {
             caps.put("citizen");
             hbPayload.put("capabilities", caps);
 
-            httpPost(RELAY_URL + "/api/nodes/heartbeat", hbPayload.toString());
+            boolean hbSuccess = httpPost(currentRelay + "/api/nodes/heartbeat", hbPayload.toString());
+            long latencyMs = Math.max(1, SystemClock.elapsedRealtime() - cycleStart);
+            lastLatencyMs = latencyMs;
+
+            String pulseStatus = hbSuccess ? (didFailover ? "Failover Synced" : "Synced") : "Heartbeat Failed";
+            recordPulseLog(this, currentHeight, latencyMs, currentRelay, pulseStatus);
 
             // 4. Save state & update notification & broadcast
             saveState();
 
-            String notifText = String.format(Locale.US, "Height #%,d • Heartbeats: %,d", currentHeight, heartbeatCount);
+            String notifText = String.format(Locale.US, "Height #%,d • Heartbeats: %,d • %dms", currentHeight, heartbeatCount, latencyMs);
             NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
             if (nm != null) {
                 nm.notify(NOTIFICATION_ID, buildNotification(notifText));
@@ -375,6 +465,8 @@ public class NodeForegroundService extends Service {
             broadcastUpdate();
         } catch (Exception e) {
             Log.e(TAG, "Heartbeat cycle error: " + e.getMessage(), e);
+            long latencyMs = Math.max(1, SystemClock.elapsedRealtime() - cycleStart);
+            recordPulseLog(this, currentHeight, latencyMs, currentRelay, "Error: " + e.getMessage());
         } finally {
             isHeartbeatRunning.set(false);
         }
@@ -390,6 +482,10 @@ public class NodeForegroundService extends Service {
         intent.putExtra("sessionStartTime", sessionStartTime);
         intent.putExtra("accumulatedUptimeSec", accumulatedUptimeSec);
         intent.putExtra("identityDecryptionFailed", identityDecryptionFailed);
+        intent.putExtra("activeRelay", getActiveRelayUrl());
+        intent.putExtra("lastLatencyMs", lastLatencyMs);
+        intent.putExtra("failoverCount", failoverCount);
+        intent.putExtra("pulseLogs", pulseLogsJson);
         sendBroadcast(intent);
     }
 
