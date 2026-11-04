@@ -5,6 +5,14 @@ stages:
   - release-package
   - release-publish
 
+# Prevent automated pipeline runs on git push while shared runner monthly quota is exhausted
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: always
+
 variables:
   GOFLAGS: "-mod=mod"
   DOCKER_TLS_CERTDIR: "/certs"
