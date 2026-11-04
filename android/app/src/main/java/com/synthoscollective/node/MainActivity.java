@@ -20,13 +20,15 @@ import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.pm.ShortcutInfoCompat;
 import androidx.core.content.pm.ShortcutManagerCompat;
 import androidx.core.graphics.drawable.IconCompat;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 import java.util.Locale;
 
@@ -56,15 +58,20 @@ public class MainActivity extends AppCompatActivity {
                     NodeForegroundService.heartbeatCount = intent.getLongExtra("heartbeats", NodeForegroundService.heartbeatCount);
                 }
                 if (intent.hasExtra("height")) {
-                    NodeForegroundService.currentHeight = intent.getLongExtra("height", NodeForegroundService.currentHeight);
+                    long h = intent.getLongExtra("height", 0);
+                    if (h > 0) NodeForegroundService.currentHeight = h;
                 }
                 if (intent.hasExtra("nodeId")) {
                     String nId = intent.getStringExtra("nodeId");
                     if (nId != null && !nId.isEmpty()) NodeForegroundService.nodeId = nId;
                 }
-                if (intent.hasExtra("startTime")) {
-                    long st = intent.getLongExtra("startTime", 0);
-                    if (st > 0) NodeForegroundService.startTime = st;
+                if (intent.hasExtra("sessionStartTime")) {
+                    long st = intent.getLongExtra("sessionStartTime", 0);
+                    if (st > 0) NodeForegroundService.sessionStartTime = st;
+                }
+                if (intent.hasExtra("accumulatedUptimeSec")) {
+                    long acc = intent.getLongExtra("accumulatedUptimeSec", 0);
+                    if (acc > 0) NodeForegroundService.accumulatedUptimeSec = acc;
                 }
                 if (intent.hasExtra("identityDecryptionFailed")) {
                     NodeForegroundService.identityDecryptionFailed = intent.getBooleanExtra("identityDecryptionFailed", false);
@@ -94,15 +101,21 @@ public class MainActivity extends AppCompatActivity {
         batteryOptButton.setOnClickListener(v -> requestBatteryOptimizationExemption());
 
         // 1. Initialize persistent state & node identity so UI is never blank
-        NodeForegroundService.loadPersistedState(this);
         NodeForegroundService.initOrLoadKeys(this);
+        NodeForegroundService.loadPersistedState(this);
 
         checkNotificationPermission();
         updateUI();
         startUptimeTicker();
+        fetchLiveNetworkStatsAsync();
 
-        // 2. Auto-resume candidate service if previously running
-        if (NodeForegroundService.isRunning) {
+        // 2. Auto-resume candidate service if previously enabled
+        SharedPreferences statePrefs = getSharedPreferences(NodeForegroundService.PREFS_NAME, MODE_PRIVATE);
+        boolean shouldRun = statePrefs.getBoolean(NodeForegroundService.KEY_IS_RUNNING, false)
+                || getSharedPreferences("synthos_node_keys", MODE_PRIVATE).getBoolean(BootReceiver.PREF_NODE_ENABLED, false);
+
+        if (shouldRun) {
+            NodeForegroundService.isRunning = true;
             Intent serviceIntent = new Intent(this, NodeForegroundService.class);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(serviceIntent);
@@ -112,32 +125,107 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private void fetchLiveNetworkStatsAsync() {
+        new Thread(() -> {
+            try {
+                // 1. Fetch current network block height from relay
+                JSONObject status = NodeForegroundService.httpGet(NodeForegroundService.RELAY_URL + "/status");
+                if (status != null) {
+                    long h = status.optLong("height", 0);
+                    if (h > 0) {
+                        NodeForegroundService.currentHeight = Math.max(NodeForegroundService.currentHeight, h);
+                        getSharedPreferences(NodeForegroundService.PREFS_NAME, MODE_PRIVATE)
+                                .edit().putLong(NodeForegroundService.KEY_HEIGHT, NodeForegroundService.currentHeight).apply();
+                    }
+                }
+
+                // 2. Query node's own registered stats on relay
+                String currentId = NodeForegroundService.nodeId;
+                if (currentId != null && !currentId.isEmpty()) {
+                    JSONObject nodesObj = NodeForegroundService.httpGet(NodeForegroundService.RELAY_URL + "/api/nodes");
+                    if (nodesObj != null && nodesObj.has("peers")) {
+                        JSONArray peers = nodesObj.optJSONArray("peers");
+                        if (peers != null) {
+                            for (int i = 0; i < peers.length(); i++) {
+                                JSONObject p = peers.optJSONObject(i);
+                                if (p != null && currentId.equals(p.optString("name", ""))) {
+                                    long serverHb = p.optLong("valid_heartbeats", 0);
+                                    long serverUptimeMs = p.optLong("verified_uptime_ms", 0);
+                                    long serverHeight = p.optLong("height", 0);
+
+                                    if (serverHb > NodeForegroundService.heartbeatCount) {
+                                        NodeForegroundService.heartbeatCount = serverHb;
+                                    }
+                                    if (serverHeight > NodeForegroundService.currentHeight) {
+                                        NodeForegroundService.currentHeight = serverHeight;
+                                    }
+                                    if ((serverUptimeMs / 1000) > NodeForegroundService.accumulatedUptimeSec) {
+                                        NodeForegroundService.accumulatedUptimeSec = serverUptimeMs / 1000;
+                                    }
+
+                                    getSharedPreferences(NodeForegroundService.PREFS_NAME, MODE_PRIVATE).edit()
+                                            .putLong(NodeForegroundService.KEY_HEARTBEATS, NodeForegroundService.heartbeatCount)
+                                            .putLong(NodeForegroundService.KEY_HEIGHT, NodeForegroundService.currentHeight)
+                                            .putLong(NodeForegroundService.KEY_ACCUMULATED_UPTIME, NodeForegroundService.accumulatedUptimeSec)
+                                            .apply();
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                runOnUiThread(this::updateUI);
+            } catch (Exception ignored) {}
+        }).start();
+    }
+
     private void toggleNodeService() {
         Intent serviceIntent = new Intent(this, NodeForegroundService.class);
         SharedPreferences legacyPrefs = getSharedPreferences("synthos_node_keys", MODE_PRIVATE);
         SharedPreferences statePrefs = getSharedPreferences(NodeForegroundService.PREFS_NAME, MODE_PRIVATE);
 
         if (NodeForegroundService.isRunning) {
+            // Accumulate uptime from current session
+            if (NodeForegroundService.sessionStartTime > 0) {
+                long currentSessionSec = (System.currentTimeMillis() - NodeForegroundService.sessionStartTime) / 1000;
+                NodeForegroundService.accumulatedUptimeSec += Math.max(0, currentSessionSec);
+                NodeForegroundService.sessionStartTime = 0;
+            }
+
             stopService(serviceIntent);
             NodeForegroundService.isRunning = false;
+
             legacyPrefs.edit().putBoolean(BootReceiver.PREF_NODE_ENABLED, false).apply();
-            statePrefs.edit().putBoolean(NodeForegroundService.KEY_IS_RUNNING, false).apply();
+            statePrefs.edit()
+                    .putBoolean(NodeForegroundService.KEY_IS_RUNNING, false)
+                    .putLong(NodeForegroundService.KEY_SESSION_START, 0)
+                    .putLong(NodeForegroundService.KEY_ACCUMULATED_UPTIME, NodeForegroundService.accumulatedUptimeSec)
+                    .apply();
+
             updateUI();
             Toast.makeText(this, "SYNTHOS Candidate Node Stopped", Toast.LENGTH_SHORT).show();
         } else {
             requestBatteryOptimizationExemption();
-            legacyPrefs.edit().putBoolean(BootReceiver.PREF_NODE_ENABLED, true).apply();
-            statePrefs.edit().putBoolean(NodeForegroundService.KEY_IS_RUNNING, true).apply();
+
             NodeForegroundService.isRunning = true;
-            if (NodeForegroundService.startTime == 0) {
-                NodeForegroundService.startTime = System.currentTimeMillis();
-                statePrefs.edit().putLong(NodeForegroundService.KEY_START_TIME, NodeForegroundService.startTime).apply();
-            }
+            NodeForegroundService.sessionStartTime = System.currentTimeMillis();
+
+            legacyPrefs.edit().putBoolean(BootReceiver.PREF_NODE_ENABLED, true).apply();
+            statePrefs.edit()
+                    .putBoolean(NodeForegroundService.KEY_IS_RUNNING, true)
+                    .putLong(NodeForegroundService.KEY_SESSION_START, NodeForegroundService.sessionStartTime)
+                    .apply();
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(serviceIntent);
             } else {
                 startService(serviceIntent);
             }
+
+            // Immediately trigger an async heartbeat pulse so user sees live update without waiting 15s
+            NodeForegroundService.triggerPulseAsync(this);
+
             updateUI();
             Toast.makeText(this, "SYNTHOS Candidate Node Started (0.5% CPU)", Toast.LENGTH_SHORT).show();
         }
@@ -168,16 +256,36 @@ public class MainActivity extends AppCompatActivity {
         if (NodeForegroundService.nodeId != null && !NodeForegroundService.nodeId.isEmpty()) {
             nodeIdText.setText(NodeForegroundService.nodeId);
         } else {
-            nodeIdText.setText("Initializing...");
+            nodeIdText.setText("syn-android-...");
         }
 
         if (NodeForegroundService.currentHeight > 0) {
             heightText.setText(String.format(Locale.US, "#%,d", NodeForegroundService.currentHeight));
         } else {
-            heightText.setText("---");
+            heightText.setText("Connecting...");
         }
 
         heartbeatsText.setText(String.format(Locale.US, "%,d", NodeForegroundService.heartbeatCount));
+
+        // Format verified cumulative uptime
+        long currentSessionSec = (running && NodeForegroundService.sessionStartTime > 0)
+                ? (System.currentTimeMillis() - NodeForegroundService.sessionStartTime) / 1000
+                : 0;
+        long totalUptimeSec = NodeForegroundService.accumulatedUptimeSec + Math.max(0, currentSessionSec);
+
+        if (totalUptimeSec >= 86400) {
+            long days = totalUptimeSec / 86400;
+            long rem = totalUptimeSec % 86400;
+            long hours = rem / 3600;
+            long minutes = (rem % 3600) / 60;
+            long seconds = rem % 60;
+            uptimeText.setText(String.format(Locale.US, "%dd %02d:%02d:%02d", days, hours, minutes, seconds));
+        } else {
+            long hours = totalUptimeSec / 3600;
+            long minutes = (totalUptimeSec % 3600) / 60;
+            long seconds = totalUptimeSec % 60;
+            uptimeText.setText(String.format(Locale.US, "%02d:%02d:%02d", hours, minutes, seconds));
+        }
     }
 
     private void startUptimeTicker() {
@@ -185,15 +293,6 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void run() {
                 updateUI();
-                if (NodeForegroundService.isRunning && NodeForegroundService.startTime > 0) {
-                    long diff = System.currentTimeMillis() - NodeForegroundService.startTime;
-                    long seconds = (diff / 1000) % 60;
-                    long minutes = (diff / (1000 * 60)) % 60;
-                    long hours = (diff / (1000 * 60 * 60));
-                    uptimeText.setText(String.format(Locale.US, "%02d:%02d:%02d", hours, minutes, seconds));
-                } else {
-                    uptimeText.setText("00:00:00");
-                }
                 uptimeHandler.postDelayed(this, 1000);
             }
         }, 1000);
@@ -259,6 +358,7 @@ public class MainActivity extends AppCompatActivity {
             registerReceiver(updateReceiver, new IntentFilter(NodeForegroundService.ACTION_STATUS_UPDATE));
         }
         updateUI();
+        fetchLiveNetworkStatsAsync();
     }
 
     @Override

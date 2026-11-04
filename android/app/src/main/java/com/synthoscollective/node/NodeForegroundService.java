@@ -63,17 +63,19 @@ public class NodeForegroundService extends Service {
 
     public static final String PREFS_NAME = "synthos_node_state";
     public static final String KEY_IS_RUNNING = "is_running";
-    public static final String KEY_START_TIME = "start_time";
+    public static final String KEY_SESSION_START = "session_start_time";
+    public static final String KEY_ACCUMULATED_UPTIME = "accumulated_uptime_sec";
     public static final String KEY_HEARTBEATS = "heartbeats";
     public static final String KEY_HEIGHT = "height";
     public static final String KEY_NODE_ID = "node_id";
 
-    private static final String RELAY_URL = "https://82-29-54-7.sslip.io";
+    public static final String RELAY_URL = "https://82-29-54-7.sslip.io";
     private static final int HEARTBEAT_INTERVAL_SEC = 15;
 
     public static volatile NodeForegroundService instance = null;
     public static boolean isRunning = false;
-    public static long startTime = 0;
+    public static long sessionStartTime = 0;
+    public static long accumulatedUptimeSec = 0;
     public static long heartbeatCount = 0;
     public static long currentHeight = 0;
     public static String nodeId = "";
@@ -90,11 +92,12 @@ public class NodeForegroundService extends Service {
     public static void loadPersistedState(Context context) {
         try {
             SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-            if (!isRunning) {
-                isRunning = prefs.getBoolean(KEY_IS_RUNNING, false);
+            isRunning = prefs.getBoolean(KEY_IS_RUNNING, isRunning);
+            if (sessionStartTime == 0) {
+                sessionStartTime = prefs.getLong(KEY_SESSION_START, 0);
             }
-            if (startTime == 0) {
-                startTime = prefs.getLong(KEY_START_TIME, 0);
+            if (accumulatedUptimeSec == 0) {
+                accumulatedUptimeSec = prefs.getLong(KEY_ACCUMULATED_UPTIME, 0);
             }
             if (heartbeatCount == 0) {
                 heartbeatCount = prefs.getLong(KEY_HEARTBEATS, 0);
@@ -110,12 +113,13 @@ public class NodeForegroundService extends Service {
         }
     }
 
-    private void saveState() {
+    public void saveState() {
         try {
             SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
             prefs.edit()
                     .putBoolean(KEY_IS_RUNNING, isRunning)
-                    .putLong(KEY_START_TIME, startTime)
+                    .putLong(KEY_SESSION_START, sessionStartTime)
+                    .putLong(KEY_ACCUMULATED_UPTIME, accumulatedUptimeSec)
                     .putLong(KEY_HEARTBEATS, heartbeatCount)
                     .putLong(KEY_HEIGHT, currentHeight)
                     .putString(KEY_NODE_ID, nodeId)
@@ -171,7 +175,6 @@ public class NodeForegroundService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        // ALWAYS satisfy Android foreground service requirement immediately
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(NOTIFICATION_ID, buildNotification("SYNTHOS Node Active"), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
         } else {
@@ -181,8 +184,8 @@ public class NodeForegroundService extends Service {
         instance = this;
         isRunning = true;
         loadPersistedState(this);
-        if (startTime == 0) {
-            startTime = System.currentTimeMillis();
+        if (sessionStartTime == 0) {
+            sessionStartTime = System.currentTimeMillis();
         }
         saveState();
         acquireLocks();
@@ -260,7 +263,7 @@ public class NodeForegroundService extends Service {
         }).start();
     }
 
-    private synchronized void runHeartbeatCycle() {
+    public synchronized void runHeartbeatCycle() {
         if (!isHeartbeatRunning.compareAndSet(false, true)) {
             return;
         }
@@ -292,7 +295,9 @@ public class NodeForegroundService extends Service {
                 height = status.optLong("height", 0);
                 tip = status.optString("tip", "");
                 stateRoot = status.optString("state_root", "");
-                currentHeight = height;
+                if (height > 0) {
+                    currentHeight = height;
+                }
             }
 
             // 2. Register node if not yet registered or periodically every 50 heartbeats
@@ -361,7 +366,7 @@ public class NodeForegroundService extends Service {
             // 4. Save state & update notification & broadcast
             saveState();
 
-            String notifText = String.format(Locale.US, "Reporting Uptime Height #%d • Heartbeats: %d", currentHeight, heartbeatCount);
+            String notifText = String.format(Locale.US, "Height #%,d • Heartbeats: %,d", currentHeight, heartbeatCount);
             NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
             if (nm != null) {
                 nm.notify(NOTIFICATION_ID, buildNotification(notifText));
@@ -382,7 +387,8 @@ public class NodeForegroundService extends Service {
         intent.putExtra("heartbeats", heartbeatCount);
         intent.putExtra("height", currentHeight);
         intent.putExtra("nodeId", nodeId);
-        intent.putExtra("startTime", startTime);
+        intent.putExtra("sessionStartTime", sessionStartTime);
+        intent.putExtra("accumulatedUptimeSec", accumulatedUptimeSec);
         intent.putExtra("identityDecryptionFailed", identityDecryptionFailed);
         sendBroadcast(intent);
     }
@@ -478,7 +484,7 @@ public class NodeForegroundService extends Service {
     }
 
     public static synchronized void initOrLoadKeys(Context context) {
-        if (privateKey != null && !nodeId.isEmpty()) {
+        if (privateKey != null && nodeId != null && !nodeId.isEmpty()) {
             return;
         }
         File keyFile = new File(context.getNoBackupFilesDir(), "candidate_identity.dat");
@@ -560,6 +566,13 @@ public class NodeForegroundService extends Service {
                 identityDecryptionFailed = true;
             }
         }
+
+        // Always ensure nodeId is persisted into state
+        if (nodeId != null && !nodeId.isEmpty()) {
+            try {
+                context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putString(KEY_NODE_ID, nodeId).apply();
+            } catch (Exception ignored) {}
+        }
     }
 
     private static boolean persistProtectedIdentity(File targetFile, String privHex, String pubHex, String nId) {
@@ -592,7 +605,7 @@ public class NodeForegroundService extends Service {
         }
     }
 
-    private JSONObject httpGet(String urlStr) {
+    public static JSONObject httpGet(String urlStr) {
         HttpURLConnection conn = null;
         try {
             URL url = new URL(urlStr);
@@ -619,7 +632,7 @@ public class NodeForegroundService extends Service {
         return null;
     }
 
-    private boolean httpPost(String urlStr, String jsonBody) {
+    public static boolean httpPost(String urlStr, String jsonBody) {
         HttpURLConnection conn = null;
         try {
             URL url = new URL(urlStr);
@@ -664,6 +677,11 @@ public class NodeForegroundService extends Service {
 
     @Override
     public void onDestroy() {
+        if (isRunning && sessionStartTime > 0) {
+            long sessionSec = (System.currentTimeMillis() - sessionStartTime) / 1000;
+            accumulatedUptimeSec += Math.max(0, sessionSec);
+            sessionStartTime = 0;
+        }
         instance = null;
         isRunning = false;
         saveState();
