@@ -6,6 +6,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
@@ -92,27 +93,45 @@ public class MainActivity extends AppCompatActivity {
         pinHomeButton.setOnClickListener(v -> pinToHomeScreen());
         batteryOptButton.setOnClickListener(v -> requestBatteryOptimizationExemption());
 
+        // 1. Initialize persistent state & node identity so UI is never blank
+        NodeForegroundService.loadPersistedState(this);
+        NodeForegroundService.initOrLoadKeys(this);
+
         checkNotificationPermission();
         updateUI();
         startUptimeTicker();
+
+        // 2. Auto-resume candidate service if previously running
+        if (NodeForegroundService.isRunning) {
+            Intent serviceIntent = new Intent(this, NodeForegroundService.class);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent);
+            } else {
+                startService(serviceIntent);
+            }
+        }
     }
 
     private void toggleNodeService() {
         Intent serviceIntent = new Intent(this, NodeForegroundService.class);
-        android.content.SharedPreferences prefs = getSharedPreferences("synthos_node_keys", MODE_PRIVATE);
+        SharedPreferences legacyPrefs = getSharedPreferences("synthos_node_keys", MODE_PRIVATE);
+        SharedPreferences statePrefs = getSharedPreferences(NodeForegroundService.PREFS_NAME, MODE_PRIVATE);
+
         if (NodeForegroundService.isRunning) {
             stopService(serviceIntent);
             NodeForegroundService.isRunning = false;
-            NodeForegroundService.startTime = 0;
-            prefs.edit().putBoolean(BootReceiver.PREF_NODE_ENABLED, false).apply();
+            legacyPrefs.edit().putBoolean(BootReceiver.PREF_NODE_ENABLED, false).apply();
+            statePrefs.edit().putBoolean(NodeForegroundService.KEY_IS_RUNNING, false).apply();
             updateUI();
             Toast.makeText(this, "SYNTHOS Candidate Node Stopped", Toast.LENGTH_SHORT).show();
         } else {
             requestBatteryOptimizationExemption();
-            prefs.edit().putBoolean(BootReceiver.PREF_NODE_ENABLED, true).apply();
+            legacyPrefs.edit().putBoolean(BootReceiver.PREF_NODE_ENABLED, true).apply();
+            statePrefs.edit().putBoolean(NodeForegroundService.KEY_IS_RUNNING, true).apply();
             NodeForegroundService.isRunning = true;
             if (NodeForegroundService.startTime == 0) {
                 NodeForegroundService.startTime = System.currentTimeMillis();
+                statePrefs.edit().putLong(NodeForegroundService.KEY_START_TIME, NodeForegroundService.startTime).apply();
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(serviceIntent);
@@ -148,6 +167,8 @@ public class MainActivity extends AppCompatActivity {
 
         if (NodeForegroundService.nodeId != null && !NodeForegroundService.nodeId.isEmpty()) {
             nodeIdText.setText(NodeForegroundService.nodeId);
+        } else {
+            nodeIdText.setText("Initializing...");
         }
 
         if (NodeForegroundService.currentHeight > 0) {
@@ -204,7 +225,7 @@ public class MainActivity extends AppCompatActivity {
                     Toast.makeText(this, "Open Battery Settings to allow background activity", Toast.LENGTH_LONG).show();
                 }
             } else {
-                Toast.makeText(this, "Battery is already optimized for 24/7 background validation!", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Battery is set to Unrestricted for 24/7 background validation!", Toast.LENGTH_SHORT).show();
             }
         }
     }
@@ -231,6 +252,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        NodeForegroundService.loadPersistedState(this);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(updateReceiver, new IntentFilter(NodeForegroundService.ACTION_STATUS_UPDATE), Context.RECEIVER_NOT_EXPORTED);
         } else {

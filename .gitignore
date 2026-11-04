@@ -212,3 +212,5 @@ android/build/
 android/app/build/
 android/*.keystore
 dist/
+
+android/local.properties

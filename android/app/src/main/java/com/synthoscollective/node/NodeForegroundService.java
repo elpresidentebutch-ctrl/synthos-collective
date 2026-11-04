@@ -61,9 +61,17 @@ public class NodeForegroundService extends Service {
     public static final int NOTIFICATION_ID = 2026;
     private static final int ALARM_REQ_CODE = 4040;
 
+    public static final String PREFS_NAME = "synthos_node_state";
+    public static final String KEY_IS_RUNNING = "is_running";
+    public static final String KEY_START_TIME = "start_time";
+    public static final String KEY_HEARTBEATS = "heartbeats";
+    public static final String KEY_HEIGHT = "height";
+    public static final String KEY_NODE_ID = "node_id";
+
     private static final String RELAY_URL = "https://82-29-54-7.sslip.io";
     private static final int HEARTBEAT_INTERVAL_SEC = 15;
 
+    public static volatile NodeForegroundService instance = null;
     public static boolean isRunning = false;
     public static long startTime = 0;
     public static long heartbeatCount = 0;
@@ -74,37 +82,87 @@ public class NodeForegroundService extends Service {
     private PowerManager.WakeLock wakeLock;
     private WifiManager.WifiLock wifiLock;
     private ScheduledExecutorService executor;
-    private Ed25519PrivateKeyParameters privateKey;
-    private String publicKeyHex = "";
+    private static Ed25519PrivateKeyParameters privateKey;
+    private static String publicKeyHex = "";
     private volatile boolean isRegistered = false;
     private final java.util.concurrent.atomic.AtomicBoolean isHeartbeatRunning = new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    public static void loadPersistedState(Context context) {
+        try {
+            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+            if (!isRunning) {
+                isRunning = prefs.getBoolean(KEY_IS_RUNNING, false);
+            }
+            if (startTime == 0) {
+                startTime = prefs.getLong(KEY_START_TIME, 0);
+            }
+            if (heartbeatCount == 0) {
+                heartbeatCount = prefs.getLong(KEY_HEARTBEATS, 0);
+            }
+            if (currentHeight == 0) {
+                currentHeight = prefs.getLong(KEY_HEIGHT, 0);
+            }
+            if (nodeId == null || nodeId.isEmpty()) {
+                nodeId = prefs.getString(KEY_NODE_ID, "");
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Failed loading state: " + e.getMessage());
+        }
+    }
+
+    private void saveState() {
+        try {
+            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+            prefs.edit()
+                    .putBoolean(KEY_IS_RUNNING, isRunning)
+                    .putLong(KEY_START_TIME, startTime)
+                    .putLong(KEY_HEARTBEATS, heartbeatCount)
+                    .putLong(KEY_HEIGHT, currentHeight)
+                    .putString(KEY_NODE_ID, nodeId)
+                    .apply();
+        } catch (Exception e) {
+            Log.w(TAG, "Failed persisting state: " + e.getMessage());
+        }
+    }
 
     @Override
     public void onCreate() {
         super.onCreate();
+        instance = this;
         createNotificationChannel();
-        initOrLoadKeys();
+        loadPersistedState(this);
+        initOrLoadKeys(this);
+        acquireLocks();
+    }
 
-        // 1. CPU WakeLock - Non reference counted so it never drops accidentally
+    private synchronized void acquireLocks() {
         try {
-            PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
-            if (powerManager != null) {
-                wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SynthosNode::ValidatorCpuLock");
-                wakeLock.setReferenceCounted(false);
+            if (wakeLock == null) {
+                PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+                if (powerManager != null) {
+                    wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SynthosNode::ValidatorCpuLock");
+                    wakeLock.setReferenceCounted(false);
+                }
+            }
+            if (wakeLock != null && !wakeLock.isHeld()) {
                 wakeLock.acquire();
+                Log.d(TAG, "Acquired CPU WakeLock");
             }
         } catch (Exception e) {
             Log.e(TAG, "Failed to acquire CPU WakeLock: " + e.getMessage());
         }
 
-        // 2. High-Performance Wi-Fi Lock - Prevents Android from putting Wi-Fi radio to sleep
         try {
-            WifiManager wifiManager = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
-            if (wifiManager != null) {
-                int mode = WifiManager.WIFI_MODE_FULL_HIGH_PERF;
-                wifiLock = wifiManager.createWifiLock(mode, "SynthosNode::ValidatorWifiLock");
-                wifiLock.setReferenceCounted(false);
+            if (wifiLock == null) {
+                WifiManager wifiManager = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+                if (wifiManager != null) {
+                    wifiLock = wifiManager.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "SynthosNode::ValidatorWifiLock");
+                    wifiLock.setReferenceCounted(false);
+                }
+            }
+            if (wifiLock != null && !wifiLock.isHeld()) {
                 wifiLock.acquire();
+                Log.d(TAG, "Acquired Wi-Fi Lock");
             }
         } catch (Exception e) {
             Log.e(TAG, "Failed to acquire Wi-Fi Lock: " + e.getMessage());
@@ -113,58 +171,48 @@ public class NodeForegroundService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent != null && ACTION_HEARTBEAT_PULSE.equals(intent.getAction())) {
-            // Hardware Alarm triggered to pierce Android deep Doze mode
-            if (isRunning) {
-                triggerPulseAsync();
-                scheduleNextAlarm();
-            }
-            return START_STICKY;
+        // ALWAYS satisfy Android foreground service requirement immediately
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, buildNotification("SYNTHOS Node Active"), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+        } else {
+            startForeground(NOTIFICATION_ID, buildNotification("SYNTHOS Node Active"));
         }
 
-        // Initialize and start background loop
+        instance = this;
         isRunning = true;
+        loadPersistedState(this);
         if (startTime == 0) {
             startTime = System.currentTimeMillis();
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIFICATION_ID, buildNotification("SYNTHOS Node Initializing..."), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
-        } else {
-            startForeground(NOTIFICATION_ID, buildNotification("SYNTHOS Node Initializing..."));
-        }
+        saveState();
+        acquireLocks();
 
         if (executor == null || executor.isShutdown()) {
             executor = Executors.newSingleThreadScheduledExecutor();
             executor.scheduleWithFixedDelay(this::runHeartbeatCycle, 0, HEARTBEAT_INTERVAL_SEC, TimeUnit.SECONDS);
         }
 
-        // Hardware alarm failsafe (runs every 15s to keep heartbeat alive even if executor sleeps)
-        scheduleNextAlarm();
+        scheduleNextAlarm(this);
         broadcastUpdate();
         return START_STICKY;
     }
 
-    private void scheduleNextAlarm() {
+    public static void scheduleNextAlarm(Context context) {
         try {
-            AlarmManager alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+            AlarmManager alarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
             if (alarmManager == null) return;
 
-            Intent intent = new Intent(this, NodeForegroundService.class);
+            Intent intent = new Intent(context, AlarmReceiver.class);
             intent.setAction(ACTION_HEARTBEAT_PULSE);
-            intent.setPackage(getPackageName());
+            intent.setPackage(context.getPackageName());
             int flags = PendingIntent.FLAG_UPDATE_CURRENT;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 flags |= PendingIntent.FLAG_IMMUTABLE;
             }
 
-            PendingIntent pi;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                pi = PendingIntent.getForegroundService(this, ALARM_REQ_CODE, intent, flags);
-            } else {
-                pi = PendingIntent.getService(this, ALARM_REQ_CODE, intent, flags);
-            }
-
+            PendingIntent pi = PendingIntent.getBroadcast(context, ALARM_REQ_CODE, intent, flags);
             long triggerAt = SystemClock.elapsedRealtime() + (HEARTBEAT_INTERVAL_SEC * 1000L);
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 if (alarmManager.canScheduleExactAlarms()) {
                     alarmManager.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi);
@@ -183,16 +231,25 @@ public class NodeForegroundService extends Service {
         }
     }
 
-    private void triggerPulseAsync() {
+    public static void triggerPulseAsync(Context context) {
         new Thread(() -> {
             PowerManager.WakeLock pulseLock = null;
             try {
-                PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+                PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
                 if (pm != null) {
                     pulseLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SynthosNode::PulseLock");
-                    pulseLock.acquire(25000L);
+                    pulseLock.acquire(30000L);
                 }
-                runHeartbeatCycle();
+                if (instance != null) {
+                    instance.runHeartbeatCycle();
+                } else {
+                    Intent serviceIntent = new Intent(context, NodeForegroundService.class);
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        context.startForegroundService(serviceIntent);
+                    } else {
+                        context.startService(serviceIntent);
+                    }
+                }
             } catch (Exception e) {
                 Log.w(TAG, "Pulse execution: " + e.getMessage());
             } finally {
@@ -208,12 +265,11 @@ public class NodeForegroundService extends Service {
             return;
         }
         try {
-            // Guard: ensure signing keys are unlocked and available before doing any network cycles
             if (privateKey == null) {
-                initOrLoadKeys();
+                initOrLoadKeys(this);
                 if (privateKey == null) {
                     String errorMsg = identityDecryptionFailed
-                            ? "Keystore Locked / Decryption Error (Keys Preserved)"
+                            ? "Keystore Locked / Decryption Error"
                             : "Candidate Identity Not Initialized";
                     Log.w(TAG, "Heartbeat cycle skipped: " + errorMsg);
                     NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
@@ -225,9 +281,7 @@ public class NodeForegroundService extends Service {
                 }
             }
 
-            // Refresh locks if somehow lost
-            if (wakeLock != null && !wakeLock.isHeld()) wakeLock.acquire();
-            if (wifiLock != null && !wifiLock.isHeld()) wifiLock.acquire();
+            acquireLocks();
 
             // 1. Fetch chain tip
             JSONObject status = httpGet(RELAY_URL + "/status");
@@ -304,7 +358,9 @@ public class NodeForegroundService extends Service {
 
             httpPost(RELAY_URL + "/api/nodes/heartbeat", hbPayload.toString());
 
-            // 4. Update notification & broadcast
+            // 4. Save state & update notification & broadcast
+            saveState();
+
             String notifText = String.format(Locale.US, "Reporting Uptime Height #%d • Heartbeats: %d", currentHeight, heartbeatCount);
             NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
             if (nm != null) {
@@ -344,7 +400,7 @@ public class NodeForegroundService extends Service {
                 .setSmallIcon(R.drawable.ic_launcher_foreground)
                 .setContentIntent(pendingIntent)
                 .setOngoing(true)
-                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .build();
     }
 
@@ -368,7 +424,7 @@ public class NodeForegroundService extends Service {
     private static final String AES_GCM_TRANSFORMATION = "AES/GCM/NoPadding";
     private static final int GCM_TAG_LENGTH = 128;
 
-    private SecretKey getOrCreateMasterKey() throws Exception {
+    private static SecretKey getOrCreateMasterKey() throws Exception {
         KeyStore keyStore = KeyStore.getInstance(KEYSTORE_PROVIDER);
         keyStore.load(null);
         if (!keyStore.containsAlias(MASTER_KEY_ALIAS)) {
@@ -386,7 +442,7 @@ public class NodeForegroundService extends Service {
         return (SecretKey) keyStore.getKey(MASTER_KEY_ALIAS, null);
     }
 
-    private byte[] encryptIdentityData(byte[] plaintext) {
+    private static byte[] encryptIdentityData(byte[] plaintext) {
         try {
             SecretKey key = getOrCreateMasterKey();
             Cipher cipher = Cipher.getInstance(AES_GCM_TRANSFORMATION);
@@ -398,12 +454,12 @@ public class NodeForegroundService extends Service {
             container.put("ciphertext", bytesToHex(ciphertext));
             return container.toString().getBytes(StandardCharsets.UTF_8);
         } catch (Exception e) {
-            Log.w(TAG, "Hardware Keystore encryption unavailable, falling back: " + e.getMessage());
+            Log.w(TAG, "Hardware Keystore encryption fallback: " + e.getMessage());
             return plaintext;
         }
     }
 
-    private byte[] decryptIdentityData(byte[] rawData) throws Exception {
+    private static byte[] decryptIdentityData(byte[] rawData) throws Exception {
         String str = new String(rawData, StandardCharsets.UTF_8);
         if (str.startsWith("{") && str.contains("ciphertext") && str.contains("iv")) {
             JSONObject container = new JSONObject(str);
@@ -421,9 +477,11 @@ public class NodeForegroundService extends Service {
         throw new IllegalStateException("Unrecognized identity file format");
     }
 
-    private synchronized void initOrLoadKeys() {
-        // Protected, non-backup storage directory (excluded from all OS cloud and local backups)
-        File keyFile = new File(getNoBackupFilesDir(), "candidate_identity.dat");
+    public static synchronized void initOrLoadKeys(Context context) {
+        if (privateKey != null && !nodeId.isEmpty()) {
+            return;
+        }
+        File keyFile = new File(context.getNoBackupFilesDir(), "candidate_identity.dat");
         boolean keyFileExisted = keyFile.exists() && keyFile.length() > 0;
         String savedPrivHex = null;
         String savedPubHex = null;
@@ -449,15 +507,14 @@ public class NodeForegroundService extends Service {
                 }
             } catch (Exception e) {
                 decryptionAttemptFailed = true;
-                Log.e(TAG, "CRITICAL: Error reading or decrypting protected identity file: " + e.getMessage(), e);
+                Log.e(TAG, "CRITICAL: Error decrypting identity file: " + e.getMessage(), e);
             }
         }
 
-        // Migration fallback: check legacy SharedPreferences ONLY if keyFile never existed
         boolean isMigration = false;
         SharedPreferences legacyPrefs = null;
         if (!keyFileExisted) {
-            legacyPrefs = getSharedPreferences("synthos_node_keys", MODE_PRIVATE);
+            legacyPrefs = context.getSharedPreferences("synthos_node_keys", MODE_PRIVATE);
             savedPrivHex = legacyPrefs.getString("private_key", null);
             savedPubHex = legacyPrefs.getString("public_key", null);
             savedNodeId = legacyPrefs.getString("node_id", null);
@@ -472,22 +529,16 @@ public class NodeForegroundService extends Service {
             nodeId = savedNodeId;
             identityDecryptionFailed = false;
 
-            // Ensure encrypted and persisted into protected no-backup file
             if (!keyFileExisted || isMigration) {
                 boolean written = persistProtectedIdentity(keyFile, savedPrivHex, savedPubHex, savedNodeId);
-                // Delete from legacy SharedPreferences ONLY AFTER atomic file write succeeds!
                 if (written && isMigration && legacyPrefs != null) {
                     legacyPrefs.edit().remove("private_key").remove("public_key").remove("node_id").apply();
-                    Log.i(TAG, "Successfully migrated candidate identity to hardware-encrypted protected storage");
                 }
             }
         } else if (keyFileExisted || decryptionAttemptFailed) {
-            // SAFETY GUARANTEE: An existing identity was present on this device, but could not be decrypted.
-            // Under NO circumstance should we silently generate a new identity and overwrite the existing file!
             identityDecryptionFailed = true;
-            Log.e(TAG, "IDENTITY PROTECTION LOCK: Existing candidate identity exists but Keystore decryption failed. Preserving file and refusing to overwrite.");
+            Log.e(TAG, "IDENTITY PROTECTION LOCK: Existing candidate identity exists but Keystore decryption failed.");
         } else {
-            // Truly a first-time clean install: neither keyFile nor legacy SharedPreferences ever existed.
             try {
                 Ed25519KeyPairGenerator keyPairGen = new Ed25519KeyPairGenerator();
                 keyPairGen.init(new Ed25519KeyGenerationParameters(new SecureRandom()));
@@ -505,13 +556,13 @@ public class NodeForegroundService extends Service {
 
                 persistProtectedIdentity(keyFile, bytesToHex(privBytes), publicKeyHex, nodeId);
             } catch (Exception e) {
-                Log.e(TAG, "Failed to generate initial candidate identity: " + e.getMessage(), e);
+                Log.e(TAG, "Failed generating initial identity: " + e.getMessage(), e);
                 identityDecryptionFailed = true;
             }
         }
     }
 
-    private boolean persistProtectedIdentity(File targetFile, String privHex, String pubHex, String nId) {
+    private static boolean persistProtectedIdentity(File targetFile, String privHex, String pubHex, String nId) {
         File tempFile = new File(targetFile.getParentFile(), targetFile.getName() + ".tmp");
         try {
             JSONObject obj = new JSONObject();
@@ -530,13 +581,12 @@ public class NodeForegroundService extends Service {
             if (!tempFile.renameTo(targetFile)) {
                 targetFile.delete();
                 if (!tempFile.renameTo(targetFile)) {
-                    Log.e(TAG, "Atomic rename of temp identity file failed");
                     return false;
                 }
             }
             return true;
         } catch (Exception e) {
-            Log.e(TAG, "Failed to persist identity in protected storage: " + e.getMessage(), e);
+            Log.e(TAG, "Failed persisting identity: " + e.getMessage(), e);
             if (tempFile.exists()) tempFile.delete();
             return false;
         }
@@ -560,11 +610,9 @@ public class NodeForegroundService extends Service {
                 while ((line = reader.readLine()) != null) sb.append(line);
                 reader.close();
                 return new JSONObject(sb.toString());
-            } else {
-                Log.w(TAG, "httpGet failed with code " + respCode + " for " + urlStr);
             }
         } catch (Exception e) {
-            Log.e(TAG, "httpGet error for " + urlStr + ": " + e.getMessage());
+            Log.w(TAG, "httpGet error for " + urlStr + ": " + e.getMessage());
         } finally {
             if (conn != null) conn.disconnect();
         }
@@ -587,13 +635,9 @@ public class NodeForegroundService extends Service {
                 os.write(jsonBody.getBytes(StandardCharsets.UTF_8));
             }
             int code = conn.getResponseCode();
-            if (code >= 200 && code < 300) {
-                return true;
-            } else {
-                Log.w(TAG, "httpPost failed with code " + code + " for " + urlStr);
-            }
+            return code >= 200 && code < 300;
         } catch (Exception e) {
-            Log.e(TAG, "httpPost error for " + urlStr + ": " + e.getMessage());
+            Log.w(TAG, "httpPost error for " + urlStr + ": " + e.getMessage());
         } finally {
             if (conn != null) conn.disconnect();
         }
@@ -620,21 +664,22 @@ public class NodeForegroundService extends Service {
 
     @Override
     public void onDestroy() {
+        instance = null;
         isRunning = false;
-        startTime = 0;
+        saveState();
         if (executor != null) {
             executor.shutdownNow();
         }
         try {
             AlarmManager alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
             if (alarmManager != null) {
-                Intent intent = new Intent(this, NodeForegroundService.class);
+                Intent intent = new Intent(this, AlarmReceiver.class);
                 intent.setAction(ACTION_HEARTBEAT_PULSE);
                 int flags = PendingIntent.FLAG_UPDATE_CURRENT;
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                     flags |= PendingIntent.FLAG_IMMUTABLE;
                 }
-                PendingIntent pi = PendingIntent.getService(this, ALARM_REQ_CODE, intent, flags);
+                PendingIntent pi = PendingIntent.getBroadcast(this, ALARM_REQ_CODE, intent, flags);
                 alarmManager.cancel(pi);
             }
         } catch (Exception ignored) {}
