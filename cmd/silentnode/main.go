@@ -153,7 +153,7 @@ func main() {
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	log.Printf("SYNTHOS Validator Node started: %s (PID %d)", node.NodeID, node.PID)
-	log.Printf("Role: Real consensus validator candidate (outbound-only mailbox relay)")
+	log.Printf("Role: node candidate proving uptime with signed heartbeats (outbound-only, no open ports)")
 	log.Printf("Validation engine: active (processes network block proposals & casts signed votes)")
 	log.Printf("Relay cluster: %s", strings.Join(relayURLs, ", "))
 	log.Printf("Status: %s", node.ValidatorStatus)
@@ -220,14 +220,14 @@ func updateProvingStatus(node *silentNode) {
 
 	if days >= provingTargetDays {
 		node.RewardEligible = true
-		node.ValidatorStatus = "Active Validator (1-month proving completed — 10,000 SYN reward verified)"
+		node.ValidatorStatus = "30 days proven — eligible for the 10,000 SYN first reward once approved"
 	} else {
 		node.RewardEligible = false
 		pct := (days / provingTargetDays) * 100.0
 		if pct > 100.0 {
 			pct = 100.0
 		}
-		node.ValidatorStatus = fmt.Sprintf("Proving Candidate (Day %.1f of 30 — %.1f%% proven — %.1fx Streak Boost)", days, pct, node.StreakMultiplier)
+		node.ValidatorStatus = fmt.Sprintf("Proving Candidate (Day %.1f of 30 — %.1f%% proven — %.1fx points streak)", days, pct, node.StreakMultiplier)
 	}
 }
 
@@ -304,13 +304,13 @@ func printIdentity(key nodeKey, createdAt time.Time, created bool) {
 	elapsed := time.Since(createdAt)
 	days := elapsed.Hours() / 24.0
 	mult := streakMultiplierForDays(days)
-	status := fmt.Sprintf("Proving Uptime (Day %.1f of 30 — %.1fx Streak Boost)", days, mult)
+	status := fmt.Sprintf("Proving Uptime (Day %.1f of 30 — %.1fx points streak)", days, mult)
 	if days >= provingTargetDays {
-		status = "★ PROVING COMPLETE — Verified for 10,000 SYN reward & Active Validator"
+		status = "★ 30 DAYS PROVEN — eligible for the 10,000 SYN first reward once approved"
 	}
 
 	fmt.Println("========================================================================")
-	fmt.Println("   SYNTHOS COLLECTIVE — 1-CLICK VALIDATOR & CONSENSUS NODE")
+	fmt.Println("   SYNTHOS COLLECTIVE — 1-CLICK NODE (UPTIME PROVING)")
 	fmt.Println("========================================================================")
 	fmt.Printf("   YOUR NODE ID:  %s\n", key.NodeID)
 	fmt.Printf("   Public Key:    %s\n", key.PublicKey)
@@ -324,8 +324,8 @@ func printIdentity(key nodeKey, createdAt time.Time, created bool) {
 	fmt.Println("========================================================================")
 	fmt.Println("   • Runs silently in background with ZERO open inbound ports.")
 	fmt.Println("   • Actively receives, verifies, and signs network block proposals.")
-	fmt.Println("   • Earns 10,000 SYN monthly rewards after 30 days of verified proving.")
-	fmt.Println("   • Gamified Streaks: 7-day (1.5x), 14-day (2.0x), 21-day (2.5x), 30-day (3.0x).")
+	fmt.Println("   • Approved operators: 10,000 SYN after 30 days of verified uptime, then 5,000 SYN a month.")
+	fmt.Println("   • Points streaks (points only, not SYN): 7-day (1.5x), 14-day (2.0x), 21-day (2.5x), 30-day (3.0x).")
 	fmt.Println("   • ANTI-FARMING: Only 1 paid node per household internet connection.")
 	fmt.Println("   • HALVING: Rewards cut in half every 2 years starting Jan 1, 2027.")
 	fmt.Println("   • POWER NOTE: The screen can sleep, but NOT the actual computer.")
@@ -547,7 +547,7 @@ func pollMailboxAll(ctx context.Context, relayURLs []string, node *silentNode, p
 			node.LastTip = b.Hash
 			node.LastStateRoot = b.Header.StateRoot
 
-			log.Printf("[VALIDATOR] Validated Block #%d (%s) from %s — Signed & cast consensus vote!",
+			log.Printf("[mailbox] Checked block proposal #%d (%s) from %s and signed an approval",
 				b.Header.Height, truncate(b.Hash, 14), m.From)
 
 			if m.From != "" {
@@ -710,10 +710,10 @@ func writeDashboardHTML(node silentNode) string {
 
 	provingText := fmt.Sprintf("Day %.1f of 30", node.ProvingDays)
 	badgeText := fmt.Sprintf("Proving Uptime & Validating (%s)", provingText)
-	rewardText := "10,000 SYN reward claimable after 30 days"
+	rewardText := "10,000 SYN first reward after 30 days of verified uptime (approved operators)"
 	if node.RewardEligible {
 		badgeText = "★ ACTIVE CONSENSUS VALIDATOR (30-Day Proving Complete)"
-		rewardText = "★ 10,000 SYN Reward Verified & Claimable via Smart Contract"
+		rewardText = "★ 30 days proven — 10,000 SYN first reward pending your approval"
 	}
 
 	synAccumulated := (node.ProvingDays / provingTargetDays) * 10000.0
@@ -725,7 +725,7 @@ func writeDashboardHTML(node silentNode) string {
 	nextMilestoneMult := "1.5x"
 	if node.StreakDays >= 21.0 {
 		nextMilestoneDay = 30.0
-		nextMilestoneMult = "3.0x + 10,000 SYN Claim"
+		nextMilestoneMult = "3.0x points + 10,000 SYN eligibility"
 	} else if node.StreakDays >= 14.0 {
 		nextMilestoneDay = 21.0
 		nextMilestoneMult = "2.5x"
@@ -798,7 +798,7 @@ func writeDashboardHTML(node silentNode) string {
     <div class="top">
       <div>
         <div class="eyebrow">SYNTHOS Collective Sovereign Layer-1</div>
-        <h1>1-Click Consensus Validator Node</h1>
+        <h1>1-Click Node — Uptime Proving</h1>
       </div>
       <div class="badge"><span class="dot"></span> %s</div>
     </div>
@@ -808,7 +808,7 @@ func writeDashboardHTML(node silentNode) string {
       <div>
         <div class="label" style="color:#2ed5a9">🔥 Real-Time Ecosystem Points (Ticking)</div>
         <div class="ticker-val" id="pointsTicker">%.2f</div>
-        <div class="syn-val">≈ <span id="synTicker">%.4f</span> SYN Accumulated <span style="font-size:0.8rem;color:#8ea0ba">(Target: 10,000 SYN)</span></div>
+        <div class="syn-val">First-reward progress: <span id="synTicker">%.4f</span> / 10,000 SYN <span style="font-size:0.8rem;color:#8ea0ba">(points are not SYN; nothing is paid before day 30, and only to approved operators)</span></div>
       </div>
       <div>
         <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-start">
@@ -839,7 +839,7 @@ func writeDashboardHTML(node silentNode) string {
         <span class="%s">7-Day Streak (1.5x)</span>
         <span class="%s">14-Day Streak (2.0x)</span>
         <span class="%s">21-Day Streak (2.5x)</span>
-        <span class="%s">30-Day Master (3.0x + 10k SYN)</span>
+        <span class="%s">30-Day Master (3.0x points + 10k SYN eligibility)</span>
       </div>
     </div>
 
@@ -857,7 +857,7 @@ func writeDashboardHTML(node silentNode) string {
         <div class="val" id="valCount" style="color:#2ed5a9">%d</div>
       </div>
       <div class="card">
-        <div class="label">Consensus Votes Cast</div>
+        <div class="label">Mailbox Approvals Signed</div>
         <div class="val" id="voteCount" style="color:#7fffd4">%d</div>
       </div>
       <div class="card">
@@ -918,7 +918,7 @@ func writeDashboardHTML(node silentNode) string {
     </div>
 
     <div class="note">
-      <strong>Actively Validating in Background.</strong> This node participates in consensus via the SYNTHOS Mailbox Relay with 0 open inbound ports. It validates real block proposals, cryptographically signs votes with your local Ed25519 key, and tracks your monthly proving progress for the 10,000 SYN/mo reward. Rewards are strictly 1 node per household/connection to ensure fair decentralized distribution.
+      <strong>Proving uptime in the background.</strong> This node sends an Ed25519-signed heartbeat every 15 seconds with 0 open inbound ports, so your uptime is measured honestly. It is not a chain validator: the chain runs on CometBFT validators that have bonded at least 10,000 SYN. After 30 days of verified uptime, approved operators receive 10,000 SYN (enough to bond as a validator), then 5,000 SYN a month. Rewards are 1 node per household/connection.
     </div>
 
     <div style="margin-top:14px;padding:14px 18px;border-radius:10px;background:rgba(242,196,93,0.12);border:1px solid rgba(242,196,93,0.3);color:#ffe0a0;font-size:0.9rem;line-height:1.5;">

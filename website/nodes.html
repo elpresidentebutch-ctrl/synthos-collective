@@ -4,10 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>SYNTHOS Push Button Node</title>
-  <meta name="description" content="Install and monitor a SYNTHOS background validator node." />
+  <meta name="description" content="Install and monitor a Synthos Collective background node that proves uptime." />
   <meta name="robots" content="index,follow" />
   <link rel="canonical" href="https://www.ishamwilliamsblockchains.com/nodes" />
-  <meta property="og:title" content="SYNTHOS Validator Node Installer" />
+  <meta property="og:title" content="Synthos Collective 1-Click Node" />
   <meta property="og:description" content="Install the SynthosNode Windows Service and monitor signed Ed25519 uptime heartbeats." />
   <meta property="og:url" content="https://www.ishamwilliamsblockchains.com/nodes" />
   <style>
@@ -40,7 +40,7 @@
   <main>
     <section class="hero">
       <div class="panel pad">
-        <div class="eyebrow">1-Click Self-Daemonizing Background Validator</div>
+        <div class="eyebrow">1-Click Background Node — earn your validator bond</div>
         <h1>Click once. Run silently in the background.</h1>
         <p>Download and click <b>silentnode.exe</b>. It automatically installs into your user folder, registers to start at login (no Administrator prompt or terminal window needed), creates your local Ed25519 identity, and sends real signed heartbeats every 15 seconds while your computer is on.</p>
         <div class="row">
@@ -60,19 +60,19 @@
           <div style="margin-top:6px;font-size:12px;color:#94a3b8">Prefer a 1-click terminal install? Run in PowerShell: <code style="background:#0f172a;padding:2px 6px;border-radius:3px;color:#38bdf8">irm https://82-29-54-7.sslip.io/install.ps1 | iex</code></div>
         </div>
         <div style="margin-top:10px;padding:12px 14px;background:rgba(242,196,93,0.1);border-left:3px solid #f2c45d;border-radius:4px;font-size:13px;color:#ffe0a0">
-          ⚡ <strong>Important Power Setting:</strong> Your screen can go to sleep, but <strong>not the actual computer itself</strong>. To achieve your 1-month verified status and 10,000 SYN activation reward, the machine must stay awake and online to continuously validate blocks. Setting your monitor or display to turn off / sleep is 100% fine, but the computer itself must not sleep or hibernate.
+          ⚡ <strong>Important Power Setting:</strong> Your screen can go to sleep, but <strong>not the actual computer itself</strong>. To reach 30 days of verified uptime for the 10,000 SYN first reward, the machine must stay awake and online so it keeps sending signed heartbeats. Setting your monitor or display to turn off / sleep is 100% fine, but the computer itself must not sleep or hibernate.
         </div>
       </div>
       <aside class="panel pad">
-        <h2>Validator Rewards (10,000 SYN Activation + 5,000–7,500 SYN/mo)</h2>
-        <p>Your downloaded node immediately connects as a consensus validator candidate with zero open inbound ports. It actively verifies network block proposals and cryptographically signs consensus votes. After <b>your first full month of verified uptime</b>, your node earns the <b class="ok">10,000 SYN activation reward</b> (the full validator bond). Ongoing verified operation earns <b class="ok">5,000–7,500 SYN/month</b> directly to your designated payout wallet.</p>
+        <h2>Operator Rewards: 10,000 SYN, then 5,000 SYN a month</h2>
+        <p>Your downloaded node proves its uptime with an Ed25519-signed heartbeat every 15 seconds, with zero open inbound ports. It is not a chain validator: Synthos Collective runs on CometBFT validators that bond at least 10,000 SYN. After your first <b>30 days of verified uptime</b>, approved operators are paid <b class="ok">10,000 SYN</b> — exactly the validator bond — then <b class="ok">5,000 SYN a month</b> for each further 27+ days of uptime. To get approved, send Jim your node ID and payout wallet. Every payment is published at <a href="https://82-29-54-7.sslip.io/api/rewards">/api/rewards</a>.</p>
         <div style="margin-top:10px;padding:10px 12px;background:rgba(114,221,255,0.08);border:1px solid rgba(114,221,255,0.25);border-radius:10px;font-size:13px;line-height:1.5;">
           🛡️ <strong>Fair Distribution Protections:</strong><br/>
           • <strong>1 Paid Node Per Household:</strong> Exactly one node per internet connection receives monthly rewards to stop sybil farming.<br/>
           • <strong>Real Signed Heartbeats Only:</strong> Requires cryptographic Ed25519 uptime signatures.<br/>
           • <strong>Monthly Distribution Cap:</strong> 250,000 SYN per month reward pool.<br/>
-          • <strong>Halving Schedule:</strong> Cuts in half every 2 years starting Jan 1, 2027 (5,000 SYN base in 2026, 2,500 in 2027–2028).<br/>
-          • <strong>Consensus Promotion:</strong> Promotion to active consensus quorum voting is subject to founder approval.
+          • <strong>Halving Schedule:</strong> 5,000 SYN a month through 2027, then halving every 2 years (2,500 from 2028, 1,250 from 2030). The 10,000 SYN first reward does not halve.<br/>
+          • <strong>Becoming a validator:</strong> bond your 10,000 SYN with a validator_bond transaction from a synthos-comet node. Validator onboarding for outside operators is opening next.
         </div>
         <p class="muted" style="margin-top:10px">No payment is made for clicking the button alone. Rewards require the installed runner to keep sending real signed uptime proofs.</p>
       </aside>
@@ -132,7 +132,7 @@
         <div class="stat"><b id="previousMonthUptime">no completed epoch</b><span>Previous month uptime</span></div>
       </div>
       <p style="margin-top:14px"><b id="rewardStatus">Reward status: Waiting for node</b></p>
-      <p class="muted" id="rewardNote">Reward eligibility applies to Validator Candidate and Validator roles only.</p>
+      <p class="muted" id="rewardNote">Rewards go only to approved operators, one node per household.</p>
     </section>
 
     <!-- GAMIFIED AIRDROP POINTS & DUOLINGO STREAKS -->
@@ -151,7 +151,7 @@
         <div class="stat" style="border-color:rgba(46,213,169,0.4);background:rgba(46,213,169,0.05)">
           <span style="font-size:0.75rem;font-weight:800;color:var(--green);text-transform:uppercase;letter-spacing:0.08em">Ticking Ecosystem Points</span>
           <b id="tickerPoints" style="font-size:2.4rem;color:var(--green);font-family:monospace;letter-spacing:-0.03em;margin-top:4px">0.00</b>
-          <span style="color:var(--cyan);font-family:monospace;font-size:0.95rem;margin-top:4px">≈ <span id="tickerSyn">0.0000</span> SYN Accumulated (Goal: 10,000 SYN Activation Bond)</span>
+          <span style="color:var(--cyan);font-family:monospace;font-size:0.95rem;margin-top:4px">First-reward progress: <span id="tickerSyn">0.0000</span> / 10,000 SYN (points are not SYN; nothing is paid before day 30)</span>
         </div>
 
         <div>
@@ -167,7 +167,7 @@
             <span>7-Day (1.5x)</span>
             <span>14-Day (2.0x)</span>
             <span>21-Day (2.5x)</span>
-            <span>30-Day (3.0x + 10k SYN)</span>
+            <span>30-Day (3.0x points + 10k SYN eligibility)</span>
           </div>
           <p style="font-size:0.78rem;color:var(--muted);margin-top:10px;line-height:1.4">
             🔥 <strong>Duolingo for Infrastructure:</strong> Keep your computer awake and connected to maintain your streak. Reaching 7 straight days of uptime automatically unlocks a <strong>1.5x points multiplier</strong>.
@@ -180,8 +180,8 @@
     <section class="panel pad" style="margin-top:16px">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
         <div>
-          <h2>🏆 Consensus Validator Leaderboard</h2>
-          <p style="margin:2px 0 0;font-size:0.85rem;color:var(--muted)">Top decentralized nodes ranked by uptime streaks and network validation proofs</p>
+          <h2>🏆 Node Uptime Leaderboard</h2>
+          <p style="margin:2px 0 0;font-size:0.85rem;color:var(--muted)">Nodes ranked by verified uptime and points streaks</p>
         </div>
         <button id="refreshLbBtn" class="btn" style="padding:6px 12px;font-size:0.8rem" onclick="loadLeaderboard()">Refresh Rankings</button>
       </div>
@@ -584,7 +584,7 @@
       let nextTargetDays = 7.0;
       if (verifiedDays >= 21) {
         mult = 2.5;
-        nextGoal = "30-Day Master (3.0x + 10,000 SYN Activation Bond)";
+        nextGoal = "30-Day Master (3.0x + 10,000 SYN first reward)";
         nextTargetDays = 30.0;
       } else if (verifiedDays >= 14) {
         mult = 2.0;
@@ -642,7 +642,7 @@
       document.getElementById("previousMonthUptime").textContent = epoch.previous_month_uptime || "no completed epoch";
       document.getElementById("rewardStatus").textContent = "Reward status: " + titleStatus(epoch.reward_status || s?.reward?.status);
       document.getElementById("rewardStatus").className = s?.reward?.eligible ? "ok" : "pending";
-      document.getElementById("rewardNote").textContent = epoch.note || "Reward eligibility applies to Validator Candidate and Validator roles only.";
+      document.getElementById("rewardNote").textContent = epoch.note || "Rewards go only to approved operators, one node per household.";
     }
     function renderSteps(s, caps, capabilityStatus) {
       const done = {
