@@ -90,10 +90,23 @@ func main() {
 	outbox := flag.String("outbox", env("SYNTHOS_BRIDGE_OUTBOX", ".synthos/bridge-outbox.jsonl"), "native bridge event outbox path")
 	proofOutbox := flag.String("proof-outbox", env("SYNTHOS_BRIDGE_PROOF_OUTBOX", ".synthos/evm-bridge-proofs.jsonl"), "confirmed EVM lock proof JSONL path")
 	proofFile := flag.String("proof", os.Getenv("SYNTHOS_BRIDGE_PROOF_FILE"), "external lock proof JSON for submit-native-release")
-	privateKey := flag.String("priv", os.Getenv("SYNTHOS_BRIDGE_AUTHORITY_PRIVATE_KEY"), "Ed25519 bridge authority private key for native release tx")
+	privateKey := flag.String("priv", os.Getenv("SYNTHOS_BRIDGE_AUTHORITY_PRIVATE_KEY"), "Ed25519 bridge authority private key for native release tx (deprecated as a flag: other users can read it in the process list; use the env var or -priv-file)")
+	privateKeyFile := flag.String("priv-file", os.Getenv("SYNTHOS_BRIDGE_AUTHORITY_PRIVATE_KEY_FILE"), "file holding the Ed25519 bridge authority private key (preferred)")
 	fee := flag.Uint64("fee", 0, "native SYN fee (defaults to RequiredFee)")
 	proposeBlockToken := flag.String("propose-block-token", os.Getenv("SYNTHOS_PROPOSE_BLOCK_TOKEN"), "X-Propose-Block-Token value used to nudge immediate block production after a release tx; optional (best-effort), required only if the target node has SYNTHOS_PROPOSE_BLOCK_TOKEN configured (see internal/rpc/server.go's handleProposeBlock)")
 	flag.Parse()
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "priv" {
+			fmt.Fprintln(os.Stderr, "warning: -priv exposes the bridge authority key in the process list; use SYNTHOS_BRIDGE_AUTHORITY_PRIVATE_KEY or -priv-file instead")
+		}
+	})
+	if *privateKey == "" && *privateKeyFile != "" {
+		key, err := readPrivateKeyFile(*privateKeyFile)
+		if err != nil {
+			fatal(err)
+		}
+		*privateKey = key
+	}
 
 	switch *mode {
 	case "watch-native":
@@ -782,4 +795,25 @@ func envDuration(key string, fallback time.Duration) time.Duration {
 func fatal(err error) {
 	fmt.Fprintln(os.Stderr, "bridge relayer:", err)
 	os.Exit(1)
+}
+
+// readPrivateKeyFile reads a hex private key from path, refusing files other
+// users can read.
+func readPrivateKeyFile(path string) (string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", fmt.Errorf("bridge authority key file: %w", err)
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		return "", fmt.Errorf("bridge authority key file %s is readable by other users (mode %o); run: chmod 600 %s", path, info.Mode().Perm(), path)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("bridge authority key file: %w", err)
+	}
+	key := strings.TrimSpace(string(raw))
+	if key == "" {
+		return "", fmt.Errorf("bridge authority key file %s is empty", path)
+	}
+	return key, nil
 }
