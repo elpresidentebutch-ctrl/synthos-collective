@@ -22,6 +22,8 @@ import (
 
 	abcitypes "github.com/cometbft/cometbft/abci/types"
 	cmted25519 "github.com/cometbft/cometbft/crypto/ed25519"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	"strconv"
 
 	"synthos-collective/internal/chain"
 )
@@ -184,6 +186,9 @@ func New(dataDir string) (*App, error) {
 	if got := p.State.Root(); got != p.AppHash {
 		return nil, fmt.Errorf("%s is corrupt: stored app hash %s but state hashes to %s", stateFileName, p.AppHash, got)
 	}
+	if p.Height >= chain.FeeModelV2ActivationHeight && p.State != nil && p.State.TreasuryAddress == "" {
+		return nil, errors.New("cannot start app: TreasuryAddress is required from FeeModelV2ActivationHeight onward")
+	}
 	a.chainID, a.txChainID, a.staking = p.ChainID, p.TxChainID, p.Staking
 	a.committed, a.height, a.appHash = p.State, p.Height, hash
 	a.check = p.State.Clone()
@@ -336,8 +341,50 @@ func (a *App) FinalizeBlock(_ context.Context, req *abcitypes.RequestFinalizeBlo
 		}
 		results[i] = &abcitypes.ExecTxResult{Code: 0}
 	}
-	if err := chain.ApplyBlockFees(st, applied, proposer); err != nil {
+	if req.Height >= chain.FeeModelV2ActivationHeight && st.TreasuryAddress == "" {
+		return nil, errors.New("cannot finalize block: TreasuryAddress is required from FeeModelV2ActivationHeight onward")
+	}
+
+	feeSplit, err := chain.ApplyBlockFees(st, applied, proposer, req.Height)
+	if err != nil {
 		return nil, err
+	}
+
+	var events []abcitypes.Event
+	if req.Height >= chain.FeeModelV2ActivationHeight {
+		events = append(events, abcitypes.Event{
+			Type: "fee_split",
+			Attributes: []abcitypes.EventAttribute{
+				{Key: "total", Value: strconv.FormatUint(feeSplit.TotalFees, 10), Index: true},
+				{Key: "burn", Value: strconv.FormatUint(feeSplit.BurnAmount, 10), Index: true},
+				{Key: "treasury", Value: strconv.FormatUint(feeSplit.ToTreasury, 10), Index: true},
+			},
+		})
+
+		for _, vote := range req.DecidedLastCommit.Votes {
+			if vote.Validator.Power > 0 {
+				op := operatorForConsensusAddress(st, vote.Validator.Address)
+				st.RecordFeeEpochVote(op, uint64(vote.Validator.Power), vote.BlockIdFlag == cmtproto.BlockIDFlagCommit)
+			}
+		}
+
+		if uint64(req.Height-chain.FeeModelV2ActivationHeight+1)%chain.FeeEpochBlocks == 0 {
+			epoch := uint64(req.Height-chain.FeeModelV2ActivationHeight) / chain.FeeEpochBlocks
+			payouts, err := st.DistributeFeeEpochPayout(epoch)
+			if err != nil {
+				return nil, err
+			}
+			for _, p := range payouts {
+				events = append(events, abcitypes.Event{
+					Type: "validator_fee_payout",
+					Attributes: []abcitypes.EventAttribute{
+						{Key: "operator", Value: string(p.Operator), Index: true},
+						{Key: "amount", Value: strconv.FormatUint(p.Amount, 10), Index: true},
+						{Key: "epoch", Value: strconv.FormatUint(p.Epoch, 10), Index: true},
+					},
+				})
+			}
+		}
 	}
 
 	slashedAny := false
@@ -371,7 +418,7 @@ func (a *App) FinalizeBlock(_ context.Context, req *abcitypes.RequestFinalizeBlo
 		return nil, err
 	}
 	a.pending, a.pendingHeight, a.pendingAppHash = st, req.Height, hash
-	return &abcitypes.ResponseFinalizeBlock{TxResults: results, ValidatorUpdates: updates, AppHash: hash}, nil
+	return &abcitypes.ResponseFinalizeBlock{Events: events, TxResults: results, ValidatorUpdates: updates, AppHash: hash}, nil
 }
 
 // Commit makes the last finalized block durable and resets the mempool

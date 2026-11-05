@@ -320,22 +320,18 @@ Before launch, the liquidity plan should clearly state:
 
 SYNTHOS allocates **13,000,000,000 SYN** to the ecosystem treasury (see the Ecosystem Treasury row in the allocation table in section 2, which this figure was previously out of sync with).
 
-The SYNTHOS treasury and governance system controls long-term ecosystem resources and protocol reserves through a transparent, decentralized process.
+The SYNTHOS treasury and governance system controls long-term ecosystem resources and protocol reserves.
 
-### 12.1 Treasury-Centric Fee Model & SYNTHOSTreasuryFeeReserve
+### 12.1 Native Fee Model
 
-To establish sound tokenomics and maintain regulatory compliance, SYNTHOS operates under a **Treasury-Centric Fee Model** implemented in the state machine and via the `SYNTHOSTreasuryFeeReserve.sol` smart contract:
+Fees below the activation height H go to the block proposer minus the 50% burn.
 
-1. **Fee Ingestion**:
-   - 100% of network execution fees, transaction fees, and native gas route directly into the decentralized Protocol Treasury Reserve.
-   - Individual block proposers **never** skim direct commercial fees or trading dividends.
-2. **Deterministic Fee Allocation Parameters** (Default: `MAX_BPS = 10000`):
-   - **10% Deflationary Burn (`burnBps = 1000`)**: Automatically burned on deposit to the burn address (`0x...dEaD`), permanently reducing circulating SYN supply.
-   - **70% Validator Reserve (`validatorReserveBps = 7000`)**: Earmarked to fund the Validator Staking Contract (`SYNTHOSStaking.sol`) and Candidate Rewards (`SYNTHOSValidatorCandidateRewards.sol`).
-   - **20% Ecosystem Liquidity & Backing (`ecosystemGrowthBps = 2000`)**: Retained as permanent treasury reserve liquidity and cryptographic balance-sheet backing.
-3. **Programmatic Validator Disbursements**:
-   - Validators are compensated as independent infrastructure providers for verified hardware uptime, signature aggregation, and Byzantine consensus duties.
-   - Disbursements are funded programmatically via `fundValidatorEpoch` calls by Governance or authorized Keepers, preserving regulatory integrity under the Howey Test.
+From activation height H onward:
+1. 50% of transaction fees are burned.
+2. 50% of transaction fees go to the treasury account.
+3. Each month (216,000 blocks) the treasury pays half of that month's fee income to validators in proportion to the voting power they signed with. Unearned shares from offline validators and rounding remain in the treasury.
+4. The treasury is one founder-controlled account today.
+5. `SYNTHOSTreasuryFeeReserve.sol` is an undeployed draft.
 
 Before public launch, SYNTHOS should define:
 

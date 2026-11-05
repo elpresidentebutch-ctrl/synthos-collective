@@ -91,7 +91,7 @@ func main() {
 	proofOutbox := flag.String("proof-outbox", env("SYNTHOS_BRIDGE_PROOF_OUTBOX", ".synthos/evm-bridge-proofs.jsonl"), "confirmed EVM lock proof JSONL path")
 	proofFile := flag.String("proof", os.Getenv("SYNTHOS_BRIDGE_PROOF_FILE"), "external lock proof JSON for submit-native-release")
 	privateKey := flag.String("priv", os.Getenv("SYNTHOS_BRIDGE_AUTHORITY_PRIVATE_KEY"), "Ed25519 bridge authority private key for native release tx")
-	fee := flag.Uint64("fee", chain.MIN_FEE, "native SYN fee")
+	fee := flag.Uint64("fee", 0, "native SYN fee (defaults to RequiredFee)")
 	proposeBlockToken := flag.String("propose-block-token", os.Getenv("SYNTHOS_PROPOSE_BLOCK_TOKEN"), "X-Propose-Block-Token value used to nudge immediate block production after a release tx; optional (best-effort), required only if the target node has SYNTHOS_PROPOSE_BLOCK_TOKEN configured (see internal/rpc/server.go's handleProposeBlock)")
 	flag.Parse()
 
@@ -305,12 +305,17 @@ func submitNativeReleaseProof(rpcURL string, proof externalLockProof, privHex st
 		From:      from,
 		To:        proof.Recipient,
 		Amount:    proof.Amount,
-		Fee:       fee,
 		Nonce:     account.Nonce,
 		PublicKey: pubHex,
 		AssetID:   map[bool]string{true: "", false: assetID}[assetID == "syn"],
 		Metadata:  metadata,
 		Timestamp: time.Now().UTC().Unix(),
+	}
+	reqFee := chain.RequiredFee(tx)
+	if fee < reqFee {
+		tx.Fee = reqFee
+	} else {
+		tx.Fee = fee
 	}
 	if err := tx.Sign(w.Private); err != nil {
 		return err

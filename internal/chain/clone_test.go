@@ -55,6 +55,9 @@ func TestStateClone_CopiesEveryExportedField(t *testing.T) {
 		Unbonding: []UnbondingEntry{{Amount: 10, CompleteAtHeight: 20}},
 	}
 	s.ValidatorSetSnapshot = []ActiveValidator{{Operator: addr2, ConsensusPubKey: "0xabc", Power: 5000}}
+	s.FeeEpochTreasuryIncome = 5000
+	s.FeeEpochTotalPower = 10000
+	s.FeeEpochSignedPower[addr2] = 10000
 
 	clone := s.Clone()
 

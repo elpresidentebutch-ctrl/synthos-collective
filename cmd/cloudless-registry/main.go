@@ -3891,7 +3891,6 @@ func allocateNativeSYN(intent earlyAccessPaymentIntent) (string, error) {
 		From:      from,
 		To:        chain.Address(intent.SynthosAddress),
 		Amount:    intent.SynAmount,
-		Fee:       chain.MIN_FEE,
 		Nonce:     nonce,
 		PublicKey: pub,
 		Metadata: []chain.KeyValuePair{
@@ -3901,6 +3900,7 @@ func allocateNativeSYN(intent earlyAccessPaymentIntent) (string, error) {
 			{Key: "asset", Value: intent.AssetSymbol},
 		},
 	}
+	tx.Fee = chain.RequiredFee(tx)
 	if err := tx.Sign(w.Private); err != nil {
 		return "", err
 	}

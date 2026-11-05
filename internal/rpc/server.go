@@ -767,7 +767,6 @@ func (s *Server) handleDEXSwap(w http.ResponseWriter, r *http.Request) {
 		From:    derivedFrom,
 		To:      chain.PoolAddress(assetID),
 		Amount:  req.AmountIn,
-		Fee:     chain.MIN_FEE,
 		Nonce:   s.Chain.State.GetNextNonce(derivedFrom),
 		AssetID: txAssetID,
 		Metadata: []chain.KeyValuePair{
@@ -778,6 +777,7 @@ func (s *Server) handleDEXSwap(w http.ResponseWriter, r *http.Request) {
 		},
 		Timestamp: time.Now().Unix(),
 	}
+	tx.Fee = chain.RequiredFee(tx)
 
 	if err := tx.Sign(privKey); err != nil {
 		http.Error(w, "sign error: "+err.Error(), http.StatusInternalServerError)
@@ -909,11 +909,11 @@ func (s *Server) handleDEXLiquidity(w http.ResponseWriter, r *http.Request) {
 		From:      derivedFrom,
 		To:        chain.PoolAddress(assetID),
 		Amount:    0,
-		Fee:       chain.MIN_FEE,
 		Nonce:     s.Chain.State.GetNextNonce(derivedFrom),
 		Metadata:  metadata,
 		Timestamp: time.Now().Unix(),
 	}
+	tx.Fee = chain.RequiredFee(tx)
 
 	if err := tx.Sign(privKey); err != nil {
 		http.Error(w, "sign error: "+err.Error(), http.StatusInternalServerError)
@@ -1010,7 +1010,6 @@ func (s *Server) handleDEXIssue(w http.ResponseWriter, r *http.Request) {
 		From:    derivedFrom,
 		To:      derivedFrom,
 		Amount:  req.Amount,
-		Fee:     chain.MIN_FEE,
 		Nonce:   s.Chain.State.GetNextNonce(derivedFrom),
 		AssetID: assetID,
 		Metadata: []chain.KeyValuePair{
@@ -1020,6 +1019,7 @@ func (s *Server) handleDEXIssue(w http.ResponseWriter, r *http.Request) {
 		},
 		Timestamp: time.Now().Unix(),
 	}
+	tx.Fee = chain.RequiredFee(tx)
 
 	if err := tx.Sign(privKey); err != nil {
 		http.Error(w, "sign error: "+err.Error(), http.StatusInternalServerError)

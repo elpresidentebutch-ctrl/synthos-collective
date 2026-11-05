@@ -80,7 +80,6 @@ func main() {
 		From:      derivedAddr,
 		To:        chain.Address(strings.ToLower(toAddr)),
 		Amount:    amount,
-		Fee:       chain.MIN_FEE,
 		Nonce:     nonce,
 		PublicKey: hex.EncodeToString(pubKey),
 		Metadata: []chain.KeyValuePair{
@@ -89,6 +88,7 @@ func main() {
 			{Key: "amount_syn", Value: fmt.Sprint(amount)},
 		},
 	}
+	tx.Fee = chain.RequiredFee(tx)
 
 	if err := tx.Sign(edPriv); err != nil {
 		fmt.Printf("Error signing transaction: %v\n", err)

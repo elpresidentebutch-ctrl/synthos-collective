@@ -11,6 +11,7 @@ import (
 	"time"
 
 	abcitypes "github.com/cometbft/cometbft/abci/types"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 
 	"synthos-collective/internal/chain"
 )
@@ -512,5 +513,126 @@ func TestCitizenRewardsUseConsensusBlockTime(t *testing.T) {
 	}
 	if st := a.committed.GetCitizenStake(f.user.addr); st.LastClaimAt != t0.Unix()+10 {
 		t.Fatalf("reward clock = %d, want the block time %d", st.LastClaimAt, t0.Unix()+10)
+	}
+}
+
+func TestFeeModelV2_CometAppPersistenceAndEvents(t *testing.T) {
+	dir := t.TempDir()
+	f := newFixture(t, 5_000, 5_000, 5_000, 5_000)
+	treasury := newAccount(t)
+	f.gen.Chain.Alloc[treasury.addr] = 1_000_000_000
+	f.gen.Chain.Metadata = map[string]any{
+		"treasury_address": string(treasury.addr),
+	}
+
+	a, _ := f.newApp(dir)
+
+	// Build a valid transaction at FeeModelV2ActivationHeight
+	tx := chain.Tx{
+		ChainID:   testTxChainID,
+		From:      f.user.addr,
+		To:        treasury.addr,
+		Amount:    10_000,
+		Fee:       10, // Required fee for 10,000 SYN send is 10
+		Nonce:     0,
+		PublicKey: "0x" + hex.EncodeToString(f.user.pub),
+		Timestamp: time.Now().Unix(),
+	}
+	if err := tx.Sign(f.user.priv); err != nil {
+		t.Fatal(err)
+	}
+	rawTx, _ := json.Marshal(tx)
+
+	// Build votes from all 4 validators
+	votes := make([]abcitypes.VoteInfo, 4)
+	for i, val := range f.vals {
+		votes[i] = abcitypes.VoteInfo{
+			Validator: abcitypes.Validator{
+				Address: val.consensusAddr(t),
+				Power:   5_000,
+			},
+			BlockIdFlag: cmtproto.BlockIDFlagCommit,
+		}
+	}
+
+	h := chain.FeeModelV2ActivationHeight
+	res, err := a.FinalizeBlock(context.Background(), &abcitypes.RequestFinalizeBlock{
+		Height: h,
+		Time:   time.Now().UTC(),
+		Txs:    [][]byte{rawTx},
+		DecidedLastCommit: abcitypes.CommitInfo{
+			Votes: votes,
+		},
+		ProposerAddress: f.vals[0].consensusAddr(t),
+	})
+	if err != nil {
+		t.Fatalf("FinalizeBlock at H: %v", err)
+	}
+	if len(res.TxResults) != 1 || res.TxResults[0].Code != 0 {
+		t.Fatalf("tx failed: %#v", res.TxResults[0])
+	}
+
+	// Verify fee_split event is emitted
+	foundFeeSplit := false
+	for _, ev := range res.Events {
+		if ev.Type == "fee_split" {
+			foundFeeSplit = true
+			break
+		}
+	}
+	if !foundFeeSplit {
+		t.Fatal("expected fee_split event in FinalizeBlock response")
+	}
+
+	// Commit block
+	if _, err := a.Commit(context.Background(), &abcitypes.RequestCommit{}); err != nil {
+		t.Fatal(err)
+	}
+
+	origIncome := a.committed.FeeEpochTreasuryIncome
+	origTotalPower := a.committed.FeeEpochTotalPower
+	if origIncome != 5 { // 10 fee -> 5 burn, 5 to treasury
+		t.Fatalf("expected FeeEpochTreasuryIncome = 5, got %d", origIncome)
+	}
+	if origTotalPower != 20_000 {
+		t.Fatalf("expected FeeEpochTotalPower = 20000, got %d", origTotalPower)
+	}
+
+	// Restart the node from the same dataDir
+	restarted, err := New(dir)
+	if err != nil {
+		t.Fatalf("restart New(%s): %v", dir, err)
+	}
+
+	if restarted.committed.FeeEpochTreasuryIncome != origIncome {
+		t.Fatalf("restarted FeeEpochTreasuryIncome = %d, want %d", restarted.committed.FeeEpochTreasuryIncome, origIncome)
+	}
+	if restarted.committed.FeeEpochTotalPower != origTotalPower {
+		t.Fatalf("restarted FeeEpochTotalPower = %d, want %d", restarted.committed.FeeEpochTotalPower, origTotalPower)
+	}
+	for _, val := range f.vals {
+		if restarted.committed.FeeEpochSignedPower[val.op.addr] != 5_000 {
+			t.Fatalf("restarted validator %s signed power = %d, want 5000", val.op.addr, restarted.committed.FeeEpochSignedPower[val.op.addr])
+		}
+	}
+	if restarted.committed.Root() != a.committed.Root() {
+		t.Fatalf("restarted state root mismatch: got %s, want %s", restarted.committed.Root(), a.committed.Root())
+	}
+}
+
+func TestFeeModelV2_RefusesStartWithoutTreasury(t *testing.T) {
+	dir := t.TempDir()
+	f := newFixture(t, 5_000)
+	// No TreasuryAddress in metadata
+	a, _ := f.newApp(dir)
+
+	// Finalizing at H without treasury must return error
+	h := chain.FeeModelV2ActivationHeight
+	_, err := a.FinalizeBlock(context.Background(), &abcitypes.RequestFinalizeBlock{
+		Height: h,
+		Time:   time.Now().UTC(),
+	})
+	if err == nil {
+		t.Fatal("expected error finalizing at H without TreasuryAddress, got nil")
 	}
 }

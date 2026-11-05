@@ -211,11 +211,11 @@ func startIdleWorker(a *agent.Agent, c *chain.Chain, priv ed25519.PrivateKey, ch
 				From:      addr,
 				To:        chain.Address("0xdeadbeef"),
 				Amount:    100,
-				Fee:       chain.MIN_FEE,
 				Nonce:     c.State.GetNextNonce(addr),
 				PublicKey: a.Identity.PublicKey,
 				Timestamp: time.Now().Unix(),
 			}
+			tx.Fee = chain.RequiredFee(tx)
 
 			if err := tx.Sign(priv); err == nil {
 				_ = c.SubmitTx(tx)

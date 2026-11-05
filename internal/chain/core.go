@@ -324,6 +324,12 @@ type State struct {
 	// processing, so every node holds the same one; empty before stake
 	// consensus starts. Included in Root() whenever non-empty.
 	ValidatorSetSnapshot []ActiveValidator
+
+	// Fee Epoch state (fee model v2, active from FeeModelV2ActivationHeight).
+	// Consensus state committed to Root() only when non-zero/non-empty.
+	FeeEpochTreasuryIncome uint64
+	FeeEpochTotalPower     uint64
+	FeeEpochSignedPower    map[Address]uint64
 }
 
 func NewState() *State {
@@ -338,6 +344,7 @@ func NewState() *State {
 		GovernanceProposals:   make(map[string]*Proposal),
 		DEXPools:              make(map[string]*Pool),
 		Validators:            make(map[Address]ValidatorRecord),
+		FeeEpochSignedPower:   make(map[Address]uint64),
 		TotalSupply:           MAX_SUPPLY,
 	}
 }
@@ -1329,6 +1336,24 @@ func (s *State) Root() string {
 		leaves = append(leaves, snapshotHash[:])
 	}
 
+	// Fee epoch state is consensus state: include it in Root() only when
+	// non-zero/non-empty, so every root computed before activation is
+	// byte-identical.
+	if s.FeeEpochTreasuryIncome > 0 || s.FeeEpochTotalPower > 0 || len(s.FeeEpochSignedPower) > 0 {
+		feePayload := struct {
+			TreasuryIncome uint64             `json:"treasury_income"`
+			TotalPower     uint64             `json:"total_power"`
+			SignedPower    map[Address]uint64 `json:"signed_power"`
+		}{
+			TreasuryIncome: s.FeeEpochTreasuryIncome,
+			TotalPower:     s.FeeEpochTotalPower,
+			SignedPower:    s.FeeEpochSignedPower,
+		}
+		feeData, _ := json.Marshal(feePayload)
+		feeHash := sha256.Sum256(append([]byte("synthos/fee-epoch/v1:"), feeData...))
+		leaves = append(leaves, feeHash[:])
+	}
+
 	return "0x" + hex.EncodeToString(buildMerkleRoot(leaves))
 }
 
@@ -1439,6 +1464,14 @@ func (s *State) Clone() *State {
 	out.Validators = cloneValidatorRecords(s.Validators)
 	if s.ValidatorSetSnapshot != nil {
 		out.ValidatorSetSnapshot = append([]ActiveValidator(nil), s.ValidatorSetSnapshot...)
+	}
+	out.FeeEpochTreasuryIncome = s.FeeEpochTreasuryIncome
+	out.FeeEpochTotalPower = s.FeeEpochTotalPower
+	if s.FeeEpochSignedPower != nil {
+		out.FeeEpochSignedPower = make(map[Address]uint64, len(s.FeeEpochSignedPower))
+		for k, v := range s.FeeEpochSignedPower {
+			out.FeeEpochSignedPower[k] = v
+		}
 	}
 	return out
 }
