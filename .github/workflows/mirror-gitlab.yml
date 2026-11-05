@@ -1,0 +1,52 @@
+name: Mirror to GitLab
+
+# GitHub is the home of this repository; GitLab is a read-only mirror.
+# Every push (and branch or tag deletion) here is copied to GitLab.
+#
+# One-time setup: create a GitLab project access token with the
+# write_repository scope (Settings > Access tokens on the GitLab project),
+# then add it here as the repository secret GITLAB_MIRROR_TOKEN
+# (Settings > Secrets and variables > Actions). Until then this job skips.
+
+on:
+  push:
+  delete:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mirror-gitlab
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check for the mirror token
+        id: token
+        env:
+          GITLAB_MIRROR_TOKEN: ${{ secrets.GITLAB_MIRROR_TOKEN }}
+        run: |
+          if [ -z "$GITLAB_MIRROR_TOKEN" ]; then
+            echo "GITLAB_MIRROR_TOKEN is not set; skipping the GitLab mirror."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.token.outputs.ready == 'true'
+        with:
+          fetch-depth: 0
+      - name: Push all branches and tags to GitLab
+        if: steps.token.outputs.ready == 'true'
+        env:
+          GITLAB_MIRROR_TOKEN: ${{ secrets.GITLAB_MIRROR_TOKEN }}
+          GITLAB_REPO: gitlab.com/synthos-collective-group/synthos-collective.git
+        run: |
+          git fetch --prune --tags origin '+refs/heads/*:refs/remotes/origin/*'
+          git remote set-head origin --delete || true
+          git push --prune --force "https://oauth2:${GITLAB_MIRROR_TOKEN}@${GITLAB_REPO}" \
+            '+refs/remotes/origin/*:refs/heads/*' '+refs/tags/*:refs/tags/*'

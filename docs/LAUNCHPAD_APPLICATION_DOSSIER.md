@@ -90,7 +90,7 @@ The 100 Billion SYN fixed supply is allocated at genesis with zero inflation and
 ## 6. Live Metrics & Current Traction
 
 * **Current Mainnet Block Height:** **63,900+ blocks**
-* **Active Node Topology:** 25 total registered peers; 5 to 10 active concurrent validators and cloud watchdogs running across Render Cloud, GitLab CI, and desktop fleet.
+* **Active Node Topology:** 25 total registered peers; 5 to 10 active concurrent validators and cloud watchdogs running across Render Cloud and desktop fleet.
 * **Audit-Grade Codebase:**
   * Comprehensive threat model, state invariants, and review checklist in `docs/audit/AUDIT_PACKET.md`.
   * Open source and dual-mirrored across GitHub and GitLab.
