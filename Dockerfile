@@ -19,7 +19,7 @@ RUN mkdir -p /out/downloads \
   && GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o /out/downloads/synthos-node-darwin-arm64 ./cmd/silentnode \
   && GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/downloads/synthos-node-darwin-amd64 ./cmd/silentnode
 
-FROM alpine:3.19
+FROM alpine:3.24
 RUN apk add --no-cache ca-certificates su-exec \
   && addgroup -g 10001 -S synthos \
   && adduser -u 10001 -S synthos -G synthos
