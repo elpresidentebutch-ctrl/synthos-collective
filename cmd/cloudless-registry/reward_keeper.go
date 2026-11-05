@@ -54,7 +54,7 @@ const (
 	rewardFirstUptime  = rewardEpoch         // 30 days before the first payment
 	rewardRepeatUptime = 27 * 24 * time.Hour // new uptime needed for each later payment
 	rewardStuckAfter   = time.Hour           // unconfirmed this long: pause and ask a person
-	rewardTxFeeSYN     = 1
+	rewardTxFeeSYN     = 10                  // default fee for transfers under fee model v2 (0.1% dynamic fee, min 10)
 	// rewardActivationSYN is an operator's first payment: exactly the
 	// minimum validator bond, so a month of uptime earns the bond.
 	rewardActivationSYN   = validatorMinimumBondSYN
@@ -373,6 +373,9 @@ func (s *server) rewardKeeperCycle(now time.Time, cfg rewardKeeperConfig, ch rew
 				{Key: "node_id", Value: c.NodeID},
 				{Key: "epoch", Value: epoch},
 			},
+		}
+		if reqFee := chain.RequiredFee(tx); reqFee > tx.Fee {
+			tx.Fee = reqFee
 		}
 		if err := tx.Sign(cfg.Wallet.Private); err != nil {
 			log.Printf("[reward keeper] signing failed, stopping: %v", err)

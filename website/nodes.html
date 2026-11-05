@@ -60,18 +60,18 @@
           <div style="margin-top:6px;font-size:12px;color:#94a3b8">Prefer a 1-click terminal install? Run in PowerShell: <code style="background:#0f172a;padding:2px 6px;border-radius:3px;color:#38bdf8">irm https://82-29-54-7.sslip.io/install.ps1 | iex</code></div>
         </div>
         <div style="margin-top:10px;padding:12px 14px;background:rgba(242,196,93,0.1);border-left:3px solid #f2c45d;border-radius:4px;font-size:13px;color:#ffe0a0">
-          ⚡ <strong>Important Power Setting:</strong> Your screen can go to sleep, but <strong>not the actual computer itself</strong>. To achieve your 1-month verified status and 10,000 SYN reward, the machine must stay awake and online to continuously validate blocks. Setting your monitor or display to turn off / sleep is 100% fine, but the computer itself must not sleep or hibernate.
+          ⚡ <strong>Important Power Setting:</strong> Your screen can go to sleep, but <strong>not the actual computer itself</strong>. To achieve your 1-month verified status and 10,000 SYN activation reward, the machine must stay awake and online to continuously validate blocks. Setting your monitor or display to turn off / sleep is 100% fine, but the computer itself must not sleep or hibernate.
         </div>
       </div>
       <aside class="panel pad">
-        <h2>Monthly Validator Rewards (10,000 SYN/mo)</h2>
-        <p>Your downloaded node immediately connects as a consensus validator candidate with zero open inbound ports. It actively verifies network block proposals and cryptographically signs consensus votes. After <b>each full month of verified uptime</b>, your node is automatically paid <b class="ok">10,000 SYN/month</b> directly to your designated payout wallet.</p>
+        <h2>Validator Rewards (10,000 SYN Activation + 5,000–7,500 SYN/mo)</h2>
+        <p>Your downloaded node immediately connects as a consensus validator candidate with zero open inbound ports. It actively verifies network block proposals and cryptographically signs consensus votes. After <b>your first full month of verified uptime</b>, your node earns the <b class="ok">10,000 SYN activation reward</b> (the full validator bond). Ongoing verified operation earns <b class="ok">5,000–7,500 SYN/month</b> directly to your designated payout wallet.</p>
         <div style="margin-top:10px;padding:10px 12px;background:rgba(114,221,255,0.08);border:1px solid rgba(114,221,255,0.25);border-radius:10px;font-size:13px;line-height:1.5;">
           🛡️ <strong>Fair Distribution Protections:</strong><br/>
           • <strong>1 Paid Node Per Household:</strong> Exactly one node per internet connection receives monthly rewards to stop sybil farming.<br/>
           • <strong>Real Signed Heartbeats Only:</strong> Requires cryptographic Ed25519 uptime signatures.<br/>
           • <strong>Monthly Distribution Cap:</strong> 250,000 SYN per month reward pool.<br/>
-          • <strong>Halving Schedule:</strong> Cuts in half every 2 years starting Jan 1, 2027 (10,000 SYN in 2026, 5,000 in 2027–2028).<br/>
+          • <strong>Halving Schedule:</strong> Cuts in half every 2 years starting Jan 1, 2027 (5,000 SYN base in 2026, 2,500 in 2027–2028).<br/>
           • <strong>Consensus Promotion:</strong> Promotion to active consensus quorum voting is subject to founder approval.
         </div>
         <p class="muted" style="margin-top:10px">No payment is made for clicking the button alone. Rewards require the installed runner to keep sending real signed uptime proofs.</p>
@@ -151,7 +151,7 @@
         <div class="stat" style="border-color:rgba(46,213,169,0.4);background:rgba(46,213,169,0.05)">
           <span style="font-size:0.75rem;font-weight:800;color:var(--green);text-transform:uppercase;letter-spacing:0.08em">Ticking Ecosystem Points</span>
           <b id="tickerPoints" style="font-size:2.4rem;color:var(--green);font-family:monospace;letter-spacing:-0.03em;margin-top:4px">0.00</b>
-          <span style="color:var(--cyan);font-family:monospace;font-size:0.95rem;margin-top:4px">≈ <span id="tickerSyn">0.0000</span> SYN Accumulated (Goal: 10,000 SYN)</span>
+          <span style="color:var(--cyan);font-family:monospace;font-size:0.95rem;margin-top:4px">≈ <span id="tickerSyn">0.0000</span> SYN Accumulated (Goal: 10,000 SYN Activation Bond)</span>
         </div>
 
         <div>
@@ -584,7 +584,7 @@
       let nextTargetDays = 7.0;
       if (verifiedDays >= 21) {
         mult = 2.5;
-        nextGoal = "30-Day Master (3.0x + 10,000 SYN Claim)";
+        nextGoal = "30-Day Master (3.0x + 10,000 SYN Activation Bond)";
         nextTargetDays = 30.0;
       } else if (verifiedDays >= 14) {
         mult = 2.0;
