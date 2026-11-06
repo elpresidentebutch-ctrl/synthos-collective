@@ -1,6 +1,6 @@
 # SYNTHOS Collective — Launchpad & Incubator Application Master Dossier
 
-**Target Programs:** Seedify, DAO Maker, ChainGPT Pad, Polkastarter, Binance Labs, Outlier Ventures  
+**Target Programs:** DAO Maker, ChainGPT Pad, Polkastarter, Binance Labs, Outlier Ventures  
 **Asset:** SYN (Native Layer-1 Coin)  
 **Last Updated:** October 2026  
 
@@ -105,7 +105,7 @@ The 100 Billion SYN fixed supply is allocated at genesis with zero inflation and
 
 | Requested Support | Details |
 | :--- | :--- |
-| **Primary Goal** | Tier-1 / Tier-2 Launchpad Incubation (Seedify / DAO Maker IDO / IEO) |
+| **Primary Goal** | Tier-1 / Tier-2 Launchpad Incubation (DAO Maker IDO / IEO) |
 | **Target Public Raise** | $500,000 – $1,500,000 USD |
 | **Use of Proceeds** | 50% Protocol DEX/CEX Liquidity Depository<br>30% Core Engineering & External Smart Contract / L1 Security Audit<br>15% Global Node Operator Incentives & Hackathons<br>5% Legal & Regulatory Compliance |
 | **Exchange Targets** | Initial listing on MEXC / Bitget / Gate.io followed by Tier-1 CEXs |
