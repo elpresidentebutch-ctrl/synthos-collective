@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"math/big"
 	"net"
 	"net/http"
@@ -3327,7 +3328,7 @@ func nodeStatus(p peer, now time.Time) map[string]any {
 		"last_heartbeat_at":          millisRFC3339(p.LastHeartbeatAt),
 		"valid_heartbeats":           p.ValidHeartbeats,
 		"verified_uptime_s":          int64(uptime.Seconds()),
-		"verified_days":              uptime.Hours() / 24,
+		"verified_days":              verifiedDays(uptime),
 		"uptime_percent":             uptimePercent,
 		"uptime_percent_this_month":  uptimePercent,
 		"uptime_required_s":          int64(rewardEpoch.Seconds()),
@@ -3492,6 +3493,16 @@ func capabilityStatusMap(capabilities []string) map[string]bool {
 		}
 	}
 	return out
+}
+
+// verifiedDays reports verified uptime in days, rounded DOWN to one decimal
+// place (36h39m -> 1.5). It rounds down so the dashboard never shows more
+// uptime than a node really has: 29.96 days shows as 29.9, not 30.0.
+func verifiedDays(uptime time.Duration) float64 {
+	if uptime <= 0 {
+		return 0
+	}
+	return math.Floor(uptime.Hours()/24*10) / 10
 }
 
 func millisRFC3339(ms int64) string {
