@@ -1,0 +1,23 @@
+[Unit]
+Description=Synthos Collective Telegram bot (watchdog, node helper, chain Q&A)
+After=network-online.target synthos-comet.service
+Wants=network-online.target
+
+[Service]
+User=synthos-bot
+WorkingDirectory=/var/lib/synthos-bot
+Environment=SYNTHOS_BOT_TELEGRAM_TOKEN_FILE=/etc/synthos-bot/telegram-token
+# Optional plain-language answers: uncomment both lines and add the key file.
+#Environment=SYNTHOS_BOT_ANTHROPIC_KEY_FILE=/etc/synthos-bot/anthropic-key
+#Environment=SYNTHOS_BOT_MODEL=<Claude model ID>
+# Replace CHAT_ID with your Telegram chat ID and HOME_IP with your home internet address.
+ExecStart=/usr/local/bin/synthos-bot -alert-chat CHAT_ID -home-ips HOME_IP -state /var/lib/synthos-bot/state.json
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/synthos-bot
+
+[Install]
+WantedBy=multi-user.target
