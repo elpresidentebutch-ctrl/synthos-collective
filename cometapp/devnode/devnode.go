@@ -142,7 +142,15 @@ type Options struct {
 	// BlockInterval shortens CometBFT's wait between blocks (0 keeps the
 	// default of about one second). Tests use a few hundred milliseconds.
 	BlockInterval time.Duration
-	Logger        log.Logger
+	// CommitWait is how long this node waits after a block is committed
+	// before it starts on the next one (0 keeps CometBFT's default of one
+	// second). It sets the chain's pace whenever every block changes the
+	// app state, because CometBFT only waits EmptyBlockInterval after a
+	// block that left the app hash unchanged. It is a local timing
+	// setting, not a consensus rule: nodes with different values still
+	// agree on every block.
+	CommitWait time.Duration
+	Logger     log.Logger
 }
 
 // Start creates a CometBFT node for home running the SYNTHOS app and
@@ -182,6 +190,9 @@ func Start(home string, opts Options) (*nm.Node, *app.App, error) {
 		// asleep for the life of a test avoids that crash; the query is
 		// only a rarely needed liveness aid.
 		c.Consensus.PeerQueryMaj23SleepDuration = time.Hour
+	}
+	if opts.CommitWait > 0 {
+		c.Consensus.TimeoutCommit = opts.CommitWait
 	}
 	logger := opts.Logger
 	if logger == nil {

@@ -15,7 +15,8 @@
 //	synthos-comet start --home DIR [--p2p ADDR] [--rpc ADDR] [--peers LIST]
 //	                    [--external-address HOST:PORT] [--seeds LIST]
 //	                    [--private-peer-ids IDS] [--no-pex] [--moniker NAME]
-//	                    [--empty-block-interval DUR] [--log-level LEVEL]
+//	                    [--empty-block-interval DUR] [--commit-wait DUR]
+//	                    [--log-level LEVEL]
 //	                    [--api ADDR] [--trust-proxy]
 //	                                         run the node; --api also serves the
 //	                                         original synthosd HTTP API
@@ -89,6 +90,7 @@ func main() {
 	moniker := fs.String("moniker", "", "this node's name shown to peers (start)")
 	localNet := fs.Bool("local", false, "allow several nodes on one machine / private addresses (start)")
 	emptyEvery := fs.Duration("empty-block-interval", 10*time.Second, "make a block at least this often when idle; transactions are still included at once; 0 = every second (start)")
+	commitWait := fs.Duration("commit-wait", 10*time.Second, "wait this long after each block before starting the next; with about 1.5s of voting this gives a block roughly every 12s; 0 = CometBFT's default of one second (start)")
 	logLevel := fs.String("log-level", "main:info,*:error", "log detail, e.g. info, debug, or main:info,*:error (start)")
 	genesisPath := fs.String("genesis-file", "", "the network's genesis.json to join (join)")
 	faucetKeyFile := fs.String("faucet-key", "", "test networks only: serve /faucet, paying from this key file (start)")
@@ -134,7 +136,7 @@ func main() {
 			P2PAddr: *p2p, RPCAddr: *rpc, PersistentPeers: *peers, Logger: logger,
 			ExternalAddress: *external, Seeds: *seeds, PrivatePeerIDs: *privateIDs,
 			NoPeerExchange: *noPex, Moniker: *moniker, LocalNetwork: *localNet,
-			EmptyBlockInterval: *emptyEvery,
+			EmptyBlockInterval: *emptyEvery, CommitWait: *commitWait,
 		})
 		check(err)
 		var srv *http.Server

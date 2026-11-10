@@ -80,6 +80,9 @@ type member struct {
 	operator wallet
 	node     *nm.Node
 	client   *local.Local
+	// commitWait, when set, makes this node wait that long after each
+	// block (the --commit-wait setting).
+	commitWait time.Duration
 }
 
 func freePort(t *testing.T) int {
@@ -145,6 +148,7 @@ func (m *member) start(t *testing.T, peers []*member) {
 		P2PAddr:         fmt.Sprintf("tcp://127.0.0.1:%d", m.p2pPort),
 		PersistentPeers: strings.Join(list, ","),
 		BlockInterval:   blockEvery,
+		CommitWait:      m.commitWait,
 		LocalNetwork:    true,
 	})
 	if err != nil {
@@ -319,6 +323,79 @@ func TestValidatorNetwork(t *testing.T) {
 	before := members[0].height(t)
 	members[0].waitHeight(t, before+5, 30*time.Second)
 	joiner.waitHeight(t, before+5, 30*time.Second)
+}
+
+// TestCommitWaitRollout: --commit-wait is a local timing setting, so
+// validators can be switched to it one at a time. At every stage of the
+// rollout the chain keeps making blocks and every node agrees on them, and
+// once every validator waits, the chain runs at the slower pace.
+func TestCommitWaitRollout(t *testing.T) {
+	if testing.Short() {
+		t.Skip("multi-node network test")
+	}
+	const wait = 1200 * time.Millisecond
+	for _, tc := range []struct {
+		name     string
+		upgraded int
+		pace     string // "fast", "slow", or "" for the mixed stages
+	}{
+		{"none upgraded", 0, "fast"},
+		{"one upgraded", 1, ""},
+		{"two upgraded", 2, ""},
+		{"all upgraded", 4, "slow"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			members, _ := newNetwork(t, 4, 4, 10_000)
+			for i, m := range members {
+				if i < tc.upgraded {
+					m.commitWait = wait
+				}
+			}
+			for _, m := range members {
+				m.start(t, members)
+			}
+			watch := members[3] // the last validator to be upgraded
+			watch.waitHeight(t, 2, 60*time.Second)
+
+			const blocks = 6
+			from, t0 := watch.height(t), time.Now()
+			watch.waitHeight(t, from+blocks, 90*time.Second)
+			perBlock := time.Since(t0) / blocks
+			t.Logf("%d of 4 validators waiting %v: one block every %v", tc.upgraded, wait, perBlock.Round(10*time.Millisecond))
+			// The timer starts partway through a block, so six blocks
+			// span between five and six full intervals.
+			if tc.pace == "slow" && perBlock < wait*3/4 {
+				t.Fatalf("chain should run at about %v a block or slower, got %v", wait, perBlock)
+			}
+			if tc.pace == "fast" && perBlock > wait*3/4 {
+				t.Fatalf("chain should still run fast, got %v a block", perBlock)
+			}
+
+			// Every node has the same app hash at a height they all have.
+			h := watch.height(t)
+			for _, m := range members {
+				if mh := m.height(t); mh < h {
+					h = mh
+				}
+			}
+			h--
+			if h < 1 {
+				t.Fatalf("a node never got past genesis")
+			}
+			var first string
+			for i, m := range members {
+				blk, err := m.client.Block(context.Background(), &h)
+				if err != nil {
+					t.Fatalf("node%d block %d: %v", i, h, err)
+				}
+				if i == 0 {
+					first = blk.Block.AppHash.String()
+				} else if blk.Block.AppHash.String() != first {
+					t.Fatalf("node%d has a different app hash at height %d", i, h)
+				}
+			}
+		})
+	}
 }
 
 func copyDir(src, dst string) error {
