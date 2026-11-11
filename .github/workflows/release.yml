@@ -22,9 +22,6 @@ name: Release node binaries
 #     checked before cutting a real tag.
 
 on:
-  push:
-    tags:
-      - "v*.*.*"
   workflow_dispatch: {}
 
 permissions:
