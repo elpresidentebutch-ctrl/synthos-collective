@@ -1,7 +1,10 @@
 name: CI
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [main, master, synthos-release-2026-07-30]
+  pull_request:
+    branches: [main, master]
 
 permissions:
   contents: read

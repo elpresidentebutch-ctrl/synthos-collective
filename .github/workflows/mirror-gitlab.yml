@@ -9,6 +9,8 @@ name: Mirror to GitLab
 # (Settings > Secrets and variables > Actions). Until then this job skips.
 
 on:
+  push:
+  delete:
   workflow_dispatch:
 
 permissions:
