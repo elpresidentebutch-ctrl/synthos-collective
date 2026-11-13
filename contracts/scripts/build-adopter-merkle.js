@@ -152,4 +152,15 @@ function main() {
   console.log(`Wrote ${tree.entries.length} adopter proofs to ${path.relative(root, outputFile)}`);
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  buildTree,
+  adopterLeaf,
+  hashPair,
+  verifyProof,
+  readInput,
+  main,
+};
