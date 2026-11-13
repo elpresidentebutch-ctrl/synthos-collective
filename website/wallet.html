@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>SYNTHOS Mainnet Wallet — Mobile & Web</title>
+<meta name="description" content="Sovereign browser and mobile mainnet wallet for SYNTHOS Collective Layer-1." />
+<link rel="stylesheet" href="./assets/styles.css" />
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
+<script src="./assets/testnet-tx.js"></script>
+<style>
+  :root {
+    --bg: #07090d; --panel: rgba(12, 17, 26, 0.92); --panel-alt: rgba(19, 27, 41, 0.95);
+    --line: rgba(255, 255, 255, 0.12); --text: #f5f8ff; --muted: #9aa9bd;
+    --green: #31d39f; --cyan: #73d7ff; --warn: #f2c45d; --danger: #ff6b6b;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0; min-height: 100vh;
+    background: radial-gradient(800px 400px at 50% 0px, rgba(115, 215, 255, 0.12), transparent 75%), var(--bg);
+    color: var(--text); padding-bottom: 50px;
+  }
+  a { color: var(--cyan); text-decoration: none; }
+  header {
+    position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line);
+    background: rgba(7, 9, 13, 0.95); backdrop-filter: blur(16px);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 1.05rem; }
+  .brand-mark {
+    width: 22px; height: 22px; border: 2.5px solid var(--green); border-radius: 50%;
+    box-shadow: 0 0 14px rgba(49, 211, 159, 0.4);
+  }
+  .net-pill {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 0.75rem; font-weight: 700;
+    padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted);
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); }
+  .dot.live { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  main { width: min(720px, calc(100% - 24px)); margin: 0 auto; padding-top: 16px; }
+  .card {
+    border: 1px solid var(--line); border-radius: 16px; background: var(--panel);
+    padding: 20px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 14px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  }
+  .card-title { margin: 0; font-size: 1.15rem; font-weight: 800; display: flex; align-items: center; justify-content: space-between; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: 48px; padding: 10px 18px; border-radius: 10px; font-size: 0.95rem; font-weight: 700;
+    border: 1px solid var(--line); background: var(--panel-alt); color: var(--text); cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .btn:active { transform: scale(0.98); }
+  .btn:hover:not(:disabled) { border-color: var(--cyan); color: var(--cyan); }
+  .btn-primary {
+    background: linear-gradient(135deg, rgba(49, 211, 159, 0.35), rgba(115, 215, 255, 0.25));
+    border-color: rgba(49, 211, 159, 0.6); color: #fff;
+  }
+  .btn-primary:hover:not(:disabled) { box-shadow: 0 0 16px rgba(49, 211, 159, 0.4); }
+  .btn-danger { color: var(--danger); border-color: rgba(255, 107, 107, 0.3); }
+  .btn-danger:hover { border-color: var(--danger); color: #fff; background: rgba(255, 107, 107, 0.2); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .form-group { display: flex; flex-direction: column; gap: 6px; }
+  .form-label { font-size: 0.78rem; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .form-input {
+    min-height: 46px; background: rgba(0, 0, 0, 0.5); border: 1px solid var(--line);
+    border-radius: 10px; padding: 10px 14px; font-size: 0.95rem; color: var(--text); outline: none;
+    font-family: inherit; width: 100%;
+  }
+  .form-input:focus { border-color: var(--cyan); }
+  .mono { font-family: ui-monospace, SFMono-Regular, Consolas, Menlo, monospace; }
+  .seed-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 8px 0;
+  }
+  @media (max-width: 440px) {
+    .seed-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  .seed-chip {
+    background: rgba(0, 0, 0, 0.6); border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 10px; font-size: 0.85rem; display: flex; align-items: center; gap: 8px;
+  }
+  .seed-idx { color: var(--cyan); font-weight: 800; font-size: 0.72rem; min-width: 18px; }
+  .seed-word { font-weight: 700; color: #fff; }
+  .stat-badge {
+    background: rgba(0, 0, 0, 0.5); border: 1px solid var(--line); border-radius: 12px;
+    padding: 16px; display: flex; flex-direction: column; gap: 4px;
+  }
+  .stat-val { font-size: 1.8rem; font-weight: 900; color: var(--green); }
+  .banner {
+    padding: 12px 14px; border-radius: 10px; font-size: 0.88rem; line-height: 1.4;
+    border: 1px solid transparent; word-break: break-all;
+  }
+  .banner-success { background: rgba(49, 211, 159, 0.12); border-color: rgba(49, 211, 159, 0.4); color: #87f2ce; }
+  .banner-error { background: rgba(255, 107, 107, 0.15); border-color: rgba(255, 107, 107, 0.4); color: #ff9b9b; }
+  .banner-info { background: rgba(115, 215, 255, 0.12); border-color: rgba(115, 215, 255, 0.35); color: #aee5ff; }
+  .tab-strip { display: flex; gap: 6px; border-bottom: 1px solid var(--line); padding-bottom: 10px; margin-bottom: 12px; overflow-x: auto; }
+  .tab-btn {
+    background: transparent; border: 0; color: var(--muted); font-size: 0.88rem; font-weight: 700;
+    cursor: pointer; padding: 8px 12px; border-radius: 8px; white-space: nowrap;
+  }
+  .tab-btn.active { background: rgba(115, 215, 255, 0.15); color: var(--cyan); }
+  .sub-note { color: var(--muted); font-size: 0.84rem; line-height: 1.45; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="brand-mark"></div>
+    <span>SYNTHOS MAINNET</span>
+  </div>
+  <div class="net-pill">
+    <div id="netDot" class="dot"></div>
+    <span id="netText" class="mono">Connecting…</span>
+  </div>
+</header>
+
+<main>
+  <!-- SECTION: WALLET SETUP & UNLOCK -->
+  <div id="cardSetup" class="card">
+    <div class="card-title">
+      <span id="setupHeaderTitle">🔐 Mainnet Browser Wallet</span>
+      <span class="net-pill mono" style="font-size:0.7rem">synthos-mainnet-1</span>
+    </div>
+
+    <!-- TABS -->
+    <div id="setupTabs" class="tab-strip">
+      <button id="tabCreate" class="tab-btn active" onclick="switchSetupTab('create')">New Seed Phrase</button>
+      <button id="tabRestore" class="tab-btn" onclick="switchSetupTab('restore')">Restore Phrase</button>
+      <button id="tabUnlock" class="tab-btn" style="display:none" onclick="switchSetupTab('unlock')">Unlock Vault</button>
+    </div>
+
+    <!-- TAB 1: CREATE NEW WALLET -->
+    <div id="viewCreate" style="display:flex;flex-direction:column;gap:12px">
+      <p class="sub-note" style="margin:0">
+        Generate a cryptographic BIP-39 recovery phrase. Standard wallets use <strong>12 words</strong> (mobile standard) or <strong>24 words</strong> (ledger/high security). <strong>15 words</strong> are also supported.
+      </p>
+
+      <div class="form-group">
+        <label class="form-label">Seed Phrase Length</label>
+        <select id="selectWordCount" class="form-input">
+          <option value="12" selected>12 Words (Standard Mobile / MetaMask / Phantom)</option>
+          <option value="15">15 Words (BIP-39 Extended)</option>
+          <option value="24">24 Words (High Security / Ledger Standard)</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Vault Password (Encrypts keys in your phone/browser)</label>
+        <input id="inputCreatePass" type="password" class="form-input" placeholder="Enter password to secure wallet" autocomplete="new-password" />
+      </div>
+
+      <button class="btn btn-primary" onclick="handleGenerateWallet()">Generate Seed Phrase & Create Wallet</button>
+
+      <!-- SEED PHRASE REVEAL -->
+      <div id="seedPhraseBox" style="display:none;flex-direction:column;gap:10px;margin-top:6px">
+        <div class="banner banner-success">
+          <strong>⚠️ Secret Recovery Phrase Generated!</strong><br />
+          Write down these words in exact order. Store them offline. Never share them with anyone.
+        </div>
+
+        <div id="seedGrid" class="seed-grid"></div>
+
+        <button class="btn" onclick="copySeedPhrase()">📋 Copy Seed Phrase</button>
+        <button class="btn btn-primary" onclick="confirmSeedSaved()">I Have Saved My Seed Phrase ➔</button>
+      </div>
+    </div>
+
+    <!-- TAB 2: RESTORE FROM SEED PHRASE -->
+    <div id="viewRestore" style="display:none;flex-direction:column;gap:12px">
+      <p class="sub-note" style="margin:0">
+        Restore your SYNTHOS L1 address from an existing 12, 15, or 24-word BIP-39 seed phrase.
+      </p>
+
+      <div class="form-group">
+        <label class="form-label">Recovery Seed Phrase</label>
+        <textarea id="inputRestorePhrase" class="form-input mono" style="min-height:76px;font-size:0.9rem" placeholder="word1 word2 word3 ..."></textarea>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">New Vault Password</label>
+        <input id="inputRestorePass" type="password" class="form-input" placeholder="Password to protect on this device" autocomplete="new-password" />
+      </div>
+
+      <button class="btn btn-primary" onclick="handleRestoreWallet()">Restore Wallet & Save to Device</button>
+    </div>
+
+    <!-- TAB 3: UNLOCK EXISTING VAULT -->
+    <div id="viewUnlock" style="display:none;flex-direction:column;gap:12px">
+      <div class="banner banner-info">
+        <strong>🔒 Wallet Vault Detected on This Device</strong><br />
+        Address: <code id="lockedAddressBadge" class="mono" style="font-size:0.8rem"></code>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Enter Vault Password</label>
+        <input id="inputUnlockPass" type="password" class="form-input" placeholder="Password" autocomplete="current-password" />
+      </div>
+
+      <button class="btn btn-primary" onclick="handleUnlockVault()">Unlock Wallet</button>
+      <button class="btn btn-danger" style="margin-top:4px" onclick="handleResetVault()">Forget / Reset This Wallet</button>
+    </div>
+
+    <div id="setupMsg" class="banner" style="display:none"></div>
+  </div>
+
+  <!-- SECTION: ACTIVE ACCOUNT DASHBOARD (WHEN UNLOCKED) -->
+  <div id="cardActive" class="card" style="display:none">
+    <div class="card-title">
+      <span>Account Balance</span>
+      <button class="btn" style="min-height:36px;padding:4px 12px;font-size:0.8rem" onclick="lockWallet()">🔒 Lock</button>
+    </div>
+
+    <div class="stat-badge">
+      <div style="font-size:0.75rem;font-weight:800;color:var(--muted);text-transform:uppercase">Native L1 Balance</div>
+      <div id="activeBalance" class="stat-val mono">0 SYN</div>
+      <div style="font-size:0.8rem;color:var(--muted);display:flex;align-items:center;justify-content:space-between;margin-top:4px">
+        <span>Nonce: <strong id="activeNonce" class="mono">0</strong></span>
+        <a href="javascript:void(0)" onclick="refreshActiveBalance()">↻ Refresh</a>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Your SYNTHOS L1 Address</label>
+      <div style="display:flex;gap:8px">
+        <input id="activeAddress" class="form-input mono" style="font-size:0.82rem" readonly />
+        <button class="btn" style="min-width:64px" onclick="copyActiveAddress()">Copy</button>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Ed25519 Public Key</label>
+      <input id="activePubKey" class="form-input mono" style="font-size:0.75rem" readonly />
+    </div>
+
+    <div style="display:flex;gap:10px;margin-top:4px">
+      <button class="btn" style="flex:1" onclick="exportKeystoreFile()">📥 Export Keystore JSON</button>
+      <button class="btn" style="flex:1" onclick="revealSeedPhraseModal()">👁️ View Seed Phrase</button>
+    </div>
+  </div>
+
+  <!-- SECTION: SEND SYN COINS (MAINNET) -->
+  <div id="cardSend" class="card" style="display:none">
+    <div class="card-title">
+      <span>💸 Send SYN Coins</span>
+      <span class="net-pill mono" style="font-size:0.7rem">12s Block Pacing</span>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Recipient Address</label>
+      <input id="sendRecipient" class="form-input mono" placeholder="0x..." />
+    </div>
+
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px">
+      <div class="form-group">
+        <label class="form-label">Amount (SYN)</label>
+        <input id="sendAmount" type="number" min="1" step="1" class="form-input mono" placeholder="100" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Gas Fee (SYN)</label>
+        <input id="sendFee" type="number" min="1" value="10" class="form-input mono" />
+      </div>
+    </div>
+
+    <button id="btnSendTx" class="btn btn-primary" onclick="handleSendTransfer()">Sign & Broadcast to Mainnet</button>
+
+    <div id="sendTxMsg" class="banner" style="display:none"></div>
+  </div>
+
+  <!-- QUICK NAVIGATION FOR MOBILE USERS -->
+  <div style="display:flex;justify-content:center;gap:16px;margin-top:20px;font-size:0.85rem">
+    <a href="/explorer">Block Explorer</a> ·
+    <a href="/nodes">Node Telemetry</a> ·
+    <a href="/dex">Native DEX</a> ·
+    <a href="https://t.me/synthosagentbot" target="_blank">Telegram Watchdog Bot</a>
+  </div>
+</main>
+
+<script>
+  const MAINNET_RPC = window.SYNTHOS_API_URL ||
+    (window.location.origin.includes("ishamwilliamsblockchains.com") || window.location.origin.includes("lovable")
+      ? "https://82-29-54-7.sslip.io"
+      : window.location.origin);
+
+  const STORAGE_KEY = "synthos_mainnet_vault";
+  let activeWallet = null; // Decrypted in memory
+
+  // 1. Check network status
+  async function pollStatus() {
+    try {
+      const res = await fetch(`${MAINNET_RPC}/status`, { cache: "no-store" });
+      if (!res.ok) throw new Error("status failed");
+      const data = await res.json();
+      document.getElementById("netDot").className = "dot live";
+      document.getElementById("netText").textContent = `#${data.height.toLocaleString()} (Live)`;
+    } catch {
+      document.getElementById("netDot").className = "dot";
+      document.getElementById("netText").textContent = "Connecting…";
+    }
+  }
+  pollStatus();
+  setInterval(pollStatus, 10000);
+
+  // 2. Check for existing vault on load
+  function initVaultCheck() {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      try {
+        const vault = JSON.parse(raw);
+        document.getElementById("tabUnlock").style.display = "inline-block";
+        document.getElementById("lockedAddressBadge").textContent = vault.address || "Stored";
+        switchSetupTab("unlock");
+        return;
+      } catch (_) {}
+    }
+    switchSetupTab("create");
+  }
+  initVaultCheck();
+
+  function switchSetupTab(tab) {
+    document.getElementById("tabCreate").className = "tab-btn " + (tab === "create" ? "active" : "");
+    document.getElementById("tabRestore").className = "tab-btn " + (tab === "restore" ? "active" : "");
+    document.getElementById("tabUnlock").className = "tab-btn " + (tab === "unlock" ? "active" : "");
+
+    document.getElementById("viewCreate").style.display = tab === "create" ? "flex" : "none";
+    document.getElementById("viewRestore").style.display = tab === "restore" ? "flex" : "none";
+    document.getElementById("viewUnlock").style.display = tab === "unlock" ? "flex" : "none";
+    hideMsg("setupMsg");
+  }
+
+  function showMsg(id, type, html) {
+    const el = document.getElementById(id);
+    el.style.display = "block";
+    el.className = `banner banner-${type}`;
+    el.innerHTML = html;
+  }
+  function hideMsg(id) { document.getElementById(id).style.display = "none"; }
+
+  // Generate Wallet
+  async function handleGenerateWallet() {
+    const pass = document.getElementById("inputCreatePass").value;
+    if (!pass || pass.length < 6) {
+      showMsg("setupMsg", "error", "Please provide a password of at least 6 characters to encrypt your vault.");
+      return;
+    }
+    const wordCount = parseInt(document.getElementById("selectWordCount").value, 10) || 12;
+
+    try {
+      const phrase = window.SynthosTx.generateMnemonic(wordCount);
+      const wallet = await window.SynthosTx.fromMnemonic(phrase);
+
+      // Render seed phrase chips
+      const words = phrase.split(" ");
+      const grid = document.getElementById("seedGrid");
+      grid.innerHTML = words.map((w, i) => `
+        <div class="seed-chip">
+          <span class="seed-idx">${i + 1}</span>
+          <span class="seed-word">${w}</span>
+        </div>
+      `).join("");
+
+      document.getElementById("seedPhraseBox").style.display = "flex";
+
+      // Encrypt and save vault immediately
+      const vaultJSON = await window.SynthosTx.encryptVault(wallet, pass);
+      localStorage.setItem(STORAGE_KEY, vaultJSON);
+
+      activeWallet = wallet;
+      showMsg("setupMsg", "success", "Wallet generated and encrypted into device storage.");
+    } catch (e) {
+      showMsg("setupMsg", "error", "Generation error: " + e.message);
+    }
+  }
+
+  function confirmSeedSaved() {
+    document.getElementById("seedPhraseBox").style.display = "none";
+    unlockDashboard();
+  }
+
+  // Restore Wallet from Phrase
+  async function handleRestoreWallet() {
+    const phrase = document.getElementById("inputRestorePhrase").value.trim();
+    const pass = document.getElementById("inputRestorePass").value;
+
+    if (!phrase) {
+      showMsg("setupMsg", "error", "Please paste your seed phrase.");
+      return;
+    }
+    if (!pass || pass.length < 6) {
+      showMsg("setupMsg", "error", "Please set a password of at least 6 characters.");
+      return;
+    }
+
+    try {
+      const wallet = await window.SynthosTx.fromMnemonic(phrase);
+      const vaultJSON = await window.SynthosTx.encryptVault(wallet, pass);
+      localStorage.setItem(STORAGE_KEY, vaultJSON);
+
+      activeWallet = wallet;
+      unlockDashboard();
+      showMsg("setupMsg", "success", "Wallet restored successfully!");
+    } catch (e) {
+      showMsg("setupMsg", "error", "Invalid recovery phrase: " + e.message);
+    }
+  }
+
+  // Unlock Existing Vault
+  async function handleUnlockVault() {
+    const pass = document.getElementById("inputUnlockPass").value;
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      showMsg("setupMsg", "error", "No stored wallet found.");
+      return;
+    }
+    try {
+      const walletData = await window.SynthosTx.decryptVault(raw, pass);
+      activeWallet = await window.SynthosTx.keyFromSeedBytes(window.SynthosTx.unhex(walletData.seed));
+      activeWallet.mnemonic = walletData.mnemonic || "";
+      unlockDashboard();
+    } catch (e) {
+      showMsg("setupMsg", "error", "Incorrect password. Could not decrypt vault.");
+    }
+  }
+
+  function unlockDashboard() {
+    document.getElementById("cardSetup").style.display = "none";
+    document.getElementById("cardActive").style.display = "flex";
+    document.getElementById("cardSend").style.display = "flex";
+
+    document.getElementById("activeAddress").value = activeWallet.address;
+    document.getElementById("activePubKey").value = activeWallet.public_key;
+
+    refreshActiveBalance();
+  }
+
+  function lockWallet() {
+    activeWallet = null;
+    document.getElementById("cardActive").style.display = "none";
+    document.getElementById("cardSend").style.display = "none";
+    document.getElementById("cardSetup").style.display = "flex";
+    document.getElementById("inputUnlockPass").value = "";
+    initVaultCheck();
+  }
+
+  function handleResetVault() {
+    if (confirm("Are you sure? This will permanently erase the encrypted wallet from this browser. Ensure you have backed up your seed phrase!")) {
+      localStorage.removeItem(STORAGE_KEY);
+      location.reload();
+    }
+  }
+
+  async function refreshActiveBalance() {
+    if (!activeWallet) return;
+    try {
+      const res = await fetch(`${MAINNET_RPC}/account?address=${activeWallet.address}`);
+      if (res.ok) {
+        const acc = await res.json();
+        document.getElementById("activeBalance").textContent = `${Number(acc.balance).toLocaleString()} SYN`;
+        document.getElementById("activeNonce").textContent = acc.nonce;
+      }
+    } catch (e) {
+      console.warn("balance fetch error", e);
+    }
+  }
+
+  async function handleSendTransfer() {
+    const to = document.getElementById("sendRecipient").value.trim();
+    const amt = parseInt(document.getElementById("sendAmount").value, 10);
+    const fee = parseInt(document.getElementById("sendFee").value, 10) || 10;
+    const btn = document.getElementById("btnSendTx");
+
+    if (!to || !amt || amt <= 0) {
+      showMsg("sendTxMsg", "error", "Enter a valid recipient address and amount.");
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = "Signing & Submitting…";
+    hideMsg("sendTxMsg");
+
+    try {
+      const accRes = await fetch(`${MAINNET_RPC}/account?address=${activeWallet.address}`);
+      const acc = accRes.ok ? await accRes.json() : { nonce: 0 };
+
+      const signedTx = await window.SynthosTx.signTransfer(activeWallet, {
+        chainId: 20260702,
+        to: to,
+        amount: amt,
+        fee: fee,
+        nonce: acc.nonce || 0
+      });
+
+      const submitRes = await fetch(`${MAINNET_RPC}/submitTx`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(signedTx)
+      });
+      const result = await submitRes.json();
+
+      if (!submitRes.ok || !result.ok) {
+        throw new Error(result.error || "Transaction rejected by mempool");
+      }
+
+      showMsg("sendTxMsg", "success", `🚀 <strong>Transaction Submitted!</strong> Tx ID: <code class="mono">${result.tx_id}</code>. Will confirm in ~12s.`);
+      refreshActiveBalance();
+    } catch (e) {
+      showMsg("sendTxMsg", "error", e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Sign & Broadcast to Mainnet";
+    }
+  }
+
+  function copySeedPhrase() {
+    if (!activeWallet || !activeWallet.mnemonic) return;
+    navigator.clipboard.writeText(activeWallet.mnemonic);
+    alert("Seed phrase copied to clipboard! Store it securely offline.");
+  }
+
+  function copyActiveAddress() {
+    const a = document.getElementById("activeAddress").value;
+    navigator.clipboard.writeText(a);
+    alert("Address copied!");
+  }
+
+  function revealSeedPhraseModal() {
+    if (!activeWallet || !activeWallet.mnemonic) {
+      alert("No mnemonic phrase in memory for this session.");
+      return;
+    }
+    prompt("Your Secret Recovery Phrase (Keep offline):", activeWallet.mnemonic);
+  }
+
+  function exportKeystoreFile() {
+    if (!activeWallet) return;
+    const raw = localStorage.getItem(STORAGE_KEY);
+    const blob = new Blob([raw || JSON.stringify(activeWallet, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `synthos-vault-${activeWallet.address.slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+</script>
+</body>
+</html>

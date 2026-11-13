@@ -290,12 +290,15 @@ func main() {
 	mux.HandleFunc("/bridge.html", s.handleWebsitePage)
 	mux.HandleFunc("/dex", s.handleWebsitePage)
 	mux.HandleFunc("/dex.html", s.handleWebsitePage)
+	mux.HandleFunc("/wallet", s.handleWebsitePage)
+	mux.HandleFunc("/wallet.html", s.handleWebsitePage)
 	mux.HandleFunc("/dex/", s.handleDEXProxy)
 	mux.HandleFunc("/api/dex/", s.handleDEXProxy)
 	mux.HandleFunc("/status", s.handleGenericRPC)
 	mux.HandleFunc("/account", s.handleGenericRPC)
 	mux.HandleFunc("/balance", s.handleGenericRPC)
 	mux.HandleFunc("/tx", s.handleGenericRPC)
+	mux.HandleFunc("/submitTx", s.handleGenericRPC)
 	mux.HandleFunc("/block", s.handleGenericRPC)
 	mux.HandleFunc("/blocks", s.handleGenericRPC)
 	mux.HandleFunc("/mempool", s.handleGenericRPC)
@@ -2234,6 +2237,9 @@ func (s *server) handleWebsitePage(w http.ResponseWriter, r *http.Request) {
 	}
 	if name == "dex" {
 		name = "dex.html"
+	}
+	if name == "wallet" {
+		name = "wallet.html"
 	}
 	if name == "api" {
 		name = "api.html"
