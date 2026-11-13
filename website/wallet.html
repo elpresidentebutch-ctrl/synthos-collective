@@ -6,7 +6,7 @@
 <title>SYNTHOS Mainnet Wallet — Mobile & Web</title>
 <meta name="description" content="Sovereign browser and mobile mainnet wallet for SYNTHOS Collective Layer-1." />
 <link rel="stylesheet" href="./assets/styles.css" />
-<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js" integrity="sha384-6Zl0Pc8zjSz8KvmNeXRvUQgY4ryFb+BwDvKCmLYcBME0joAaru491tQgi9B7zsMM" crossorigin="anonymous"></script>
 <script src="./assets/testnet-tx.js"></script>
 <style>
   :root {
@@ -341,8 +341,8 @@
   // Generate Wallet
   async function handleGenerateWallet() {
     const pass = document.getElementById("inputCreatePass").value;
-    if (!pass || pass.length < 6) {
-      showMsg("setupMsg", "error", "Please provide a password of at least 6 characters to encrypt your vault.");
+    if (!pass || pass.length < 12) {
+      showMsg("setupMsg", "error", "Please provide a password of at least 12 characters to encrypt your vault. It protects your seed phrase on this device.");
       return;
     }
     const wordCount = parseInt(document.getElementById("selectWordCount").value, 10) || 12;
@@ -388,8 +388,8 @@
       showMsg("setupMsg", "error", "Please paste your seed phrase.");
       return;
     }
-    if (!pass || pass.length < 6) {
-      showMsg("setupMsg", "error", "Please set a password of at least 6 characters.");
+    if (!pass || pass.length < 12) {
+      showMsg("setupMsg", "error", "Please set a password of at least 12 characters. It protects your seed phrase on this device.");
       return;
     }
 

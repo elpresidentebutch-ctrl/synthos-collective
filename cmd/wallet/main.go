@@ -51,11 +51,16 @@ Flags for 'balance':
 Flags for 'send':
   -to string        Recipient SYNTHOS address (required)
   -amount uint      Amount of SYN coins to send (required)
-  -fee uint         Transaction gas fee (default: 10)
+  -fee uint         Transaction fee in SYN (default: the network's required fee,
+                    0.1% of the amount, at least 10 and at most 1,000)
   -key string       Path to keystore JSON file or raw private key hex (required)
   -password string  Passphrase for keystore decryption
   -rpc string       RPC endpoint URL (default: https://82-29-54-7.sslip.io)
-  -nonce int        Account nonce override (-1 to auto-fetch from RPC)`)
+  -nonce int        Account nonce override (-1 to auto-fetch from RPC)
+  -yes              Send without asking for confirmation
+
+Passing -password, -mnemonic or a raw private key on the command line saves
+it in your shell history. Leave them out and the wallet asks for them instead.`)
 }
 
 func readPassword(prompt string) (string, error) {
@@ -76,6 +81,39 @@ func readLine(prompt string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(line), nil
+}
+
+// warnSecretFlag tells the user when a secret was passed on the command line,
+// where shell history and process listings can keep it.
+func warnSecretFlag(name string) {
+	fmt.Fprintf(os.Stderr, "warning: %s was passed on the command line and may be saved in your shell history; leave it out to be prompted instead\n", name)
+}
+
+// validAddress reports whether s is a SYNTHOS address: 0x followed by 40 hex characters.
+func validAddress(s string) bool {
+	if len(s) != 42 || !strings.HasPrefix(s, "0x") {
+		return false
+	}
+	for _, c := range s[2:] {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", c) {
+			return false
+		}
+	}
+	return true
+}
+
+// transferFee returns the fee to use for a native transfer: the network's
+// required fee (chain.RequiredFee), or the user's fee if that is higher.
+// A user fee below the requirement is an error, because the chain rejects it.
+func transferFee(amount, userFee uint64) (uint64, error) {
+	required := chain.RequiredFee(chain.Tx{Amount: amount})
+	if userFee == 0 {
+		return required, nil
+	}
+	if userFee < required {
+		return 0, fmt.Errorf("fee %d SYN is below the network's required fee of %d SYN for this amount", userFee, required)
+	}
+	return userFee, nil
 }
 
 func printMnemonicBox(mnemonic string) {
@@ -146,6 +184,9 @@ func runNew(args []string) {
 	passphrase := fs.String("passphrase", "", "Optional BIP-39 seed passphrase")
 	showPrivate := fs.Bool("show-private", false, "Print unencrypted private key hex (DANGEROUS)")
 	_ = fs.Parse(args)
+	if *password != "" {
+		warnSecretFlag("-password")
+	}
 
 	mnemonic, err := wallet.NewMnemonic(*wordCount)
 	if err != nil {
@@ -207,6 +248,12 @@ func runRecover(args []string) {
 	password := fs.String("password", "", "Passphrase for keystore encryption")
 	showPrivate := fs.Bool("show-private", false, "Print unencrypted private key hex (DANGEROUS)")
 	_ = fs.Parse(args)
+	if *password != "" {
+		warnSecretFlag("-password")
+	}
+	if *mnemonicArg != "" {
+		warnSecretFlag("-mnemonic")
+	}
 
 	mnemonic := *mnemonicArg
 	if mnemonic == "" {
@@ -267,6 +314,9 @@ func runInspect(args []string) {
 	fs := flag.NewFlagSet("inspect", flag.ExitOnError)
 	password := fs.String("password", "", "Passphrase for keystore decryption")
 	_ = fs.Parse(args)
+	if *password != "" {
+		warnSecretFlag("-password")
+	}
 
 	if fs.NArg() < 1 {
 		fmt.Fprintln(os.Stderr, "error: specify keystore file path or private key hex")
@@ -320,7 +370,7 @@ func runBalance(args []string) {
 	}
 
 	addrStr := fs.Arg(0)
-	if !strings.HasPrefix(addrStr, "0x") || len(addrStr) != 42 {
+	if !validAddress(addrStr) {
 		fmt.Fprintf(os.Stderr, "error: %q is not a valid 20-byte SYNTHOS address\n", addrStr)
 		os.Exit(1)
 	}
@@ -343,11 +393,12 @@ func runSend(args []string) {
 	fs := flag.NewFlagSet("send", flag.ExitOnError)
 	to := fs.String("to", "", "Recipient address (0x...)")
 	amount := fs.Uint64("amount", 0, "Amount of SYN coins")
-	fee := fs.Uint64("fee", 10, "Transaction gas fee")
+	fee := fs.Uint64("fee", 0, "Transaction fee in SYN (0 = the network's required fee)")
 	keySource := fs.String("key", "", "Path to keystore JSON file or raw private key hex")
 	password := fs.String("password", "", "Passphrase for keystore decryption")
 	rpcURL := fs.String("rpc", defaultRPC, "RPC endpoint URL")
 	nonceOverride := fs.Int64("nonce", -1, "Account nonce override (-1 to auto-fetch)")
+	yes := fs.Bool("yes", false, "Send without asking for confirmation")
 	_ = fs.Parse(args)
 
 	if *to == "" || *amount == 0 || *keySource == "" {
@@ -355,9 +406,20 @@ func runSend(args []string) {
 		fs.Usage()
 		os.Exit(1)
 	}
+	if !validAddress(*to) {
+		fmt.Fprintf(os.Stderr, "error: %q is not a valid SYNTHOS address (0x followed by 40 hex characters)\n", *to)
+		os.Exit(1)
+	}
+	txFee, err := transferFee(*amount, *fee)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	if *password != "" {
+		warnSecretFlag("-password")
+	}
 
 	var w *wallet.Wallet
-	var err error
 
 	if _, statErr := os.Stat(*keySource); statErr == nil {
 		pass := *password
@@ -374,6 +436,7 @@ func runSend(args []string) {
 			os.Exit(1)
 		}
 	} else {
+		warnSecretFlag("a raw private key (-key)")
 		w, err = wallet.FromPrivateKeyHex(*keySource)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "invalid private key: %v\n", err)
@@ -409,19 +472,27 @@ func runSend(args []string) {
 	}
 
 	// Create and sign transaction
-	tx, err := w.CreateTransferTx(chain.Address(*to), *amount, *fee, nonce, txChainID)
+	tx, err := w.CreateTransferTx(chain.Address(*to), *amount, txFee, nonce, txChainID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to construct transaction: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Println("Broadcasting transaction...")
+	fmt.Println("Transaction ready:")
 	fmt.Printf("  From:   %s\n", tx.From)
 	fmt.Printf("  To:     %s\n", tx.To)
 	fmt.Printf("  Amount: %d SYN\n", tx.Amount)
 	fmt.Printf("  Fee:    %d SYN\n", tx.Fee)
 	fmt.Printf("  Nonce:  %d\n", tx.Nonce)
 	fmt.Printf("  TxID:   %s\n", tx.ID)
+
+	if !*yes {
+		answer, err := readLine(fmt.Sprintf("\nSend %d SYN (plus %d SYN fee) to %s? Type yes to confirm: ", tx.Amount, tx.Fee, tx.To))
+		if err != nil || strings.ToLower(answer) != "yes" {
+			fmt.Fprintln(os.Stderr, "Cancelled. Nothing was sent.")
+			os.Exit(1)
+		}
+	}
 
 	res, err := client.BroadcastTx(ctx, tx)
 	if err != nil {

@@ -108,10 +108,14 @@ function readInput(file) {
   return adopters.map(normalizeRecord);
 }
 
-function main() {
+// main builds the tree. Called from the command line it reads
+// [input.json] [output.json] from argv; called from another script it takes
+// explicit paths, so that script's own arguments are never misread as files.
+function main(inputArg, outputArg) {
   const root = process.cwd();
-  const inputFile = path.resolve(root, process.argv[2] || "merkle/adopters.json");
-  const outputFile = path.resolve(root, process.argv[3] || "merkle/adopter-merkle.json");
+  const fromCli = inputArg === undefined && outputArg === undefined;
+  const inputFile = path.resolve(root, (fromCli ? process.argv[2] : inputArg) || "merkle/adopters.json");
+  const outputFile = path.resolve(root, (fromCli ? process.argv[3] : outputArg) || "merkle/adopter-merkle.json");
 
   if (!fs.existsSync(inputFile)) {
     usage();
