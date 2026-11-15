@@ -12,18 +12,22 @@ RUN mkdir -p /out/downloads \
   && go build -trimpath -ldflags="-s -w" -o /out/devnet ./cmd/devnet \
   && go build -trimpath -ldflags="-s -w" -o /out/synthosd ./cmd/synthosd \
   && go build -trimpath -ldflags="-s -w" -o /out/cloudless-registry ./cmd/cloudless-registry \
+  && go build -trimpath -ldflags="-s -w" -o /out/synthos-wallet ./cmd/wallet \
   && (cd cometapp && go build -trimpath -ldflags="-s -w" -o /out/synthos-comet .) \
   && GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/downloads/silentnode.exe ./cmd/silentnode \
   && GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/downloads/synthos-node-linux-amd64 ./cmd/silentnode \
   && GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o /out/downloads/synthos-node-linux-arm64 ./cmd/silentnode \
   && GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o /out/downloads/synthos-node-darwin-arm64 ./cmd/silentnode \
-  && GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/downloads/synthos-node-darwin-amd64 ./cmd/silentnode
+  && GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/downloads/synthos-node-darwin-amd64 ./cmd/silentnode \
+  && GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/downloads/synthos-wallet.exe ./cmd/wallet \
+  && GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/downloads/synthos-wallet-linux-amd64 ./cmd/wallet \
+  && GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o /out/downloads/synthos-wallet-darwin-arm64 ./cmd/wallet
 
 FROM alpine:3.24
 RUN apk add --no-cache ca-certificates su-exec \
   && addgroup -g 10001 -S synthos \
   && adduser -u 10001 -S synthos -G synthos
-COPY --from=build /out/rpcnode /out/devnet /out/synthosd /out/synthos-comet /out/cloudless-registry /usr/local/bin/
+COPY --from=build /out/rpcnode /out/devnet /out/synthosd /out/synthos-comet /out/cloudless-registry /out/synthos-wallet /usr/local/bin/
 COPY --from=build /out/downloads/ /downloads/
 COPY website/ /website/
 RUN cp -f /website/downloads/synthos-node.apk /downloads/synthos-node.apk 2>/dev/null || true

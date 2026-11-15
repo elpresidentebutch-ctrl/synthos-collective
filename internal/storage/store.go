@@ -15,7 +15,7 @@ import (
 )
 
 // DefaultMaxLocalStorageBytes limits local block storage to 2 Gigabytes.
-// Any blocks exceeding this threshold are automatically archived to OneDrive Cloud.
+// Any blocks exceeding this threshold are automatically archived to cold storage.
 const DefaultMaxLocalStorageBytes = int64(2) * 1024 * 1024 * 1024
 
 // Store persists chain data to disk in a simple JSON form.
@@ -69,16 +69,9 @@ func New(dir string) (*Store, error) {
 		return nil, err
 	}
 
-	archiveDir := os.Getenv("SYNTHOS_ONEDRIVE_ARCHIVE_DIR")
+	archiveDir := os.Getenv("SYNTHOS_ARCHIVE_DIR")
 	if archiveDir == "" {
-		if oneDrive := os.Getenv("OneDrive"); oneDrive != "" {
-			archiveDir = filepath.Join(oneDrive, "SYNTHOS Archives", "blocks")
-		} else if profile := os.Getenv("USERPROFILE"); profile != "" {
-			oneDrive := filepath.Join(profile, "OneDrive")
-			if fi, err := os.Stat(oneDrive); err == nil && fi.IsDir() {
-				archiveDir = filepath.Join(oneDrive, "SYNTHOS Archives", "blocks")
-			}
-		}
+		archiveDir = os.Getenv("SYNTHOS_COLD_ARCHIVE_DIR")
 	}
 
 	maxBytes := DefaultMaxLocalStorageBytes
@@ -212,7 +205,7 @@ func (s *Store) archiveOneBlock(blk *chain.Block, force bool) error {
 	return os.Rename(tmp, path)
 }
 
-// EnforceStorageLimit automatically offloads cold blocks to OneDrive Cloud
+// EnforceStorageLimit automatically offloads cold blocks to configured cold archive storage
 // whenever local block storage exceeds MaxLocalBytes (2GB default).
 func (s *Store) EnforceStorageLimit(hotWindowStart uint64) error {
 	if s.MaxLocalBytes <= 0 || s.ArchiveDir == "" {
@@ -304,7 +297,7 @@ func copyFile(src, dst string) error {
 }
 
 // SyncDataDirectoryClone mirrors the complete SYNTHOS data directory (.synthos / state.json / config)
-// to OneDrive Cloud.
+// to configured cold archive storage.
 func (s *Store) SyncDataDirectoryClone() error {
 	if s.ArchiveDir == "" {
 		return nil
@@ -364,7 +357,7 @@ func copyDir(src, dst string) error {
 // archived block by height on demand -- the fallback chain.Chain.BlockAt
 // and chain.Chain.BlocksFrom use for any height a chain has trimmed out of
 // its own in-memory hot window. It checks local storage first and falls back
-// to OneDrive Cloud archive if local storage was trimmed.
+// to configured cold archive storage if local storage was trimmed.
 func (s *Store) ColdBlockAt(height uint64) (*chain.Block, bool) {
 	b, err := os.ReadFile(s.blockPath(height))
 	if err != nil {

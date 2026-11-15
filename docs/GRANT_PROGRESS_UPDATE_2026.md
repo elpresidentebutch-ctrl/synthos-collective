@@ -23,7 +23,7 @@ The project is currently operating in **Developer Testnet Phase 1**. The core bl
      [ Consumer Workstation (PC) ]              [ HostEons Linux VPS ]
      - Node ID: desktop-workstation-1           - Primary Seed Validator & RPC
      - Outbound-only signed heartbeats          - Canonical Block Producer (Height 74,300+)
-     - 2GB OneDrive Bounded Storage             - State Root & Validator Registry
+     - 2GB Bounded Storage (Filecoin CAR)       - State Root & Validator Registry
                 │                                         │
                 └─────────── [ HTTPS JSON-RPC ] ──────────┘
                           (Verified Live Heartbeats)
@@ -52,7 +52,7 @@ The project is currently operating in **Developer Testnet Phase 1**. The core bl
 - **The Problem:** Runaway blockchain state size is the primary obstacle preventing ordinary users from running nodes at home.
 - **The Solution:** We engineered an automatic bounded storage system (`internal/storage/store.go`):
   - Local active block storage is strictly capped at 2GB intervals (`DefaultMaxLocalStorageBytes = 2 * 1024 * 1024 * 1024`).
-  - Upon reaching the 2GB threshold, accumulated cold blocks are automatically packaged and offloaded to user-configured cloud storage (e.g., Microsoft OneDrive Cloud) or external drives.
+  - Upon reaching the 2GB threshold, accumulated cold blocks are automatically packaged and offloaded to decentralized cold storage (Filecoin / IPFS CAR archives) or external drives.
   - Local disk space is safely reclaimed, allowing the consumer node to run indefinitely without exhausting local drive capacity.
   - Seamless transparent retrieval (`ColdBlockAt`) ensures historical blocks remain queryable on demand.
 

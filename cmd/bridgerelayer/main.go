@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"net/http"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -804,7 +805,7 @@ func readPrivateKeyFile(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("bridge authority key file: %w", err)
 	}
-	if info.Mode().Perm()&0o077 != 0 {
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
 		return "", fmt.Errorf("bridge authority key file %s is readable by other users (mode %o); run: chmod 600 %s", path, info.Mode().Perm(), path)
 	}
 	raw, err := os.ReadFile(path)

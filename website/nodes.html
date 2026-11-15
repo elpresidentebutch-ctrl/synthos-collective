@@ -45,7 +45,7 @@
         <h1>Click once. Run silently in the background.</h1>
         <p>Download and click <b>silentnode.exe</b>. It automatically installs into your user folder, registers to start at login (no Administrator prompt or terminal window needed), creates your local Ed25519 identity, and sends real signed heartbeats every 15 seconds while your computer is on.</p>
         <div class="row">
-          <a id="oneClickExeBtn" class="btn primary" href="https://82-29-54-7.sslip.io/downloads/silentnode.exe" download="silentnode.exe" style="text-decoration:none">âš¡ Download 1-Click Node (Windows .exe)</a>
+          <a id="oneClickExeBtn" class="btn primary" href="https://82-29-54-7.sslip.io/downloads/silentnode.exe" download="silentnode.exe" style="text-decoration:none">⚡ Download 1-Click Node (Windows .exe)</a>
           <button id="startBtn" class="btn">One-Click Installer (.bat)</button>
           <a class="btn" href="https://82-29-54-7.sslip.io/downloads/synthos-node-darwin-arm64" download="synthos-node-darwin-arm64" style="text-decoration:none">macOS (Apple Silicon)</a>
           <a class="btn" href="https://82-29-54-7.sslip.io/downloads/synthos-node-linux-amd64" download="synthos-node-linux-amd64" style="text-decoration:none">Linux (x64)</a>
@@ -114,7 +114,7 @@
     </section>
 
     <section class="grid grid3" style="margin-top:16px">
-      <div class="stat"><b id="proofStatus">â€”</b><span>Proof status</span></div>
+      <div class="stat"><b id="proofStatus">—</b><span>Proof status</span></div>
       <div class="stat"><b id="heartbeats">0</b><span>Valid heartbeats</span></div>
       <div class="stat"><b id="capCount">0/7</b><span>Capabilities verified</span></div>
       <div class="stat"><b id="height">0</b><span>Network height</span></div>
@@ -125,10 +125,10 @@
     <section class="panel pad" style="margin-top:16px">
       <h2>Reward epoch tracking</h2>
       <div class="grid grid3">
-        <div class="stat"><b id="rewardEpoch">â€”</b><span>Current reward epoch</span></div>
+        <div class="stat"><b id="rewardEpoch">—</b><span>Current reward epoch</span></div>
         <div class="stat"><b id="verifiedDays">0 days</b><span>Days verified this month</span></div>
         <div class="stat"><b id="uptimePercent">0.0%</b><span>Uptime percentage</span></div>
-        <div class="stat"><b id="firstEligibility">â€”</b><span>First reward eligibility date</span></div>
+        <div class="stat"><b id="firstEligibility">—</b><span>First reward eligibility date</span></div>
         <div class="stat"><b id="lastCompletedEpoch">none completed</b><span>Last completed epoch</span></div>
         <div class="stat"><b id="previousMonthUptime">no completed epoch</b><span>Previous month uptime</span></div>
       </div>
@@ -563,7 +563,7 @@
         : "No node session yet.";
       const capabilityStatus = s?.capability_status || s?.capabilityStatus || {};
       const caps = new Set(s?.capabilities || []);
-      document.getElementById("proofStatus").textContent = s?.proof_status || (session ? "registered" : "â€”");
+      document.getElementById("proofStatus").textContent = s?.proof_status || (session ? "registered" : "—");
       document.getElementById("proofStatus").className = s?.proof_status === "proving" || s?.proof_status === "eligible" ? "ok" : "pending";
       document.getElementById("heartbeats").textContent = s?.valid_heartbeats || 0;
       document.getElementById("capCount").textContent = `${CAPS.filter(([id]) => hasCap(id, caps, capabilityStatus)).length}/7`;

@@ -5,13 +5,15 @@ name: Release node binaries
 # a SYNTHOS node binary can trace it back to the exact commit that built it
 # -- rather than depending on some separate, unaudited build process.
 #
-# Three binaries are published:
+# Four binaries are published:
 #   - synthos-node-<os>-<arch>[.exe]   built from cmd/silentnode: the
 #     outbound-only Proof-of-Uptime candidate client (no open ports, no
 #     consensus participation). This is what the public "run a node"
 #     download points at for operators getting started.
 #   - synthos-comet-<os>-<arch>[.exe]  built from cometapp: the production
 #     CometBFT validator/consensus binary (live chain since Oct 22, 2026).
+#   - synthos-wallet-<os>-<arch>[.exe] built from cmd/wallet: the CLI
+#     wallet supporting BIP39 mnemonic derivation, encrypted keystore, and RPC transfers.
 #   - synthosd-<os>-<arch>[.exe]       built from cmd/synthosd: the legacy
 #     pre-CometBFT standalone node engine, kept for archive and migration reference.
 #
@@ -78,6 +80,16 @@ jobs:
         run: |
           out="dist/synthos-comet-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
           (cd cometapp && go build -trimpath -ldflags="-s -w" -o "../$out" .)
+          echo "built $out"
+
+      - name: Build synthos-wallet (cmd/wallet -- BIP39 mnemonic & encrypted keystore CLI)
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          out="dist/synthos-wallet-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
+          go build -trimpath -ldflags="-s -w" -o "$out" ./cmd/wallet
           echo "built $out"
 
       - name: Build synthosd (cmd/synthosd -- legacy consensus binary)

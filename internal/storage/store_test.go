@@ -291,7 +291,7 @@ func TestStore_ArchiveBlocks_DoesNotRewriteOldArchivedBlocks(t *testing.T) {
 	}
 }
 
-func TestStore_EnforceStorageLimit_OneDriveArchive(t *testing.T) {
+func TestStore_EnforceStorageLimit_ColdArchive(t *testing.T) {
 	dir := t.TempDir()
 	archiveDir := t.TempDir()
 
@@ -315,7 +315,7 @@ func TestStore_EnforceStorageLimit_OneDriveArchive(t *testing.T) {
 	// Height 1 is well behind hotWindowStart (height 8) and should be in archiveDir
 	archiveBlockPath := filepath.Join(archiveDir, "1.json")
 	if _, err := os.Stat(archiveBlockPath); err != nil {
-		t.Fatalf("expected block 1 to be archived in OneDrive archiveDir: %v", err)
+		t.Fatalf("expected block 1 to be archived in cold archiveDir: %v", err)
 	}
 
 	// ColdBlockAt should still read block 1 seamlessly from archiveDir

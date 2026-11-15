@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -259,6 +260,9 @@ func TestAIAnswerUsesLiveDataAndKey(t *testing.T) {
 }
 
 func TestSecretFileMustBePrivate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX file permissions not enforced on Windows")
+	}
 	dir := t.TempDir()
 	p := filepath.Join(dir, "token")
 	if err := os.WriteFile(p, []byte("secret\n"), 0o644); err != nil {

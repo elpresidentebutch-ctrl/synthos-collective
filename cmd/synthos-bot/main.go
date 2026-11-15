@@ -30,6 +30,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -43,7 +44,7 @@ func readSecretFile(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("secret file: %w", err)
 	}
-	if info.Mode().Perm()&0o077 != 0 {
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
 		return "", fmt.Errorf("secret file %s can be read by other users; run: chmod 600 %s", path, path)
 	}
 	b, err := os.ReadFile(path)
