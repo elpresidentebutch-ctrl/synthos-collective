@@ -136,7 +136,7 @@ func encodeCarHeader(rootCIDBytes []byte) []byte {
 	// 1. "roots"
 	b = append(b, 0x65)
 	b = append(b, []byte("roots")...)
-	b = append(b, 0x81) // Array of 1
+	b = append(b, 0x81)       // Array of 1
 	b = append(b, 0xd8, 0x2a) // Tag 42 (CID)
 
 	cidWithPrefix := append([]byte{0x00}, rootCIDBytes...)

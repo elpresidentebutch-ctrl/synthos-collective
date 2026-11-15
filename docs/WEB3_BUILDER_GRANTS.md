@@ -49,7 +49,7 @@
 > - **Codebase:** Fully open source under Apache 2.0 across GitHub and GitLab with zero external CGO dependencies in pure Go.
 > - **Live Block Execution:** Primary seed validator actively running and producing canonical blocks exceeding Height 74,300+ on public infrastructure (`82.29.54.7:8080`).
 > - **Remote Residential Client:** `silentnode` consumer daemon running outbound-only on Windows PC with zero open inbound ports, actively transmitting verified Ed25519-signed heartbeats (6,000+ verified) to the network.
-> - **Bounded 2GB Interval Storage:** Local storage engine strictly bounds disk consumption to 2GB intervals, offloading cold blocks automatically to decentralized cold storage (Filecoin / IPFS CAR archives) or external drives to ensure consumer hardware never runs out of space.
+> - **Bounded 2GB Interval Storage:** Local storage engine strictly bounds disk consumption to 2GB intervals, offloading cold blocks to a user-configured archive directory or external drive (via SYNTHOS_ARCHIVE_DIR) to ensure consumer hardware never runs out of space.
 > - **Public Gateways:** Seed JSON-RPC interface and explorer live at `https://82-29-54-7.sslip.io` and public portal at `https://www.ishamwilliamsblockchains.com`.
 
 **4. How will grant funds be used?**

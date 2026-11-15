@@ -22,12 +22,12 @@ const (
 
 // CID represents an IPFS / Filecoin Content Identifier.
 type CID struct {
-	Version   uint64
-	Codec     uint64
-	HashType  uint64
-	Digest    []byte
-	Str       string
-	RawBytes  []byte
+	Version  uint64
+	Codec    uint64
+	HashType uint64
+	Digest   []byte
+	Str      string
+	RawBytes []byte
 }
 
 // ComputeRawCIDv1 computes the standard CIDv1 (raw binary + sha2-256) for data.

@@ -9,15 +9,15 @@ import (
 )
 
 type VerificationReport struct {
-	CARPath      string   `json:"car_path"`
-	CARSize      int64    `json:"car_size"`
-	CARSha256    string   `json:"car_sha256"`
-	RootCID      string   `json:"root_cid"`
-	BlockCount   int      `json:"block_count"`
-	StartHeight  uint64   `json:"start_height"`
-	EndHeight    uint64   `json:"end_height"`
-	ChainValid   bool     `json:"chain_valid"`
-	Errors       []string `json:"errors,omitempty"`
+	CARPath     string   `json:"car_path"`
+	CARSize     int64    `json:"car_size"`
+	CARSha256   string   `json:"car_sha256"`
+	RootCID     string   `json:"root_cid"`
+	BlockCount  int      `json:"block_count"`
+	StartHeight uint64   `json:"start_height"`
+	EndHeight   uint64   `json:"end_height"`
+	ChainValid  bool     `json:"chain_valid"`
+	Errors      []string `json:"errors,omitempty"`
 }
 
 // VerifyCarFile unpacks a CAR file and validates every block, CID, and hash linkage.
