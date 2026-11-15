@@ -1,5 +1,5 @@
 # Reproducible build for local demo / reviewer runs.
-# Default: early access website/API backend (persists under SYNTHOS_DATA_DIR, default /data).
+# Default: registry and explorer API backend (persists under SYNTHOS_DATA_DIR, default /data).
 FROM golang:1.26-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum* ./
@@ -40,7 +40,6 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
   && chown -R synthos:synthos /data /downloads /website /config
 
 ENV SYNTHOS_DATA_DIR=/data
-ENV SYNTHOS_EARLY_ACCESS_WIDGET_PATH=/website/assets/early-access-sale.js
 ENV GOMEMLIMIT=256MiB
 ENV GOGC=30
 ENV SYNTHOS_MAX_HOT_BLOCKS=250

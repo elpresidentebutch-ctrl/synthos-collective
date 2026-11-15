@@ -25,7 +25,6 @@ This writes private launch material to:
 Generated files include:
 
 - `genesis.json`
-- `early-access.env`
 - `founder-wallet.private.json`
 - `validator-wallets.private.json`
 - `validator-1.json` through `validator-4.json`
@@ -50,19 +49,6 @@ http://127.0.0.1:8082
 http://127.0.0.1:8083
 ```
 
-Local early-access backend:
-
-```text
-http://127.0.0.1:8090
-```
-
-Verify:
-
-```powershell
-Invoke-RestMethod http://127.0.0.1:8080/health
-Invoke-RestMethod http://127.0.0.1:8080/status
-Invoke-RestMethod http://127.0.0.1:8080/blocks
-Invoke-RestMethod http://127.0.0.1:8090/api/early-access/config
 ```
 
 ## Start Validators 11-15 Locally
@@ -133,26 +119,6 @@ in front of validator 1's RPC port:
 https://rpc.ishamwilliamsblockchains.com -> http://127.0.0.1:8080
 ```
 
-Put the early-access backend behind HTTPS too:
-
-```text
-https://api.ishamwilliamsblockchains.com -> http://127.0.0.1:8090
-```
-
-At your domain provider, point:
-
-```text
-rpc.ishamwilliamsblockchains.com
-```
-
-to the server running the RPC.
-
-Verify public access:
-
-```powershell
-Invoke-RestMethod https://rpc.ishamwilliamsblockchains.com/health
-Invoke-RestMethod https://rpc.ishamwilliamsblockchains.com/status
-Invoke-RestMethod https://api.ishamwilliamsblockchains.com/api/early-access/config
 ```
 
 ## Deployment (Direct Host / VPS)
@@ -167,18 +133,6 @@ Set the website RPC URL to:
 https://rpc.ishamwilliamsblockchains.com
 ```
 
-Set the early-access widget backend URL to:
-
-```text
-https://api.ishamwilliamsblockchains.com
-```
-
-The existing website explorer reads `/status`, `/blocks`, `/mempool`, and
-balance endpoints from that RPC.
-
-## Important Boundary
-
-The generated `early-access.env` turns on ETH, USDC, and USDT payment checks on
 Ethereum mainnet using a public RPC. Before accepting large payments, replace
 the public RPC with a provider you control, confirm current ETH pricing, and run
 a small payment test.

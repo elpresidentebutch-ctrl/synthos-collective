@@ -331,7 +331,7 @@ async function main() {
 
   const complianceRegistry = await deployContract("SYNTHOSComplianceRegistry");
 
-  const earlyAdopterSale = await deployContract("SYNTHOSEarlyAdopterPresale", [
+  const earlyAdopterSale = await deployContract("SYNTHOSEarlyAdopterSale", [
     syn.address,
     complianceRegistry.address,
     treasuryWallet,
@@ -538,7 +538,7 @@ async function main() {
     ["SynCoin", token],
     ["SYNTHOSSynBridgeMinter", synBridgeMinter.contract],
     ["SYNTHOSAdopterRewards", adopterRewards.contract],
-    ["SYNTHOSEarlyAdopterPresale", earlyAdopterSale.contract],
+    ["SYNTHOSEarlyAdopterSale", earlyAdopterSale.contract],
     ["SYNTHOSDex", dex.contract],
     ["SYNTHOSValidatorCandidateRewards", validatorCandidateRewards.contract],
     ["SYNTHOSComplianceRegistry", complianceRegistry.contract],

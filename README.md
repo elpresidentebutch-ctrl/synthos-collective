@@ -2,7 +2,7 @@
 
 SYNTHOS Collective is an agent-native Layer 1 blockchain project. The network is built around validator agents that combine seven working roles: immune node, economist, governor, communicator, simulator, enforcer, and citizen.
 
-This repository contains the Go blockchain node, peer registry, live explorer files, early-access web routes, deployment configuration, contract workspace, and operational documentation for the SYNTHOS network.
+This repository contains the Go blockchain node, peer registry, live explorer files, deployment configuration, contract workspace, and operational documentation for the SYNTHOS network.
 
 Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
 
@@ -20,7 +20,7 @@ Status as of October 31, 2026:
 - **Native Coin**: `SYN` (fixed supply: 100,000,000,000 SYN)
 
 ### Live Services
-- **Registry, Explorer & Relay Service**: `https://82-29-54-7.sslip.io` (deployed from `Dockerfile`). Serves the peer registry, candidate node heartbeat endpoints, explorer backend, and early-access routes.
+- **Registry, Explorer & Relay Service**: `https://82-29-54-7.sslip.io` (deployed from `Dockerfile`). Serves the peer registry, candidate node heartbeat endpoints, and explorer backend.
 - **Public Website**: `https://www.ishamwilliamsblockchains.com`
 - **Live Explorer**: `https://82-29-54-7.sslip.io`
 

@@ -12,35 +12,3 @@ services:
       mountPath: /data
       sizeGB: 1
     healthCheckPath: /health
-
-  - type: web
-    name: synthos-early-access-backend
-    runtime: docker
-    dockerfilePath: ./Dockerfile
-    dockerCommand: /usr/local/bin/cloudless-registry -listen :8090 -state /data/cloudless-registry.json
-    envVars:
-      - key: SYNTHOS_NATIVE_RPC_URL
-        value: https://rpc.ishamwilliamsblockchains.com
-      - key: SYNTHOS_EARLY_ACCESS_TREASURY_WALLET
-        value: 0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2
-      - key: SYNTHOS_EARLY_ACCESS_PAYMENT_TREASURY
-        value: 0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2
-      - key: SYNTHOS_EARLY_ACCESS_CHAIN_ID
-        value: "20260702"
-      - key: SYNTHOS_EARLY_ACCESS_CHAIN_NAME
-        value: synthos-mainnet-1
-      - key: SYNTHOS_EARLY_ACCESS_RPC_URLS
-        value: https://rpc.ishamwilliamsblockchains.com
-      - key: SYNTHOS_CORS_ORIGINS
-        value: https://www.ishamwilliamsblockchains.com,https://ishamwilliamsblockchains.com,https://lovable.dev
-      - key: SYNTHOS_EARLY_ACCESS_WIDGET_PATH
-        value: /website/assets/early-access-sale.js
-      - key: SYNTHOS_EARLY_ACCESS_ALLOCATION_PRIVATE_KEY
-        sync: false
-      - key: SYNTHOS_EARLY_ACCESS_ASSETS_JSON
-        sync: false
-    disk:
-      name: synthos-early-access-data
-      mountPath: /data
-      sizeGB: 1
-    healthCheckPath: /health

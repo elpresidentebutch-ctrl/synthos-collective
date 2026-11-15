@@ -93,20 +93,16 @@ func main() {
 			chain.Address(founder.Address): totalSupply,
 		},
 		Metadata: map[string]any{
-			"symbol":              "SYN",
-			"decimals":            0,
-			"network":             "SYNTHOS Collective",
-			"public_rpc_url":      publicRPCURL,
-			"founder_allocation":  totalSupply,
-			"early_presale_note":  "Use the EVM presale contract for crypto payments; this genesis opens the SYNTHOS L1 ledger.",
-			"early_presale_syn":   250_000_000,
-			"early_presale_price": "0.05 USD",
+			"symbol":             "SYN",
+			"decimals":           0,
+			"network":            "SYNTHOS Collective",
+			"public_rpc_url":     publicRPCURL,
+			"founder_allocation": totalSupply,
 		},
 	}
 	writeJSON(filepath.Join(outDir, "genesis.json"), genesis, 0o600)
 	writeJSON(filepath.Join(outDir, "founder-wallet.private.json"), founder, 0o600)
 	writeJSON(filepath.Join(outDir, "validator-wallets.private.json"), validatorKeys, 0o600)
-	writeEarlyAccessEnv(filepath.Join(outDir, "early-access.env"), founder, publicRPCURL, validatorIDs[0])
 
 	for i, key := range validatorKeys {
 		nodeID := key.Name
@@ -172,7 +168,6 @@ func main() {
 			"docker_compose": "docker-compose.yml",
 			"founder_wallet": "founder-wallet.private.json",
 			"validator_keys": "validator-wallets.private.json",
-			"backend_env":    "early-access.env",
 			"validator_configs": []string{
 				"validator configs are named after the generated validator IDs",
 			},
@@ -181,7 +176,6 @@ func main() {
 			"Keep this folder private because validator private keys are inside it.",
 			"Run docker compose up --build from the generated folder.",
 			"Point rpc.ishamwilliamsblockchains.com to the host running validator-1 port 8080 through HTTPS.",
-			"Point the Lovable early access page at the backend running on port 8090 through HTTPS.",
 			"Verify /health and /status before inviting early adopters.",
 		},
 	}
@@ -253,48 +247,10 @@ func writeCompose(path string, validatorIDs []string, localBaseRPCPort int) {
 
 `, name, env, name, localBaseRPCPort+i)
 	}
-	content += `  early-access-backend:
-    build:
-      context: ../..
-      dockerfile: Dockerfile
-    entrypoint: ["/usr/local/bin/cloudless-registry"]
-    command: ["-listen", ":8090", "-state", "/data/cloudless-registry.json"]
-    env_file:
-      - ./early-access.env
-    volumes:
-      - backend-data:/data
-    ports:
-      - "8090:8090"
-    depends_on:
-      - ` + validatorIDs[0] + `
-
-`
 	content += "volumes:\n"
 	for _, name := range validatorIDs {
 		content += fmt.Sprintf("  %s-data:\n", name)
 	}
-	content += "  backend-data:\n"
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		panic(err)
-	}
-}
-
-func writeEarlyAccessEnv(path string, founder generatedKey, publicRPCURL string, nativeRPCService string) {
-	assets := `[{"symbol":"ETH","network":"Ethereum","chainId":"1","rpcUrl":"https://eth.llamarpc.com","treasuryAddress":"0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2","native":true,"decimals":18,"usdPrice":"2000.00","enabled":true},{"symbol":"USDC","network":"Ethereum","chainId":"1","rpcUrl":"https://eth.llamarpc.com","address":"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48","treasuryAddress":"0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2","decimals":6,"usdPrice":"1.00","enabled":true},{"symbol":"USDT","network":"Ethereum","chainId":"1","rpcUrl":"https://eth.llamarpc.com","address":"0xdAC17F958D2ee523a2206206994597C13D831ec7","treasuryAddress":"0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2","decimals":6,"usdPrice":"1.00","enabled":true}]`
-	content := fmt.Sprintf(`SYNTHOS_NATIVE_RPC_URL=http://%s:8080
-SYNTHOS_DISTRIBUTION_AGENT_ID=synthos-early-adopter-distributor
-SYNTHOS_DISTRIBUTION_AGENT_PRIVATE_KEY=%s
-SYNTHOS_EARLY_ACCESS_ALLOCATION_PRIVATE_KEY=%s
-SYNTHOS_EARLY_ACCESS_TREASURY_WALLET=0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2
-SYNTHOS_EARLY_ACCESS_PAYMENT_TREASURY=0x5d6f8FbAAB199E788ed9Cfcb3F7Fe2ac9c0450d2
-SYNTHOS_EARLY_ACCESS_CHAIN_ID=20260702
-SYNTHOS_EARLY_ACCESS_TX_CHAIN_ID=20260702
-SYNTHOS_EARLY_ACCESS_CHAIN_NAME=synthos-mainnet-1
-SYNTHOS_EARLY_ACCESS_RPC_URLS=%s
-SYNTHOS_CORS_ORIGINS=https://www.ishamwilliamsblockchains.com,https://ishamwilliamsblockchains.com,https://lovable.dev
-SYNTHOS_EARLY_ACCESS_WIDGET_PATH=/website/assets/early-access-sale.js
-SYNTHOS_EARLY_ACCESS_ASSETS_JSON=%s
-`, nativeRPCService, founder.PrivateKey, founder.PrivateKey, publicRPCURL, assets)
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		panic(err)
 	}
