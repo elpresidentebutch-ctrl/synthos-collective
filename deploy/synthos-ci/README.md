@@ -1,6 +1,6 @@
 # synthos-ci (HostEons / Salt Lake City Server Setup)
 
-Production configuration for running `synthos-ci` safely co-located alongside the primary CometBFT validator node (`synthos-node.service`).
+Production configuration for running `synthos-ci` safely co-located alongside the primary CometBFT validator node (`synthos-comet.service`).
 
 ---
 
@@ -9,8 +9,8 @@ Production configuration for running `synthos-ci` safely co-located alongside th
 1. **Unprivileged User Isolation (Never Root)**:
    - Runs strictly under the dedicated system user `synthos-ci`.
    - `NoNewPrivileges=true`, `ProtectSystem=strict`, `ProtectHome=true`, `PrivateTmp=true`.
-   - The node folder `/var/lib/synthos` is set to `chmod 700` (owned exclusively by `synthos:synthos`).
-   - `InaccessiblePaths=/var/lib/synthos /root` ensures `synthos-ci` cannot read, list, or traverse any node directories or validator keys (`priv_validator_key.json`).
+   - The node folders `/var/lib/synthos` and `/var/lib/synthos-comet` are set to `chmod 700` (owned exclusively by `synthos:synthos`).
+   - `InaccessiblePaths=-/var/lib/synthos -/var/lib/synthos-comet -/root -/home` ensures `synthos-ci` cannot read, list, or traverse any node directories or validator keys (`priv_validator_key.json`), while using `-` prefix so missing paths do not abort unit startup.
 
 2. **Resource Throttling & Priority (Validator Always Comes First)**:
    - **Scheduling Priority**: `Nice=19` (lowest CPU priority) and `IOSchedulingClass=idle`.
@@ -19,7 +19,7 @@ Production configuration for running `synthos-ci` safely co-located alongside th
 
 3. **Kernel OOM Protection (Kill CI Before Validator)**:
    - `synthos-ci.service` sets `OOMScoreAdjust=1000` (highest sacrificial score).
-   - `synthos-node.service` sets `OOMScoreAdjust=-900` via `/etc/systemd/system/synthos-node.service.d/override.conf`.
+   - `synthos-comet.service` sets `OOMScoreAdjust=-900` via `/etc/systemd/system/synthos-comet.service.d/override.conf`.
    - If server RAM runs low, the Linux kernel Out-Of-Memory killer will immediately terminate `synthos-ci` and protect `synthos-comet`.
 
 4. **Automated Build Cache Cleanup (Disk Never Fills)**:
@@ -42,10 +42,11 @@ sudo bash install.sh
 ## Manual Verification Commands
 
 ### 1. Verify User & Filesystem Isolation
-Confirm `synthos-ci` cannot see inside `/var/lib/synthos`:
+Confirm `synthos-ci` cannot see inside the validator directories:
 ```bash
 sudo -u synthos-ci ls -la /var/lib/synthos
-# Expected output: ls: cannot open directory '/var/lib/synthos': Permission denied
+sudo -u synthos-ci ls -la /var/lib/synthos-comet
+# Expected output: Permission denied
 ```
 
 ### 2. Verify OOM Scores

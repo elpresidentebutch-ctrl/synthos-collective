@@ -5,12 +5,16 @@ set -euo pipefail
 
 [ "$(id -u)" = 0 ] || { echo "Run as root (sudo)" >&2; exit 1; }
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 echo "== [1/6] Securing node folder & validator keys"
-if [ -d "/var/lib/synthos" ]; then
-  chown -R synthos:synthos /var/lib/synthos
-  chmod 700 /var/lib/synthos
-  echo "   /var/lib/synthos restricted to mode 700 (owner synthos only)."
-fi
+for node_dir in /var/lib/synthos /var/lib/synthos-comet; do
+  if [ -d "$node_dir" ]; then
+    chown -R synthos:synthos "$node_dir" 2>/dev/null || true
+    chmod 700 "$node_dir"
+    echo "   $node_dir restricted to mode 700 (owner synthos only)."
+  fi
+done
 
 echo "== [2/6] Creating unprivileged synthos-ci system user"
 if ! id synthos-ci >/dev/null 2>&1; then
@@ -21,15 +25,25 @@ fi
 mkdir -p /var/lib/synthos-ci/{repo,logs,tmp,go,.cache/go-build}
 chown -R synthos-ci:synthos-ci /var/lib/synthos-ci
 chmod 750 /var/lib/synthos-ci
+sudo -u synthos-ci git config --global --add safe.directory '*' 2>/dev/null || true
 
 echo "== [3/6] Installing executable CI scripts"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 install -m 755 "$SCRIPT_DIR/run-ci.sh" /usr/local/bin/synthos-ci-run
 install -m 755 "$SCRIPT_DIR/clean-ci-cache.sh" /usr/local/bin/synthos-ci-clean-cache
 
-echo "== [4/6] Protecting validator (synthos-node) priority and OOM score"
-mkdir -p /etc/systemd/system/synthos-node.service.d
-cp "$SCRIPT_DIR/synthos-node-protect.conf" /etc/systemd/system/synthos-node.service.d/override.conf
+echo "== [4/6] Protecting validator (synthos-comet) priority and OOM score"
+# Primary validator service on Salt Lake City is synthos-comet.service
+for svc in synthos-comet synthos-node; do
+  if systemctl list-unit-files "$svc.service" >/dev/null 2>&1 || [ -f "/etc/systemd/system/$svc.service" ]; then
+    echo "   Configuring resource priority and OOM protection for $svc.service..."
+    mkdir -p "/etc/systemd/system/$svc.service.d"
+    cp "$SCRIPT_DIR/synthos-comet-protect.conf" "/etc/systemd/system/$svc.service.d/override.conf"
+    if systemctl is-active --quiet "$svc"; then
+      echo "   $svc is active: dynamically applying CPU and I/O weights..."
+      systemctl set-property "$svc" CPUWeight=1000 IOWeight=1000 2>/dev/null || true
+    fi
+  fi
+done
 
 echo "== [5/6] Installing synthos-ci and cleanup timer systemd units"
 cp "$SCRIPT_DIR/synthos-ci.service" /etc/systemd/system/synthos-ci.service
@@ -40,22 +54,26 @@ systemctl daemon-reload
 systemctl enable --now synthos-ci-cleanup.timer
 systemctl enable --now synthos-ci
 
-# Apply override to running node without restarting validator if running
-if systemctl is-active --quiet synthos-node; then
-  echo "   synthos-node is active: applying resource limits and OOM score..."
-  systemctl set-property synthos-node CPUWeight=1000 IOWeight=1000
-fi
-
 echo "== [6/6] Verifying isolation permissions"
-if sudo -u synthos-ci ls /var/lib/synthos >/dev/null 2>&1; then
-  echo "[WARNING] synthos-ci was able to read /var/lib/synthos directly!" >&2
+CHECK_PASSED=1
+for node_dir in /var/lib/synthos /var/lib/synthos-comet; do
+  if [ -d "$node_dir" ]; then
+    if sudo -u synthos-ci ls "$node_dir" >/dev/null 2>&1; then
+      echo "[ERROR] synthos-ci was able to read $node_dir!" >&2
+      CHECK_PASSED=0
+    else
+      echo "   [CONFIRMED] synthos-ci has NO ACCESS to $node_dir."
+    fi
+  fi
+done
+
+if [ "$CHECK_PASSED" = 0 ]; then
   exit 1
-else
-  echo "   [CONFIRMED] synthos-ci has NO ACCESS to /var/lib/synthos or validator keys."
 fi
 
 echo
 echo "=== synthos-ci installation & hardening complete ==="
-echo "Status check: systemctl status synthos-ci"
-echo "Logs:         journalctl -u synthos-ci -f"
-echo "Timer status: systemctl list-timers synthos-ci-cleanup.timer"
+echo "Validator protection: /etc/systemd/system/synthos-comet.service.d/override.conf"
+echo "CI service status:    systemctl status synthos-ci"
+echo "CI live logs:         journalctl -u synthos-ci -f"
+echo "Cleanup timer status: systemctl list-timers synthos-ci-cleanup.timer"

@@ -1,6 +1,6 @@
 [Unit]
 Description=SYNTHOS CI (Continuous Integration Test & Build Runner)
-After=network-online.target synthos-node.service
+After=network-online.target synthos-comet.service
 Wants=network-online.target
 
 [Service]
@@ -14,8 +14,9 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-InaccessiblePaths=/var/lib/synthos /root
-ReadWritePaths=/var/lib/synthos-ci /tmp
+# Prefix with '-' so systemd ignores paths if not present, preventing 226/NAMESPACE startup failures
+InaccessiblePaths=-/var/lib/synthos -/var/lib/synthos-comet -/root -/home
+ReadWritePaths=/var/lib/synthos-ci -/tmp
 
 # 3. Lowest CPU & I/O priority: synthos-comet always gets the machine first
 Nice=19
@@ -33,6 +34,7 @@ OOMScoreAdjust=1000
 Environment=HOME=/var/lib/synthos-ci
 Environment=GOPATH=/var/lib/synthos-ci/go
 Environment=GOCACHE=/var/lib/synthos-ci/.cache/go-build
+Environment=TMPDIR=/var/lib/synthos-ci/tmp
 Environment=PATH=/usr/local/go/bin:/usr/bin:/bin
 
 # 6. Service lifecycle

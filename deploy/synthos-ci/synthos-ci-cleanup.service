@@ -10,5 +10,5 @@ ExecStart=/usr/local/bin/synthos-ci-clean-cache
 Nice=19
 IOSchedulingClass=idle
 PrivateTmp=true
-InaccessiblePaths=/var/lib/synthos /root
-ReadWritePaths=/var/lib/synthos-ci /tmp
+InaccessiblePaths=-/var/lib/synthos -/var/lib/synthos-comet -/root -/home
+ReadWritePaths=/var/lib/synthos-ci -/tmp

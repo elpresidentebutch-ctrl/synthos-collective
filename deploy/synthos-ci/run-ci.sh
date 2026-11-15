@@ -16,13 +16,18 @@ export GOCACHE=/var/lib/synthos-ci/.cache/go-build
 export TMPDIR=/var/lib/synthos-ci/tmp
 export PATH=/usr/local/go/bin:$GOPATH/bin:$PATH
 
-# Security check: ensure synthos-ci CANNOT read /var/lib/synthos
-if [ -d "/var/lib/synthos" ]; then
-  if ls /var/lib/synthos >/dev/null 2>&1; then
-    echo "[SECURITY VIOLATION] synthos-ci has access to /var/lib/synthos! Aborting." >&2
-    exit 1
+# Avoid git dubious ownership failures
+git config --global --add safe.directory "$REPO_DIR" 2>/dev/null || true
+
+# Security check: ensure synthos-ci CANNOT read node or validator keys
+for node_dir in /var/lib/synthos /var/lib/synthos-comet; do
+  if [ -d "$node_dir" ]; then
+    if ls "$node_dir" >/dev/null 2>&1; then
+      echo "[SECURITY VIOLATION] synthos-ci has access to $node_dir! Aborting immediately." >&2
+      exit 1
+    fi
   fi
-fi
+done
 
 # Clone or fetch repository
 if [ ! -d "$REPO_DIR/.git" ]; then
