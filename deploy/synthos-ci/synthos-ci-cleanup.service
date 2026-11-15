@@ -1,0 +1,14 @@
+[Unit]
+Description=SYNTHOS CI Build Cache Cleanup
+After=network.target
+
+[Service]
+Type=oneshot
+User=synthos-ci
+Group=synthos-ci
+ExecStart=/usr/local/bin/synthos-ci-clean-cache
+Nice=19
+IOSchedulingClass=idle
+PrivateTmp=true
+InaccessiblePaths=/var/lib/synthos /root
+ReadWritePaths=/var/lib/synthos-ci /tmp

@@ -84,6 +84,7 @@ GENESIS="$SRC/networks/$NETWORK/genesis.json"
 mkdir -p "$HOME_DIR"
 synthos-comet join --home "$HOME_DIR" --genesis-file "$GENESIS"
 chown -R synthos:synthos /var/lib/synthos
+chmod 700 /var/lib/synthos
 
 IP=$(curl -fsS --max-time 5 http://169.254.169.254/hetzner/v1/metadata/public-ipv4 2>/dev/null \
   || curl -fsS --max-time 5 https://api.ipify.org)
@@ -107,6 +108,10 @@ ExecStart=/usr/local/bin/synthos-comet $ARGS
 Restart=always
 RestartSec=5
 LimitNOFILE=65536
+Nice=-5
+CPUWeight=1000
+IOWeight=1000
+OOMScoreAdjust=-900
 
 [Install]
 WantedBy=multi-user.target

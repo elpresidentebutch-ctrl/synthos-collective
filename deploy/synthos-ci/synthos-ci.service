@@ -1,0 +1,44 @@
+[Unit]
+Description=SYNTHOS CI (Continuous Integration Test & Build Runner)
+After=network-online.target synthos-node.service
+Wants=network-online.target
+
+[Service]
+# 1. Unprivileged user isolation (never run as root)
+User=synthos-ci
+Group=synthos-ci
+WorkingDirectory=/var/lib/synthos-ci
+
+# 2. Strict filesystem isolation: prevent any access to node data or validator keys
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+InaccessiblePaths=/var/lib/synthos /root
+ReadWritePaths=/var/lib/synthos-ci /tmp
+
+# 3. Lowest CPU & I/O priority: synthos-comet always gets the machine first
+Nice=19
+CPUSchedulingPolicy=batch
+CPUWeight=10
+CPUQuota=60%
+IOSchedulingClass=idle
+
+# 4. Memory caps & sacrificial OOM priority: kill CI before synthos-comet
+MemoryHigh=1200M
+MemoryMax=1500M
+OOMScoreAdjust=1000
+
+# 5. Environment
+Environment=HOME=/var/lib/synthos-ci
+Environment=GOPATH=/var/lib/synthos-ci/go
+Environment=GOCACHE=/var/lib/synthos-ci/.cache/go-build
+Environment=PATH=/usr/local/go/bin:/usr/bin:/bin
+
+# 6. Service lifecycle
+ExecStart=/usr/local/bin/synthos-ci-run
+Restart=always
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target
