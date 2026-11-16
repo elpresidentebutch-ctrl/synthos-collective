@@ -68,7 +68,12 @@ type TxContext struct {
 // after a failed transaction should apply it to a Clone and keep the clone
 // only on success.
 func ApplyTransaction(st *State, tx Tx, ctx TxContext) error {
-	if int64(ctx.Height) >= FeeModelV2ActivationHeight && tx.Fee < RequiredFee(tx) {
+	if int64(ctx.Height) >= FeeModelV3ActivationHeight {
+		baseFee := st.EffectiveBaseFee(int64(ctx.Height))
+		if tx.Fee < RequiredFeeV3(tx, baseFee) {
+			return ErrFeeTooLow
+		}
+	} else if int64(ctx.Height) >= FeeModelV2ActivationHeight && tx.Fee < RequiredFee(tx) {
 		return ErrFeeTooLow
 	}
 	if ctx.BlockTime != 0 {
@@ -94,9 +99,10 @@ type FeeSplit struct {
 // ApplyBlockFees splits the fees of a block's successfully applied transactions.
 // Below FeeModelV2ActivationHeight, fees are split between the proposer's address
 // and burn (via creditProposerFees); an empty proposer burns everything.
-// At and after FeeModelV2ActivationHeight, 50% is burned and 50% is credited
-// to st.TreasuryAddress and added to st.FeeEpochTreasuryIncome; no fee goes directly
-// to any validator.
+// At and after FeeModelV2ActivationHeight (until FeeModelV3ActivationHeight), 50% is burned
+// and 50% is credited to st.TreasuryAddress and added to st.FeeEpochTreasuryIncome.
+// At and after FeeModelV3ActivationHeight (EIP-1559), the base fee portion is split 50% burn /
+// 50% treasury, and 100% of the priority fee tip above the base fee goes directly to the block proposer.
 func ApplyBlockFees(st *State, appliedTxs []Tx, proposer Address, height int64) (FeeSplit, error) {
 	if height < FeeModelV2ActivationHeight {
 		var totalFees uint64
@@ -122,43 +128,122 @@ func ApplyBlockFees(st *State, appliedTxs []Tx, proposer Address, height int64) 
 		}, nil
 	}
 
-	var totalFees uint64
+	if height < FeeModelV3ActivationHeight {
+		var totalFees uint64
+		for _, tx := range appliedTxs {
+			var err error
+			totalFees, err = safeAdd(totalFees, tx.Fee)
+			if err != nil {
+				return FeeSplit{}, fmt.Errorf("block fee overflow: %w", err)
+			}
+		}
+		if totalFees == 0 {
+			return FeeSplit{}, nil
+		}
+
+		burnAmount := (totalFees * BURN_PERCENT) / 100
+		toTreasury := totalFees - burnAmount
+
+		if st.TreasuryAddress == "" {
+			return FeeSplit{}, errors.New("cannot apply block fees: TreasuryAddress is required from FeeModelV2ActivationHeight onward")
+		}
+
+		treasury := st.Get(st.TreasuryAddress)
+		nextBalance, err := safeAdd(treasury.Balance, toTreasury)
+		if err != nil {
+			return FeeSplit{}, fmt.Errorf("treasury fee deposit overflow: %w", err)
+		}
+		treasury.Balance = nextBalance
+		st.Set(st.TreasuryAddress, treasury)
+
+		newIncome, err := safeAdd(st.FeeEpochTreasuryIncome, toTreasury)
+		if err != nil {
+			return FeeSplit{}, fmt.Errorf("fee epoch treasury income overflow: %w", err)
+		}
+		st.FeeEpochTreasuryIncome = newIncome
+
+		return FeeSplit{
+			TotalFees:  totalFees,
+			BurnAmount: burnAmount,
+			ToTreasury: toTreasury,
+		}, nil
+	}
+
+	// Fee Model V3: EIP-1559 base fee (50% burn, 50% treasury) + priority tip (100% proposer)
+	if st.TreasuryAddress == "" {
+		return FeeSplit{}, errors.New("cannot apply block fees: TreasuryAddress is required from FeeModelV2ActivationHeight onward")
+	}
+
+	baseFee := st.EffectiveBaseFee(height)
+	var totalFees, totalBaseFees, totalTips uint64
+
 	for _, tx := range appliedTxs {
 		var err error
 		totalFees, err = safeAdd(totalFees, tx.Fee)
 		if err != nil {
 			return FeeSplit{}, fmt.Errorf("block fee overflow: %w", err)
 		}
+
+		reqBase := RequiredFeeV3(tx, baseFee)
+		txBase := tx.Fee
+		if txBase > reqBase {
+			txBase = reqBase
+		}
+		txTip := tx.Fee - txBase
+
+		totalBaseFees, err = safeAdd(totalBaseFees, txBase)
+		if err != nil {
+			return FeeSplit{}, fmt.Errorf("block base fee overflow: %w", err)
+		}
+		totalTips, err = safeAdd(totalTips, txTip)
+		if err != nil {
+			return FeeSplit{}, fmt.Errorf("block tip overflow: %w", err)
+		}
 	}
+
 	if totalFees == 0 {
 		return FeeSplit{}, nil
 	}
 
-	burnAmount := (totalFees * BURN_PERCENT) / 100
-	toTreasury := totalFees - burnAmount
+	burnAmount := (totalBaseFees * BURN_PERCENT) / 100
+	toTreasury := totalBaseFees - burnAmount
+	toProposer := totalTips
 
-	if st.TreasuryAddress == "" {
-		return FeeSplit{}, errors.New("cannot apply block fees: TreasuryAddress is required from FeeModelV2ActivationHeight onward")
+	if toTreasury > 0 {
+		treasury := st.Get(st.TreasuryAddress)
+		nextBalance, err := safeAdd(treasury.Balance, toTreasury)
+		if err != nil {
+			return FeeSplit{}, fmt.Errorf("treasury fee deposit overflow: %w", err)
+		}
+		treasury.Balance = nextBalance
+		st.Set(st.TreasuryAddress, treasury)
+
+		newIncome, err := safeAdd(st.FeeEpochTreasuryIncome, toTreasury)
+		if err != nil {
+			return FeeSplit{}, fmt.Errorf("fee epoch treasury income overflow: %w", err)
+		}
+		st.FeeEpochTreasuryIncome = newIncome
 	}
 
-	treasury := st.Get(st.TreasuryAddress)
-	nextBalance, err := safeAdd(treasury.Balance, toTreasury)
-	if err != nil {
-		return FeeSplit{}, fmt.Errorf("treasury fee deposit overflow: %w", err)
+	if toProposer > 0 && proposer != "" {
+		propAcc := st.Get(proposer)
+		nextBalance, err := safeAdd(propAcc.Balance, toProposer)
+		if err != nil {
+			return FeeSplit{}, fmt.Errorf("proposer tip credit overflow: %w", err)
+		}
+		propAcc.Balance = nextBalance
+		st.Set(proposer, propAcc)
+	} else if toProposer > 0 && proposer == "" {
+		// Burn uncredited tips if proposer address is unspecified
+		burnAmount, _ = safeAdd(burnAmount, toProposer)
+		toProposer = 0
 	}
-	treasury.Balance = nextBalance
-	st.Set(st.TreasuryAddress, treasury)
-
-	newIncome, err := safeAdd(st.FeeEpochTreasuryIncome, toTreasury)
-	if err != nil {
-		return FeeSplit{}, fmt.Errorf("fee epoch treasury income overflow: %w", err)
-	}
-	st.FeeEpochTreasuryIncome = newIncome
 
 	return FeeSplit{
 		TotalFees:  totalFees,
 		BurnAmount: burnAmount,
 		ToTreasury: toTreasury,
+		ToProposer: toProposer,
 	}, nil
 }
 

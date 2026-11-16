@@ -330,6 +330,10 @@ type State struct {
 	FeeEpochTreasuryIncome uint64
 	FeeEpochTotalPower     uint64
 	FeeEpochSignedPower    map[Address]uint64
+
+	// Fee Model V3 Base Fee (EIP-1559 dynamic base fee, active from FeeModelV3ActivationHeight).
+	// Consensus state committed to Root() only when non-zero.
+	FeeModelV3BaseFee uint64
 }
 
 func NewState() *State {
@@ -1354,6 +1358,14 @@ func (s *State) Root() string {
 		leaves = append(leaves, feeHash[:])
 	}
 
+	// Fee Model V3 dynamic base fee is committed to Root() only when non-zero
+	// (active from FeeModelV3ActivationHeight), keeping historical roots identical.
+	if s.FeeModelV3BaseFee > 0 {
+		feeData := []byte(fmt.Sprintf("synthos/fee-v3-base-fee:%d", s.FeeModelV3BaseFee))
+		feeHash := sha256.Sum256(feeData)
+		leaves = append(leaves, feeHash[:])
+	}
+
 	return "0x" + hex.EncodeToString(buildMerkleRoot(leaves))
 }
 
@@ -1473,6 +1485,7 @@ func (s *State) Clone() *State {
 			out.FeeEpochSignedPower[k] = v
 		}
 	}
+	out.FeeModelV3BaseFee = s.FeeModelV3BaseFee
 	return out
 }
 

@@ -16,6 +16,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -23,7 +25,6 @@ import (
 	abcitypes "github.com/cometbft/cometbft/abci/types"
 	cmted25519 "github.com/cometbft/cometbft/crypto/ed25519"
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
-	"strconv"
 
 	"synthos-collective/internal/chain"
 )
@@ -368,6 +369,22 @@ func (a *App) FinalizeBlock(_ context.Context, req *abcitypes.RequestFinalizeBlo
 			}
 		}
 
+		if req.Height >= chain.FeeModelV3ActivationHeight {
+			currentBaseFee := st.EffectiveBaseFee(req.Height)
+			nextBaseFee := chain.CalculateNextBaseFee(currentBaseFee, uint64(len(applied)))
+			st.FeeModelV3BaseFee = nextBaseFee
+
+			events = append(events, abcitypes.Event{
+				Type: "fee_model_v3_surge",
+				Attributes: []abcitypes.EventAttribute{
+					{Key: "current_base_fee", Value: strconv.FormatUint(currentBaseFee, 10), Index: true},
+					{Key: "next_base_fee", Value: strconv.FormatUint(nextBaseFee, 10), Index: true},
+					{Key: "applied_txs", Value: strconv.Itoa(len(applied)), Index: true},
+					{Key: "proposer_tip", Value: strconv.FormatUint(feeSplit.ToProposer, 10), Index: true},
+				},
+			})
+		}
+
 		if uint64(req.Height-chain.FeeModelV2ActivationHeight+1)%chain.FeeEpochBlocks == 0 {
 			epoch := uint64(req.Height-chain.FeeModelV2ActivationHeight) / chain.FeeEpochBlocks
 			payouts, err := st.DistributeFeeEpochPayout(epoch)
@@ -621,4 +638,103 @@ func (a *App) Simulate(tx chain.Tx) (chain.SimulationResult, error) {
 	res.ToBalanceBefore, res.ToBalanceAfter = toBefore.Balance, tmp.Get(tx.To).Balance
 	res.ResultingStateRoot = tmp.Root()
 	return res, nil
+}
+
+// PrepareProposal selects and prioritizes transactions from the mempool for a block proposal.
+// From FeeModelV3ActivationHeight onward, transactions are sorted by tip (Fee - BaseFee) descending
+// and greedily packed up to FeeModelV3MaxBlockTxs or MaxTxBytes.
+func (a *App) PrepareProposal(_ context.Context, req *abcitypes.RequestPrepareProposal) (*abcitypes.ResponsePrepareProposal, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.committed == nil || len(req.Txs) == 0 {
+		return &abcitypes.ResponsePrepareProposal{Txs: req.Txs}, nil
+	}
+
+	// Below V3 activation, use incoming mempool order
+	if req.Height < chain.FeeModelV3ActivationHeight {
+		return &abcitypes.ResponsePrepareProposal{Txs: req.Txs}, nil
+	}
+
+	baseFee := a.committed.EffectiveBaseFee(req.Height)
+
+	type prioritizedTx struct {
+		raw  []byte
+		tx   chain.Tx
+		tip  uint64
+		size int64
+	}
+
+	var candidates []prioritizedTx
+	for _, raw := range req.Txs {
+		tx, err := a.decodeTx(raw)
+		if err != nil {
+			continue
+		}
+		reqBase := chain.RequiredFeeV3(tx, baseFee)
+		if tx.Fee < reqBase {
+			continue // exclude underpriced transactions
+		}
+		tip := tx.Fee - reqBase
+		candidates = append(candidates, prioritizedTx{
+			raw:  raw,
+			tx:   tx,
+			tip:  tip,
+			size: int64(len(raw)),
+		})
+	}
+
+	// Sort by priority tip descending (stable sort)
+	sort.SliceStable(candidates, func(i, j int) bool {
+		return candidates[i].tip > candidates[j].tip
+	})
+
+	st := a.committed.Clone()
+	ctx := a.txContext(req.Height, req.Time)
+	var selected [][]byte
+	var totalBytes int64
+
+	for _, c := range candidates {
+		if uint64(len(selected)) >= chain.FeeModelV3MaxBlockTxs {
+			break
+		}
+		if req.MaxTxBytes > 0 && totalBytes+c.size > req.MaxTxBytes {
+			continue
+		}
+
+		next := st.Clone()
+		if err := chain.ApplyTransaction(next, c.tx, ctx); err == nil {
+			st = next
+			selected = append(selected, c.raw)
+			totalBytes += c.size
+		}
+	}
+
+	return &abcitypes.ResponsePrepareProposal{Txs: selected}, nil
+}
+
+// ProcessProposal validates that the proposed block complies with consensus fee invariants.
+func (a *App) ProcessProposal(_ context.Context, req *abcitypes.RequestProcessProposal) (*abcitypes.ResponseProcessProposal, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.committed == nil {
+		return &abcitypes.ResponseProcessProposal{Status: abcitypes.ResponseProcessProposal_ACCEPT}, nil
+	}
+
+	if req.Height >= chain.FeeModelV3ActivationHeight {
+		if uint64(len(req.Txs)) > chain.FeeModelV3MaxBlockTxs {
+			return &abcitypes.ResponseProcessProposal{Status: abcitypes.ResponseProcessProposal_REJECT}, nil
+		}
+		baseFee := a.committed.EffectiveBaseFee(req.Height)
+		for _, raw := range req.Txs {
+			tx, err := a.decodeTx(raw)
+			if err != nil {
+				return &abcitypes.ResponseProcessProposal{Status: abcitypes.ResponseProcessProposal_REJECT}, nil
+			}
+			if tx.Fee < chain.RequiredFeeV3(tx, baseFee) {
+				return &abcitypes.ResponseProcessProposal{Status: abcitypes.ResponseProcessProposal_REJECT}, nil
+			}
+		}
+	}
+
+	return &abcitypes.ResponseProcessProposal{Status: abcitypes.ResponseProcessProposal_ACCEPT}, nil
 }
