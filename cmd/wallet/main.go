@@ -103,10 +103,15 @@ func validAddress(s string) bool {
 }
 
 // transferFee returns the fee to use for a native transfer: the network's
-// required fee (chain.RequiredFee), or the user's fee if that is higher.
+// required fee (chain.RequiredFee or chain.RequiredFeeV3), or the user's fee if that is higher.
 // A user fee below the requirement is an error, because the chain rejects it.
-func transferFee(amount, userFee uint64) (uint64, error) {
-	required := chain.RequiredFee(chain.Tx{Amount: amount})
+func transferFee(amount, userFee, baseFee uint64) (uint64, error) {
+	var required uint64
+	if baseFee > 0 {
+		required = chain.RequiredFeeV3(chain.Tx{Amount: amount}, baseFee)
+	} else {
+		required = chain.RequiredFee(chain.Tx{Amount: amount})
+	}
 	if userFee == 0 {
 		return required, nil
 	}
@@ -410,16 +415,12 @@ func runSend(args []string) {
 		fmt.Fprintf(os.Stderr, "error: %q is not a valid SYNTHOS address (0x followed by 40 hex characters)\n", *to)
 		os.Exit(1)
 	}
-	txFee, err := transferFee(*amount, *fee)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
 	if *password != "" {
 		warnSecretFlag("-password")
 	}
 
 	var w *wallet.Wallet
+	var err error
 
 	if _, statErr := os.Stat(*keySource); statErr == nil {
 		pass := *password
@@ -454,8 +455,18 @@ func runSend(args []string) {
 		fmt.Fprintf(os.Stderr, "warning: could not verify network status: %v\n", err)
 	}
 	txChainID := defaultTxChainID
-	if status != nil && status.TxChainID > 0 {
-		txChainID = status.TxChainID
+	var baseFee uint64
+	if status != nil {
+		if status.TxChainID > 0 {
+			txChainID = status.TxChainID
+		}
+		baseFee = status.BaseFee
+	}
+
+	txFee, err := transferFee(*amount, *fee, baseFee)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
 	}
 
 	// Resolve nonce

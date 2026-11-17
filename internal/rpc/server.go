@@ -363,6 +363,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"immune":      immune,
 		"peers":       s.PeerURLs,
 		"live":        live,
+		"base_fee":    s.Chain.State.EffectiveBaseFee(int64(s.Chain.Height())),
 	}
 	if tip != nil && !tip.Header.Timestamp.IsZero() {
 		body["latest_block_time"] = tip.Header.Timestamp.Format(time.RFC3339)

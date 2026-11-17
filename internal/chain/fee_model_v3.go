@@ -9,7 +9,8 @@ const (
 	FeeModelV3TargetBlockTxs uint64 = 25
 
 	// FeeModelV3MaxBlockTxs is the maximum transaction count allowed in a single block under v3.
-	FeeModelV3MaxBlockTxs uint64 = 100
+	// With Target=25 and Denominator=8, a full block of 50 txs raises the base fee by exactly 12.5% (25 / (25 * 8) = 1/8).
+	FeeModelV3MaxBlockTxs uint64 = 50
 
 	// FeeModelV3InitialBaseFee is the initial base fee at FeeModelV3ActivationHeight (in SYN).
 	FeeModelV3InitialBaseFee uint64 = 10
@@ -26,6 +27,10 @@ const (
 func CalculateNextBaseFee(currentBaseFee uint64, txCount uint64) uint64 {
 	if currentBaseFee == 0 {
 		currentBaseFee = FeeModelV3InitialBaseFee
+	}
+
+	if txCount > FeeModelV3MaxBlockTxs {
+		txCount = FeeModelV3MaxBlockTxs
 	}
 
 	if txCount == FeeModelV3TargetBlockTxs {

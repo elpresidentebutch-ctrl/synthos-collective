@@ -498,7 +498,16 @@ func (a *App) Query(_ context.Context, req *abcitypes.RequestQuery) (*abcitypes.
 			"current":    a.committed.AuthorizingValidatorSet(),
 		}
 	case "status":
-		body = map[string]any{"height": a.height, "app_hash": "0x" + hex.EncodeToString(a.appHash), "chain_id": a.chainID}
+		baseFee := uint64(0)
+		if a.committed != nil {
+			baseFee = a.committed.EffectiveBaseFee(a.height)
+		}
+		body = map[string]any{
+			"height":   a.height,
+			"app_hash": "0x" + hex.EncodeToString(a.appHash),
+			"chain_id": a.chainID,
+			"base_fee": baseFee,
+		}
 	default:
 		return &abcitypes.ResponseQuery{Code: 1, Log: "unknown query path " + req.Path}, nil
 	}
@@ -641,8 +650,9 @@ func (a *App) Simulate(tx chain.Tx) (chain.SimulationResult, error) {
 }
 
 // PrepareProposal selects and prioritizes transactions from the mempool for a block proposal.
-// From FeeModelV3ActivationHeight onward, transactions are sorted by tip (Fee - BaseFee) descending
-// and greedily packed up to FeeModelV3MaxBlockTxs or MaxTxBytes.
+// Below FeeModelV3ActivationHeight, transactions are trimmed to MaxTxBytes preserving mempool order.
+// From FeeModelV3ActivationHeight onward, transactions are prioritized by tip (Fee - BaseFee)
+// while strictly preserving per-sender nonce ordering, up to FeeModelV3MaxBlockTxs or MaxTxBytes.
 func (a *App) PrepareProposal(_ context.Context, req *abcitypes.RequestPrepareProposal) (*abcitypes.ResponsePrepareProposal, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -650,22 +660,35 @@ func (a *App) PrepareProposal(_ context.Context, req *abcitypes.RequestPreparePr
 		return &abcitypes.ResponsePrepareProposal{Txs: req.Txs}, nil
 	}
 
-	// Below V3 activation, use incoming mempool order
+	// Below V3 activation, use incoming mempool order trimmed to MaxTxBytes (CometBFT default behavior)
 	if req.Height < chain.FeeModelV3ActivationHeight {
-		return &abcitypes.ResponsePrepareProposal{Txs: req.Txs}, nil
+		var totalBytes int64
+		var selected [][]byte
+		for _, raw := range req.Txs {
+			size := int64(len(raw))
+			if req.MaxTxBytes > 0 && totalBytes+size > req.MaxTxBytes {
+				break
+			}
+			totalBytes += size
+			selected = append(selected, raw)
+		}
+		return &abcitypes.ResponsePrepareProposal{Txs: selected}, nil
 	}
 
 	baseFee := a.committed.EffectiveBaseFee(req.Height)
 
 	type prioritizedTx struct {
-		raw  []byte
-		tx   chain.Tx
-		tip  uint64
-		size int64
+		raw   []byte
+		tx    chain.Tx
+		tip   uint64
+		size  int64
+		order int
 	}
 
-	var candidates []prioritizedTx
-	for _, raw := range req.Txs {
+	var senders []string
+	senderMap := make(map[string][]prioritizedTx)
+
+	for idx, raw := range req.Txs {
 		tx, err := a.decodeTx(raw)
 		if err != nil {
 			continue
@@ -675,37 +698,79 @@ func (a *App) PrepareProposal(_ context.Context, req *abcitypes.RequestPreparePr
 			continue // exclude underpriced transactions
 		}
 		tip := tx.Fee - reqBase
-		candidates = append(candidates, prioritizedTx{
-			raw:  raw,
-			tx:   tx,
-			tip:  tip,
-			size: int64(len(raw)),
-		})
+		ptx := prioritizedTx{
+			raw:   raw,
+			tx:    tx,
+			tip:   tip,
+			size:  int64(len(raw)),
+			order: idx,
+		}
+		from := string(tx.From)
+		if _, exists := senderMap[from]; !exists {
+			senders = append(senders, from)
+		}
+		senderMap[from] = append(senderMap[from], ptx)
 	}
 
-	// Sort by priority tip descending (stable sort)
-	sort.SliceStable(candidates, func(i, j int) bool {
-		return candidates[i].tip > candidates[j].tip
-	})
+	// For each sender, sort by nonce ascending (and arrival order for tie-breaking)
+	for _, s := range senders {
+		list := senderMap[s]
+		sort.SliceStable(list, func(i, j int) bool {
+			if list[i].tx.Nonce != list[j].tx.Nonce {
+				return list[i].tx.Nonce < list[j].tx.Nonce
+			}
+			return list[i].order < list[j].order
+		})
+		senderMap[s] = list
+	}
 
 	st := a.committed.Clone()
 	ctx := a.txContext(req.Height, req.Time)
 	var selected [][]byte
 	var totalBytes int64
 
-	for _, c := range candidates {
-		if uint64(len(selected)) >= chain.FeeModelV3MaxBlockTxs {
-			break
+	for uint64(len(selected)) < chain.FeeModelV3MaxBlockTxs {
+		bestSenderIdx := -1
+		var bestTip uint64
+		var bestOrder int
+
+		for i, s := range senders {
+			queue := senderMap[s]
+			if len(queue) == 0 {
+				continue
+			}
+			head := queue[0]
+			if bestSenderIdx == -1 || head.tip > bestTip || (head.tip == bestTip && head.order < bestOrder) {
+				bestSenderIdx = i
+				bestTip = head.tip
+				bestOrder = head.order
+			}
 		}
-		if req.MaxTxBytes > 0 && totalBytes+c.size > req.MaxTxBytes {
+
+		if bestSenderIdx == -1 {
+			break // all queues empty
+		}
+
+		sender := senders[bestSenderIdx]
+		head := senderMap[sender][0]
+
+		if req.MaxTxBytes > 0 && totalBytes+head.size > req.MaxTxBytes {
+			// This transaction doesn't fit in the remaining byte budget.
+			// Mark this sender's queue as done for this block.
+			senderMap[sender] = nil
 			continue
 		}
 
 		next := st.Clone()
-		if err := chain.ApplyTransaction(next, c.tx, ctx); err == nil {
+		if err := chain.ApplyTransaction(next, head.tx, ctx); err == nil {
 			st = next
-			selected = append(selected, c.raw)
-			totalBytes += c.size
+			selected = append(selected, head.raw)
+			totalBytes += head.size
+			senderMap[sender] = senderMap[sender][1:]
+		} else {
+			// Transaction application failed (e.g. invalid signature, nonce gap, insufficient balance).
+			// Drop this sender from further consideration in this proposal.
+			senderMap[sender] = nil
 		}
 	}
 

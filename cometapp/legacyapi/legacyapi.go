@@ -270,6 +270,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 				"address":      hexOf(cs.ValidatorInfo.Address),
 				"voting_power": cs.ValidatorInfo.VotingPower,
 			},
+			"base_fee":          c.State.EffectiveBaseFee(c.Height),
 		}
 	}) {
 		return

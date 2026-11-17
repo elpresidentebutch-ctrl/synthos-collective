@@ -50,6 +50,7 @@ type NetworkStatus struct {
 	StateRoot   string `json:"state_root"`
 	Tip         string `json:"tip"`
 	CatchingUp  bool   `json:"catching_up"`
+	BaseFee     uint64 `json:"base_fee"`
 }
 
 // BroadcastResult represents the response from /submitTx.
