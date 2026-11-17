@@ -500,7 +500,7 @@ func (a *App) Query(_ context.Context, req *abcitypes.RequestQuery) (*abcitypes.
 	case "status":
 		baseFee := uint64(0)
 		if a.committed != nil {
-			baseFee = a.committed.EffectiveBaseFee(a.height)
+			baseFee = a.committed.EffectiveBaseFee(a.height + 1)
 		}
 		body = map[string]any{
 			"height":   a.height,

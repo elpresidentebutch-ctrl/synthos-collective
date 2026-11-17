@@ -113,6 +113,15 @@ func transferFee(amount, userFee, baseFee uint64) (uint64, error) {
 		required = chain.RequiredFee(chain.Tx{Amount: amount})
 	}
 	if userFee == 0 {
+		if baseFee > 0 {
+			// Add 12.5% headroom (matching max block surge) so tx isn't rejected if base fee surges in the next block.
+			headroom := (baseFee * 125) / 1000
+			if headroom == 0 {
+				headroom = 1
+			}
+			bufferedBaseFee := baseFee + headroom
+			return chain.RequiredFeeV3(chain.Tx{Amount: amount}, bufferedBaseFee), nil
+		}
 		return required, nil
 	}
 	if userFee < required {

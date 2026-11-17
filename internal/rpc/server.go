@@ -363,7 +363,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"immune":      immune,
 		"peers":       s.PeerURLs,
 		"live":        live,
-		"base_fee":    s.Chain.State.EffectiveBaseFee(int64(s.Chain.Height())),
+		"base_fee":    s.Chain.State.EffectiveBaseFee(int64(s.Chain.Height()) + 1),
 	}
 	if tip != nil && !tip.Header.Timestamp.IsZero() {
 		body["latest_block_time"] = tip.Header.Timestamp.Format(time.RFC3339)
@@ -778,7 +778,8 @@ func (s *Server) handleDEXSwap(w http.ResponseWriter, r *http.Request) {
 		},
 		Timestamp: time.Now().Unix(),
 	}
-	tx.Fee = chain.RequiredFee(tx)
+	baseFee := s.Chain.State.EffectiveBaseFee(int64(s.Chain.Height()) + 1)
+	tx.Fee = chain.RequiredFeeV3(tx, baseFee)
 
 	if err := tx.Sign(privKey); err != nil {
 		http.Error(w, "sign error: "+err.Error(), http.StatusInternalServerError)
@@ -914,7 +915,8 @@ func (s *Server) handleDEXLiquidity(w http.ResponseWriter, r *http.Request) {
 		Metadata:  metadata,
 		Timestamp: time.Now().Unix(),
 	}
-	tx.Fee = chain.RequiredFee(tx)
+	baseFee := s.Chain.State.EffectiveBaseFee(int64(s.Chain.Height()) + 1)
+	tx.Fee = chain.RequiredFeeV3(tx, baseFee)
 
 	if err := tx.Sign(privKey); err != nil {
 		http.Error(w, "sign error: "+err.Error(), http.StatusInternalServerError)
@@ -1020,7 +1022,8 @@ func (s *Server) handleDEXIssue(w http.ResponseWriter, r *http.Request) {
 		},
 		Timestamp: time.Now().Unix(),
 	}
-	tx.Fee = chain.RequiredFee(tx)
+	baseFee := s.Chain.State.EffectiveBaseFee(int64(s.Chain.Height()) + 1)
+	tx.Fee = chain.RequiredFeeV3(tx, baseFee)
 
 	if err := tx.Sign(privKey); err != nil {
 		http.Error(w, "sign error: "+err.Error(), http.StatusInternalServerError)

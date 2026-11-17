@@ -330,4 +330,3 @@ func TestWallet_BIP39_DeterministicVectors(t *testing.T) {
 func splitWords(s string) []string {
 	return strings.Fields(s)
 }
-

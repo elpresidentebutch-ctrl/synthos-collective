@@ -14,12 +14,12 @@ func TestTransferFee(t *testing.T) {
 		{amount: 50_000_000, want: 1_000},       // capped
 		{amount: 500_000, user: 600, want: 600}, // higher fee is kept
 		{amount: 500_000, user: 10, wantErr: true},
-		// With V3 base fee surge
-		{amount: 500, base: 25, want: 25},              // small transfer under surge
-		{amount: 500_000, base: 25, want: 500},         // 0.1% > base fee
-		{amount: 500_000, base: 600, want: 600},        // base fee > 0.1%
-		{amount: 10_000_000, base: 10, want: 1_000},    // 1,000 SYN cap preserved
-		{amount: 10_000_000, base: 1500, want: 1_500},  // extreme surge above cap
+		// With V3 base fee surge (with ~12.5% headroom)
+		{amount: 500, base: 25, want: 28},             // small transfer under surge: 25 + 3 headroom = 28
+		{amount: 500_000, base: 25, want: 500},        // 0.1% > base fee
+		{amount: 500_000, base: 600, want: 675},       // base fee > 0.1%: 600 + 75 headroom = 675
+		{amount: 10_000_000, base: 10, want: 1_000},   // 1,000 SYN cap preserved
+		{amount: 10_000_000, base: 1500, want: 1_687}, // extreme surge above cap: 1500 + 187 headroom = 1687
 	}
 	for _, c := range cases {
 		got, err := transferFee(c.amount, c.user, c.base)

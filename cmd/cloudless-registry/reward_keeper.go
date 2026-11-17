@@ -374,7 +374,7 @@ func (s *server) rewardKeeperCycle(now time.Time, cfg rewardKeeperConfig, ch rew
 				{Key: "epoch", Value: epoch},
 			},
 		}
-		if reqFee := chain.RequiredFee(tx); reqFee > tx.Fee {
+		if reqFee := chain.RequiredFeeV3(tx, chain.FeeModelV3InitialBaseFee); reqFee > tx.Fee {
 			tx.Fee = reqFee
 		}
 		if err := tx.Sign(cfg.Wallet.Private); err != nil {

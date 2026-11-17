@@ -88,7 +88,7 @@ func main() {
 			{Key: "amount_syn", Value: fmt.Sprint(amount)},
 		},
 	}
-	tx.Fee = chain.RequiredFee(tx)
+	tx.Fee = chain.RequiredFeeV3(tx, chain.FeeModelV3InitialBaseFee)
 
 	if err := tx.Sign(edPriv); err != nil {
 		fmt.Printf("Error signing transaction: %v\n", err)

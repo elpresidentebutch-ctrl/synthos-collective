@@ -325,7 +325,11 @@ func submitNativeReleaseProof(rpcURL string, proof externalLockProof, privHex st
 		Metadata:  metadata,
 		Timestamp: time.Now().UTC().Unix(),
 	}
-	reqFee := chain.RequiredFee(tx)
+	baseFee := status.BaseFee
+	if baseFee == 0 {
+		baseFee = chain.FeeModelV3InitialBaseFee
+	}
+	reqFee := chain.RequiredFeeV3(tx, baseFee)
 	if fee < reqFee {
 		tx.Fee = reqFee
 	} else {
@@ -636,6 +640,7 @@ func fetchNativeAccount(rpcURL string, address chain.Address) (nativeAccount, er
 
 type nativeStatus struct {
 	TxChainID uint64 `json:"tx_chain_id"`
+	BaseFee   uint64 `json:"base_fee"`
 }
 
 func fetchNativeStatus(rpcURL string) (nativeStatus, error) {

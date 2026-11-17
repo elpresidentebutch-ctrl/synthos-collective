@@ -43,14 +43,14 @@ type AccountInfo struct {
 
 // NetworkStatus represents status metadata returned by /status.
 type NetworkStatus struct {
-	ChainID     string `json:"chain_id"`
-	TxChainID   uint64 `json:"tx_chain_id"`
-	Height      int64  `json:"height"`
-	Engine      string `json:"engine"`
-	StateRoot   string `json:"state_root"`
-	Tip         string `json:"tip"`
-	CatchingUp  bool   `json:"catching_up"`
-	BaseFee     uint64 `json:"base_fee"`
+	ChainID    string `json:"chain_id"`
+	TxChainID  uint64 `json:"tx_chain_id"`
+	Height     int64  `json:"height"`
+	Engine     string `json:"engine"`
+	StateRoot  string `json:"state_root"`
+	Tip        string `json:"tip"`
+	CatchingUp bool   `json:"catching_up"`
+	BaseFee    uint64 `json:"base_fee"`
 }
 
 // BroadcastResult represents the response from /submitTx.
