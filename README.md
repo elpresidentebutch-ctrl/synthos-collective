@@ -6,6 +6,8 @@ This repository contains the Go blockchain node, peer registry, live explorer fi
 
 Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
 
+This repository is indexed on the [XERJ Corpus Hub](https://hub.xerj.org/contributors/elpresidentebutch-ctrl), so AI coding assistants can search and cite it.
+
 ## Current Status
 
 Status as of October 31, 2026:
