@@ -69,6 +69,17 @@ func TestFeeModelV3_RequiredFeeV3(t *testing.T) {
 	if req := chain.RequiredFeeV3(txLarge, 150); req != 150 {
 		t.Fatalf("large transfer fee under surge: got %d, want 150", req)
 	}
+
+	// Very large transfer: 10,000,000 SYN should be capped at 1,000 SYN when base fee is 10.
+	txHuge := chain.Tx{Amount: 10_000_000}
+	if req := chain.RequiredFeeV3(txHuge, 10); req != 1000 {
+		t.Fatalf("huge transfer fee: got %d, want 1000", req)
+	}
+
+	// Very large transfer under extreme surge: base fee is 1,500. Required fee should be 1,500.
+	if req := chain.RequiredFeeV3(txHuge, 1500); req != 1500 {
+		t.Fatalf("huge transfer fee under extreme surge: got %d, want 1500", req)
+	}
 }
 
 func TestFeeModelV3_ApplyBlockFees_WithPriorityTip(t *testing.T) {

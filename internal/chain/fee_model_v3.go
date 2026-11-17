@@ -52,7 +52,7 @@ func CalculateNextBaseFee(currentBaseFee uint64, txCount uint64) uint64 {
 }
 
 // RequiredFeeV3 computes the minimum required fee for a transaction under fee model v3.
-// It enforces max(baseFee, ceil(Amount / 1000)), with a minimum of FeeModelV3MinBaseFee.
+// It enforces max(baseFee, min(1000, ceil(Amount / 1000))), with a minimum of FeeModelV3MinBaseFee.
 func RequiredFeeV3(tx Tx, baseFee uint64) uint64 {
 	if baseFee < FeeModelV3MinBaseFee {
 		baseFee = FeeModelV3MinBaseFee
@@ -63,6 +63,9 @@ func RequiredFeeV3(tx Tx, baseFee uint64) uint64 {
 		ceil := tx.Amount / 1000
 		if tx.Amount%1000 != 0 {
 			ceil++
+		}
+		if ceil > 1000 {
+			ceil = 1000
 		}
 		if ceil > baseFee {
 			return ceil
