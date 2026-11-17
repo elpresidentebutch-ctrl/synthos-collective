@@ -1,6 +1,6 @@
 {
   "network": "hardhat",
-  "deployedAt": "2026-10-08T04:33:46.175Z",
+  "deployedAt": "2026-11-17T07:17:07.728Z",
   "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
   "tokenomics": {
     "totalSupply": "100000000000",
@@ -17,7 +17,7 @@
     "treasuryRecyclingBurn": {
       "protocolSpendBurnShare": "50%",
       "protocolSpendTreasuryShare": "50%",
-      "treasury": "0x6322272c7EC53aB98A51962fB56Fd4DeE984407f",
+      "treasury": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
       "approvedSpendTypes": [
         "PROTOCOL_SPEND",
         "NODE_REGISTRATION",
@@ -28,17 +28,19 @@
   },
   "wallets": {
     "multisigOwners": [
-      "0x6322272c7EC53aB98A51962fB56Fd4DeE984407f"
+      "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
     ],
-    "multisigThreshold": "1",
-    "founderWallet": "0x6322272c7EC53aB98A51962fB56Fd4DeE984407f",
-    "founderOpsWallet": "0x6322272c7EC53aB98A51962fB56Fd4DeE984407f",
-    "immuneNodeRewardsWallet": "0x9A9f2CCfdE556A7E9Ff0848998Aa4a0CFD8863AE",
+    "multisigThreshold": "2",
+    "founderWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "founderOpsWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "immuneNodeRewardsWallet": "0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1",
     "validatorRewardsWallet": "0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82",
-    "dexLiquidityWallet": "0x6322272c7EC53aB98A51962fB56Fd4DeE984407f",
-    "communityWallet": "0x6322272c7EC53aB98A51962fB56Fd4DeE984407f",
-    "treasuryWallet": "0x6322272c7EC53aB98A51962fB56Fd4DeE984407f",
-    "strategicReserveWallet": "0x6322272c7EC53aB98A51962fB56Fd4DeE984407f"
+    "dexLiquidityWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "communityWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "treasuryWallet": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+    "strategicReserveWallet": "0x5FbDB2315678afecb367f032d93F642f64180aa3"
   },
   "contracts": {
     "multisig": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
@@ -49,12 +51,31 @@
     "staking": "0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82",
     "rewardDistributor": "0x9A676e781A523b5d0C0e43731313A708CB607508",
     "complianceRegistry": "0x0B306BF915C4d645ff596e518fAf3F9669b97016",
-    "earlyAdopterSale": "0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1",
-    "adopterRewards": "0x9A9f2CCfdE556A7E9Ff0848998Aa4a0CFD8863AE",
-    "dex": "0x68B1D87F95878fE05B998F19b66F4baba5De1aed",
+    "adopterRewards": "0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1",
+    "validatorCandidateRewards": "0x68B1D87F95878fE05B998F19b66F4baba5De1aed",
+    "dex": "0x9A9f2CCfdE556A7E9Ff0848998Aa4a0CFD8863AE",
     "founderVesting": "0x3Aa5ebB10DC797CAC828524e59A333d0A371443c"
   },
-  "dexPools": [],
+  "dexPools": [
+    {
+      "symbol": "B12",
+      "asset": "0x67d269191c92Caf3cD7723F116c85e6E9bf55933",
+      "synLiquidity": "10000000",
+      "assetLiquidity": "50000"
+    },
+    {
+      "symbol": "NGOT",
+      "asset": "0x1613beB3B2C4f22Ee086B2b38C1476A3cE7f78E8",
+      "synLiquidity": "5000000",
+      "assetLiquidity": "100000"
+    },
+    {
+      "symbol": "MOMENTUM",
+      "asset": "0x4826533B4897376654Bb4d4AD88B7faFD0C98528",
+      "synLiquidity": "2000000",
+      "assetLiquidity": "10000"
+    }
+  ],
   "adopterRewards": {
     "activationReward": "500.0",
     "heartbeatReward": "1000.0",
@@ -62,21 +83,13 @@
     "maxHeartbeatClaimsPerOperator": "120",
     "merkleRoot": "0x0000000000000000000000000000000000000000000000000000000000000000",
     "merkleGateRequired": false,
-    "merkleSource": "ADOPTER_MERKLE_ROOT",
-    "merkleLeafCount": null
+    "merkleSource": "none",
+    "merkleLeafCount": 0
   },
-  "earlyAdopterSale": {
-    "tokenPriceUsd": "0.10",
-    "maxTrancheValueUsd": "25000000",
+  "earlyAdopterCampaigns": {
     "sourceBucket": "COMMUNITY_EARLY_ADOPTER_CAMPAIGNS",
-    "allocation": "250000000.0",
-    "campaignReserve": "2250000000.0",
-    "minSynPurchase": "20.0",
-    "maxSynPerWallet": "100000.0",
-    "treasuryWallet": "0x6322272c7EC53aB98A51962fB56Fd4DeE984407f",
-    "paymentAssets": [],
-    "nativePaymentsEnabled": false,
-    "nativeUsdPrice": "0"
+    "reserve": "2500000000.0",
+    "wallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
   },
   "custody": {
     "timelockAdmin": "0x5FbDB2315678afecb367f032d93F642f64180aa3",

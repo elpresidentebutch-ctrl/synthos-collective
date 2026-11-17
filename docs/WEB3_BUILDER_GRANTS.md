@@ -101,7 +101,7 @@
 - **Target Validator Operators:** 5,000 nodes worldwide
 - **Genesis Reward Pool:** 12,000,000,000 SYN allocated for node and validator security
 - **Validator Monthly Base Rewards:** 5,000 SYN / month (+ up to 2,500 SYN performance bonus)
-- **Minimum Validator Bond:** 10,000 SYN ($1,000 at $0.10 early access rate)
+- **Minimum Validator Bond:** 10,000 SYN
 - **Consensus Scheme:** Agent-native Proof of Verified Uptime & Hardware Attestation (POVU-HA)
 - **Binary Footprint:** Single static binary (< 25MB) with zero system dependencies
 

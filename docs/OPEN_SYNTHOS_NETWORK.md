@@ -3,9 +3,7 @@
 This runbook opens a founder-operated SYNTHOS L1 network using the existing
 `synthosd` node, a shared genesis file, and four validator configs.
 
-This is the SYNTHOS native network. It is separate from the EVM pre-sale
-contract path. Use the EVM pre-sale contract when you want to collect USDC,
-USDT, ETH, WETH, or WBTC. Use this network when you want to open the SYNTHOS
+This is the SYNTHOS native network. Use it when you want to open the SYNTHOS
 ledger, RPC, block data, balances, and validator set.
 
 ## Generate Network Files

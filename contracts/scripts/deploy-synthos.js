@@ -62,15 +62,6 @@ function parseAddressList(value) {
     .filter(Boolean);
 }
 
-function parsePaymentAssets(value) {
-  if (!value) return [];
-  const parsed = JSON.parse(value);
-  if (!Array.isArray(parsed)) {
-    throw new Error("EARLY_ADOPTER_PAYMENT_ASSETS_JSON must be an array");
-  }
-  return parsed;
-}
-
 function requireBytes32(value, label) {
   if (!/^0x[a-fA-F0-9]{64}$/.test(value || "")) {
     throw new Error(`${label} must be a bytes32 hex string`);
@@ -134,18 +125,6 @@ async function main() {
   const dexLiquidityWallet = process.env.DEX_LIQUIDITY_WALLET || deployer.address;
   const communityWallet = process.env.COMMUNITY_WALLET || deployer.address;
   const configuredTreasuryWallet = process.env.TREASURY_WALLET || null;
-  const earlyAdopterSaleAllocation = ethers.parseUnits(
-    process.env.EARLY_ADOPTER_SALE_ALLOCATION || "250000000",
-    18
-  );
-  const earlyAdopterMinPurchase = ethers.parseUnits(
-    process.env.EARLY_ADOPTER_MIN_SYN_PURCHASE || "20",
-    18
-  );
-  const earlyAdopterMaxPerWallet = ethers.parseUnits(
-    process.env.EARLY_ADOPTER_MAX_SYN_PER_WALLET || "100000",
-    18
-  );
 
   const activationReward = ethers.parseUnits(process.env.ADOPTER_ACTIVATION_REWARD || "500", 18);
   const heartbeatReward = ethers.parseUnits(process.env.ADOPTER_HEARTBEAT_REWARD || "1000", 18);
@@ -177,10 +156,9 @@ async function main() {
   // tokenomics.js for why), so treat this constant as documentation to be
   // kept in sync with the native chain's genesis allocation, not as an
   // on-chain-enforced figure the way it used to be.
-  if (earlyAdopterSaleAllocation > earlyAdopterCampaignBudget) {
-    throw new Error("EARLY_ADOPTER_SALE_ALLOCATION exceeds the documented COMMUNITY_EARLY_ADOPTER_CAMPAIGNS budget");
-  }
-  const earlyAdopterCampaignReserve = earlyAdopterCampaignBudget - earlyAdopterSaleAllocation;
+  // There is no token sale: the whole early adopter campaign sub-bucket is
+  // held by the community wallet for non-sale community programs.
+  const earlyAdopterCampaignReserve = earlyAdopterCampaignBudget;
   const communityOperatingAllocation = ethers.parseUnits(BUCKETS_SYN.COMMUNITY, 18) - earlyAdopterCampaignBudget;
 
   // SynCoin is a bridge-pegged wrapper: it starts at zero supply and can
@@ -241,9 +219,8 @@ async function main() {
   // All three are still operator-tunable after deploy via setMintLimits.
   //
   // Local/hardhat deploys skip this: this same script bridge-mints large
-  // lump-sum allocation buckets directly (the early adopter sale alone
-  // defaults to 250M SYN in one approveMint call, and deploy-bitcoin-sale.js
-  // mints another 50M), well above any real-network operational cap, so
+  // lump-sum allocation buckets directly (several are billions of SYN in
+  // one approveMint call), well above any real-network operational cap, so
   // applying it locally would break the dev/test flow this script is also
   // used for rather than protect anything -- there's no real relayer
   // quorum to bound on a local network anyway.
@@ -331,15 +308,6 @@ async function main() {
 
   const complianceRegistry = await deployContract("SYNTHOSComplianceRegistry");
 
-  const earlyAdopterSale = await deployContract("SYNTHOSEarlyAdopterSale", [
-    syn.address,
-    complianceRegistry.address,
-    treasuryWallet,
-    earlyAdopterSaleAllocation,
-    earlyAdopterMinPurchase,
-    earlyAdopterMaxPerWallet,
-  ]);
-
   const adopterRewards = await deployContract("SYNTHOSAdopterRewards", [
     syn.address,
     activationReward,
@@ -378,7 +346,6 @@ async function main() {
     [founderOpsWallet, ethers.parseUnits(BUCKETS_SYN.FOUNDER_OPERATIONS_GRANT, 18), "FOUNDER_OPERATIONS_GRANT"],
     [immuneNodeRewardsRecipient, ethers.parseUnits(BUCKETS_SYN.IMMUNE_NODE_REWARDS, 18), "IMMUNE_NODE_REWARDS"],
     [validatorRewardsRecipient, ethers.parseUnits(BUCKETS_SYN.VALIDATOR_REWARDS, 18), "VALIDATOR_REWARDS"],
-    [earlyAdopterSale.address, earlyAdopterSaleAllocation, "COMMUNITY_EARLY_ADOPTER_SALE_TRANCHE_1"],
     [communityWallet, earlyAdopterCampaignReserve, "COMMUNITY_EARLY_ADOPTER_CAMPAIGN_RESERVE"],
     [communityWallet, communityOperatingAllocation, "COMMUNITY"],
     [treasuryWallet, ethers.parseUnits(BUCKETS_SYN.ECOSYSTEM_TREASURY, 18), "ECOSYSTEM_TREASURY"],
@@ -417,30 +384,6 @@ async function main() {
       console.log(`  ${label}: ${ethers.formatUnits(amount, 18)} SYN -> ${recipient}`);
     }
     console.log("");
-  }
-
-  console.log("Configuring early adopter crypto sale");
-  const earlyAdopterPaymentAssets = parsePaymentAssets(process.env.EARLY_ADOPTER_PAYMENT_ASSETS_JSON);
-  for (const asset of earlyAdopterPaymentAssets) {
-    if (!asset.address || !asset.usdPrice) {
-      throw new Error("Each early adopter payment asset needs address and usdPrice");
-    }
-    tx = await earlyAdopterSale.contract.setPaymentAsset(
-      asset.address,
-      asset.enabled !== false,
-      ethers.parseUnits(String(asset.usdPrice), 18)
-    );
-    await tx.wait();
-    console.log(`EARLY_ADOPTER_PAYMENT_ASSET ${asset.symbol || asset.address}: ${asset.address} @ $${asset.usdPrice}`);
-  }
-  if (process.env.EARLY_ADOPTER_NATIVE_PAYMENTS_ENABLED === "true") {
-    const nativeUsdPrice = ethers.parseUnits(
-      process.env.EARLY_ADOPTER_NATIVE_USD_PRICE || "0",
-      18
-    );
-    tx = await earlyAdopterSale.contract.setNativePaymentConfig(true, nativeUsdPrice);
-    await tx.wait();
-    console.log(`EARLY_ADOPTER_NATIVE_PAYMENTS: enabled @ $${process.env.EARLY_ADOPTER_NATIVE_USD_PRICE || "0"}`);
   }
 
   console.log("Configuring DEX pools");
@@ -538,7 +481,6 @@ async function main() {
     ["SynCoin", token],
     ["SYNTHOSSynBridgeMinter", synBridgeMinter.contract],
     ["SYNTHOSAdopterRewards", adopterRewards.contract],
-    ["SYNTHOSEarlyAdopterSale", earlyAdopterSale.contract],
     ["SYNTHOSDex", dex.contract],
     ["SYNTHOSValidatorCandidateRewards", validatorCandidateRewards.contract],
     ["SYNTHOSComplianceRegistry", complianceRegistry.contract],
@@ -600,7 +542,6 @@ async function main() {
       staking: staking.address,
       rewardDistributor: rewardDistributor.address,
       complianceRegistry: complianceRegistry.address,
-      earlyAdopterSale: earlyAdopterSale.address,
       adopterRewards: adopterRewards.address,
       validatorCandidateRewards: validatorCandidateRewards.address,
       dex: dex.address,
@@ -617,18 +558,10 @@ async function main() {
       merkleSource: merkle.source,
       merkleLeafCount: merkle.count,
     },
-    earlyAdopterSale: {
-      tokenPriceUsd: "0.10",
-      maxTrancheValueUsd: "25000000",
+    earlyAdopterCampaigns: {
       sourceBucket: "COMMUNITY_EARLY_ADOPTER_CAMPAIGNS",
-      allocation: ethers.formatUnits(earlyAdopterSaleAllocation, 18),
-      campaignReserve: ethers.formatUnits(earlyAdopterCampaignReserve, 18),
-      minSynPurchase: ethers.formatUnits(earlyAdopterMinPurchase, 18),
-      maxSynPerWallet: ethers.formatUnits(earlyAdopterMaxPerWallet, 18),
-      treasuryWallet,
-      paymentAssets: earlyAdopterPaymentAssets,
-      nativePaymentsEnabled: process.env.EARLY_ADOPTER_NATIVE_PAYMENTS_ENABLED === "true",
-      nativeUsdPrice: process.env.EARLY_ADOPTER_NATIVE_USD_PRICE || "0",
+      reserve: ethers.formatUnits(earlyAdopterCampaignReserve, 18),
+      wallet: communityWallet,
     },
     custody: {
       timelockAdmin: launchMultisig.address,
