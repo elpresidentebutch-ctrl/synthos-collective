@@ -2877,25 +2877,21 @@ func (s *server) persist() error {
 	}
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
+
+	s.mu.RLock()
+	data, err := json.MarshalIndent(s.state, "", "  ")
+	s.mu.RUnlock()
+	if err != nil {
+		return err
+	}
+
 	if err := os.MkdirAll(dir(s.stateFile), 0o755); err != nil {
 		return err
 	}
 	tmp := s.stateFile + ".tmp"
-	f, err := os.Create(tmp)
-	if err != nil {
-		return err
-	}
-	enc := json.NewEncoder(f)
-	enc.SetIndent("", "  ")
-	err = enc.Encode(s.state)
-	closeErr := f.Close()
-	if err != nil {
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		_ = os.Remove(tmp)
 		return err
-	}
-	if closeErr != nil {
-		_ = os.Remove(tmp)
-		return closeErr
 	}
 	return os.Rename(tmp, s.stateFile)
 }

@@ -37,8 +37,8 @@ try {
   )
 
   foreach ($pattern in $requiredPatterns) {
-    $result = rg --fixed-strings $pattern contracts cmd internal docs website
-    if (-not $result) {
+    $result = git grep -F -q $pattern -- contracts cmd internal docs website
+    if ($LASTEXITCODE -ne 0) {
       throw "Required bridge marker not found: $pattern"
     }
   }
