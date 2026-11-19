@@ -676,6 +676,14 @@ func (s *server) pruneInactivePeers(cutoff time.Duration) int {
 }
 
 func (s *server) handlePrunePeers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.authorized(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 	pruned := s.pruneInactivePeers(staleAfter)
 	s.mu.RLock()
 	remaining := len(s.state.Peers)
