@@ -520,7 +520,9 @@ func (s *server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	if err := s.persist(); err != nil {
 		log.Printf("persist warning: %v", err)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "peer": name, "message": "registered", "entry": entry})
+	publicEntry := entry
+	publicEntry.HouseholdIP = ""
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "peer": name, "message": "registered", "entry": publicEntry})
 }
 
 func (s *server) handlePeers(w http.ResponseWriter, r *http.Request) {
@@ -632,7 +634,6 @@ func (s *server) handleMailbox(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) pruneInactivePeers(cutoff time.Duration) int {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	now := time.Now()
 	pruned := 0
 	for name, p := range s.state.Peers {
@@ -659,11 +660,16 @@ func (s *server) pruneInactivePeers(cutoff time.Duration) int {
 			pruned++
 		}
 	}
+	remaining := len(s.state.Peers)
+	// Release s.mu before persisting: persist takes s.mu.RLock to snapshot
+	// the state, and Go's RWMutex is not reentrant, so calling it while
+	// still holding the write lock deadlocks the whole registry.
+	s.mu.Unlock()
 	if pruned > 0 {
 		if err := s.persist(); err != nil {
 			log.Printf("persist warning after pruning %d peers: %v", pruned, err)
 		} else {
-			log.Printf("[registry] Pruned %d inactive peers; active peers remaining: %d", pruned, len(s.state.Peers))
+			log.Printf("[registry] Pruned %d inactive peers; active peers remaining: %d", pruned, remaining)
 		}
 	}
 	return pruned
@@ -2631,6 +2637,8 @@ func (s *server) writePeerList(w http.ResponseWriter, activeOnly bool) {
 			urls = append(urls, peers[i].URL)
 		}
 		order = append(order, peers[i].Name)
+		// Privacy: strip home IP addresses before emitting peer list publicly.
+		peers[i].HouseholdIP = ""
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"peers":           peers,
