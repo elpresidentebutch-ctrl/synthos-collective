@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"synthos-collective/internal/chain"
+	"synthos-collective/internal/storage/kvstate"
 )
 
 type persistedState struct {
@@ -107,5 +108,25 @@ func TestBenchmark_StateStorageBaseline(t *testing.T) {
 		fmt.Printf("   Accounts: %7d | Estimated Size: %7.2f KB (%5.2f MB) | Root Rebuild: %10s | JSON Marshal: %10s\n",
 			count, float64(len(data))/1024.0, float64(len(data))/(1024.0*1024.0), rDur, mDur)
 	}
+
+	// 3. KVStateStore Prototype Comparison on the same snapshot
+	fmt.Printf("\n3. KVStateStore Prototype Benchmark (Task 3):\n")
+	kvStore := kvstate.NewKVStateStore(kvstate.NewMemKVStore())
+	if err := kvStore.SyncFromState(p.State); err != nil {
+		t.Fatalf("sync to KVStateStore failed: %v", err)
+	}
+	kvRoot := kvStore.Root()
+	fmt.Printf("   KV Root: %s\n", kvRoot)
+	if kvRoot != lastRoot {
+		t.Fatalf("KV root mismatch! got %s, want %s", kvRoot, lastRoot)
+	}
+	fmt.Printf("   Root Match Verification: EXACT BYTE-FOR-BYTE MATCH CONFIRMED\n")
+
+	kvRootStart := time.Now()
+	for i := 0; i < rootIterations; i++ {
+		_ = kvStore.Root()
+	}
+	avgKVRootRebuild := time.Since(kvRootStart) / time.Duration(rootIterations)
+	fmt.Printf("   KV State Root Rebuild Time (avg of %d runs): %s\n", rootIterations, avgKVRootRebuild)
 	fmt.Printf("=================================================\n\n")
 }

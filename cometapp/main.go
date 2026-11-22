@@ -44,6 +44,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -53,6 +54,7 @@ import (
 
 	"synthos-collective/cometapp/app"
 	"synthos-collective/cometapp/devnode"
+	"synthos-collective/cometapp/evmdevnet"
 	"synthos-collective/cometapp/export"
 	"synthos-collective/cometapp/legacyapi"
 	"synthos-collective/internal/chain"
@@ -73,6 +75,10 @@ func main() {
 	}
 	if cmd == "announce" {
 		announce(args)
+		return
+	}
+	if cmd == "evm-devnet" {
+		runEVMDevnet(args)
 		return
 	}
 	fs := flag.NewFlagSet(cmd, flag.ExitOnError)
@@ -364,8 +370,48 @@ func readJSON(path string, v any) {
 	}
 }
 
+func runEVMDevnet(args []string) {
+	fs := flag.NewFlagSet("evm-devnet", flag.ExitOnError)
+	home := fs.String("home", filepath.Join(".", "data-evm-devnet"), "node home directory for isolated devnet")
+	rpc := fs.String("rpc", "tcp://127.0.0.1:26757", "CometBFT RPC listen address")
+	p2p := fs.String("p2p", "tcp://127.0.0.1:26756", "p2p listen address")
+	blockInterval := fs.Duration("block-time", 500*time.Millisecond, "block interval")
+	_ = fs.Parse(args)
+
+	fmt.Printf("=== SYNTHOS EVM DEVNET ===\n")
+	fmt.Printf("CometBFT Chain ID: %s\n", evmdevnet.DevnetChainID)
+	fmt.Printf("EVM / Tx Chain ID: %d (never 20260702, never mainnet)\n", evmdevnet.DevnetEVMChainID)
+	fmt.Printf("Data Home:         %s\n", *home)
+	fmt.Printf("RPC Address:       %s\n", *rpc)
+	fmt.Printf("P2P Address:       %s\n", *p2p)
+
+	cfg := evmdevnet.Config{
+		HomeDir:       *home,
+		RPCAddr:       *rpc,
+		P2PAddr:       *p2p,
+		BlockInterval: *blockInterval,
+		Logger:        log.NewTMLogger(log.NewSyncWriter(os.Stdout)),
+	}
+
+	node, _, err := evmdevnet.StartNode(cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to start evm devnet: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() {
+		_ = node.Stop()
+		node.Wait()
+	}()
+
+	fmt.Println("Devnet node is running. Press Ctrl+C to stop.")
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	<-sigChan
+	fmt.Println("Shutting down EVM devnet...")
+}
+
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: synthos-comet validator-key|node-id|init|start --home DIR [flags]")
+	fmt.Fprintln(os.Stderr, "usage: synthos-comet validator-key|node-id|init|start|evm-devnet --home DIR [flags]")
 	fmt.Fprintln(os.Stderr, "       synthos-comet export-genesis --legacy PATH --chain-id ID --tx-chain-id N --validators FILE --out FILE")
 	os.Exit(2)
 }
