@@ -1,0 +1,291 @@
+{
+ "abi": [
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "initialRelayer",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "nonpayable",
+   "type": "constructor"
+  },
+  {
+   "inputs": [],
+   "name": "HeightNotIncreasing",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "NotOwner",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "NotRelayer",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "ZeroAddress",
+   "type": "error"
+  },
+  {
+   "inputs": [],
+   "name": "ZeroHash",
+   "type": "error"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "uint64",
+     "name": "height",
+     "type": "uint64"
+    },
+    {
+     "indexed": false,
+     "internalType": "bytes32",
+     "name": "blockHash",
+     "type": "bytes32"
+    },
+    {
+     "indexed": false,
+     "internalType": "bytes32",
+     "name": "appHash",
+     "type": "bytes32"
+    },
+    {
+     "indexed": false,
+     "internalType": "uint64",
+     "name": "blockTime",
+     "type": "uint64"
+    }
+   ],
+   "name": "Anchored",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "owner",
+     "type": "address"
+    }
+   ],
+   "name": "OwnerChanged",
+   "type": "event"
+  },
+  {
+   "anonymous": false,
+   "inputs": [
+    {
+     "indexed": true,
+     "internalType": "address",
+     "name": "relayer",
+     "type": "address"
+    }
+   ],
+   "name": "RelayerChanged",
+   "type": "event"
+  },
+  {
+   "inputs": [],
+   "name": "SYNTHOS_CHAIN_ID",
+   "outputs": [
+    {
+     "internalType": "string",
+     "name": "",
+     "type": "string"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "uint64",
+     "name": "height",
+     "type": "uint64"
+    },
+    {
+     "internalType": "bytes32",
+     "name": "blockHash",
+     "type": "bytes32"
+    },
+    {
+     "internalType": "bytes32",
+     "name": "appHash",
+     "type": "bytes32"
+    },
+    {
+     "internalType": "uint64",
+     "name": "blockTime",
+     "type": "uint64"
+    }
+   ],
+   "name": "anchor",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "anchorCount",
+   "outputs": [
+    {
+     "internalType": "uint64",
+     "name": "",
+     "type": "uint64"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "uint64",
+     "name": "",
+     "type": "uint64"
+    }
+   ],
+   "name": "anchors",
+   "outputs": [
+    {
+     "internalType": "bytes32",
+     "name": "blockHash",
+     "type": "bytes32"
+    },
+    {
+     "internalType": "bytes32",
+     "name": "appHash",
+     "type": "bytes32"
+    },
+    {
+     "internalType": "uint64",
+     "name": "blockTime",
+     "type": "uint64"
+    },
+    {
+     "internalType": "uint64",
+     "name": "anchoredAt",
+     "type": "uint64"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "latest",
+   "outputs": [
+    {
+     "internalType": "uint64",
+     "name": "height",
+     "type": "uint64"
+    },
+    {
+     "components": [
+      {
+       "internalType": "bytes32",
+       "name": "blockHash",
+       "type": "bytes32"
+      },
+      {
+       "internalType": "bytes32",
+       "name": "appHash",
+       "type": "bytes32"
+      },
+      {
+       "internalType": "uint64",
+       "name": "blockTime",
+       "type": "uint64"
+      },
+      {
+       "internalType": "uint64",
+       "name": "anchoredAt",
+       "type": "uint64"
+      }
+     ],
+     "internalType": "struct SynthosAnchor.Anchor",
+     "name": "a",
+     "type": "tuple"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "latestHeight",
+   "outputs": [
+    {
+     "internalType": "uint64",
+     "name": "",
+     "type": "uint64"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "owner",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [],
+   "name": "relayer",
+   "outputs": [
+    {
+     "internalType": "address",
+     "name": "",
+     "type": "address"
+    }
+   ],
+   "stateMutability": "view",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "newRelayer",
+     "type": "address"
+    }
+   ],
+   "name": "setRelayer",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  },
+  {
+   "inputs": [
+    {
+     "internalType": "address",
+     "name": "newOwner",
+     "type": "address"
+    }
+   ],
+   "name": "transferOwnership",
+   "outputs": [],
+   "stateMutability": "nonpayable",
+   "type": "function"
+  }
+ ],
+ "bytecode": "0x608060405234801561001057600080fd5b506040516107f13803806107f183398101604081905261002f916100e0565b600080546001600160a01b031916331790556001600160a01b038116156100565780610058565b335b600180546001600160a01b0319166001600160a01b03928316179055600080546040519216917fa2ea9883a321a3e97b8266c2b078bfeec6d50c711ed71f874a90d500ae2eaf369190a26001546040516001600160a01b03909116907f88cb58f8479aba47ccd2dcbc41bf94bc01e3f58a877cbe5e7f3bd978d89773ba90600090a250610110565b6000602082840312156100f257600080fd5b81516001600160a01b038116811461010957600080fd5b9392505050565b6106d28061011f6000396000f3fe608060405234801561001057600080fd5b506004361061009e5760003560e01c80638da5cb5b116100665780638da5cb5b146101f7578063bfe1ed5b1461020a578063e405bbc314610247578063f2fde38b14610262578063fa2106531461027557600080fd5b806334f96c8c146100a3578063491741b9146100d557806352bfe789146100ea5780636548e9bc146101b95780638406c079146101cc575b600080fd5b6002546100b79067ffffffffffffffff1681565b60405167ffffffffffffffff90911681526020015b60405180910390f35b6100e86100e33660046105bd565b6102e9565b005b610172604080516080810182526000808252602082018190529181018290526060810182905250506001805467ffffffffffffffff600160a01b909104811660008181526003602090815260409182902082516080810184528154815295810154918601919091526002015480841691850191909152600160401b9004909116606083015291565b6040805167ffffffffffffffff938416815282516020808301919091528301518183015290820151831660608083019190915290910151909116608082015260a0016100cc565b6100e86101c7366004610603565b61046a565b6001546101df906001600160a01b031681565b6040516001600160a01b0390911681526020016100cc565b6000546101df906001600160a01b031681565b61023a6040518060400160405280601181526020017073796e74686f732d6d61696e6e65742d3160781b81525081565b6040516100cc9190610633565b6001546100b790600160a01b900467ffffffffffffffff1681565b6100e8610270366004610603565b610506565b6102b9610283366004610681565b60036020526000908152604090208054600182015460029092015490919067ffffffffffffffff80821691600160401b90041684565b60408051948552602085019390935267ffffffffffffffff918216928401929092521660608201526080016100cc565b6001546001600160a01b031633146103145760405163c64891a560e01b815260040160405180910390fd5b60015467ffffffffffffffff600160a01b90910481169085161161034b57604051632a582a9760e01b815260040160405180910390fd5b826103695760405163f1ae58d560e01b815260040160405180910390fd5b60408051608081018252848152602080820185815267ffffffffffffffff85811684860181815242831660608088019182528c85166000818152600389528a90209851895595516001808a019190915592516002988901805493519187166fffffffffffffffffffffffffffffffff1990941693909317600160401b9187169190910217909155815467ffffffffffffffff60a01b1916600160a01b8602178255865467ffffffffffffffff1981169085169092019093161790945584518881529283018790529382019290925290917ff51678697efba5dcba8619d6783f7c5774ca036c8498164ee176defcdbdd4698910160405180910390a250505050565b6000546001600160a01b03163314610495576040516330cd747160e01b815260040160405180910390fd5b6001600160a01b0381166104bc5760405163d92e233d60e01b815260040160405180910390fd5b600180546001600160a01b0319166001600160a01b0383169081179091556040517f88cb58f8479aba47ccd2dcbc41bf94bc01e3f58a877cbe5e7f3bd978d89773ba90600090a250565b6000546001600160a01b03163314610531576040516330cd747160e01b815260040160405180910390fd5b6001600160a01b0381166105585760405163d92e233d60e01b815260040160405180910390fd5b600080546001600160a01b0319166001600160a01b038316908117825560405190917fa2ea9883a321a3e97b8266c2b078bfeec6d50c711ed71f874a90d500ae2eaf3691a250565b803567ffffffffffffffff811681146105b857600080fd5b919050565b600080600080608085870312156105d357600080fd5b6105dc856105a0565b935060208501359250604085013591506105f8606086016105a0565b905092959194509250565b60006020828403121561061557600080fd5b81356001600160a01b038116811461062c57600080fd5b9392505050565b602081526000825180602084015260005b818110156106615760208186018101516040868401015201610644565b506000604082850101526040601f19601f83011684010191505092915050565b60006020828403121561069357600080fd5b61062c826105a056fea2646970667358221220117968e979f3f1fda2be8771f342fe9007861be26d8ef2f90435eb537f5c170b64736f6c634300081c0033"
+}

@@ -1,0 +1,10 @@
+{
+  "name": "synthos-base-anchor",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "ethers": "6.13.4"
+  }
+}

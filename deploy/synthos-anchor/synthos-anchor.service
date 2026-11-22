@@ -1,0 +1,12 @@
+[Unit]
+Description=Anchor latest Synthos Collective block hash on Base
+After=network-online.target synthos-comet.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/synthos-anchor
+ExecStart=/usr/bin/node /opt/synthos-anchor/anchor.mjs anchor
+Restart=no
+StandardOutput=journal
+StandardError=journal

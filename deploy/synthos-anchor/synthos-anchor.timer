@@ -1,0 +1,9 @@
+[Unit]
+Description=Anchor Synthos Collective on Base every hour
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target
