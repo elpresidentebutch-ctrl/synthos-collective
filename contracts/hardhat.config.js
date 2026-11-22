@@ -5,14 +5,28 @@ const envChainId = (name, fallback) => Number(process.env[name] || fallback);
 
 module.exports = {
   solidity: {
-    version: "0.8.20",
-    settings: {
-      viaIR: true,
-      optimizer: {
-        enabled: true,
-        runs: 200,
+    compilers: [
+      {
+        version: "0.8.20",
+        settings: {
+          viaIR: true,
+          optimizer: {
+            enabled: true,
+            runs: 200,
+          },
+        },
       },
-    },
+      {
+        version: "0.8.24",
+        settings: {
+          viaIR: true,
+          optimizer: {
+            enabled: true,
+            runs: 200,
+          },
+        },
+      },
+    ],
   },
 
   networks: {

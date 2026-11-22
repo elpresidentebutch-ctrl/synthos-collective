@@ -1,0 +1,405 @@
+{
+  "range": {
+    "start": 368221,
+    "end": 369220,
+    "total": 1000
+  },
+  "validators": {
+    "Salt Lake City": {
+      "address": "2EFA14D4903A1644185FA63E9E5F1B1872F664F6",
+      "moniker": "hosteons-validator-1",
+      "signed": 986,
+      "absent": 0,
+      "nil": 14,
+      "miss_rate_pct": 1.4,
+      "max_streak": 1
+    },
+    "Namecheap": {
+      "address": "6ADC0C616AD18CAE49713A06C253DF88227CBC11",
+      "moniker": "namecheap-validator-1",
+      "signed": 1000,
+      "absent": 0,
+      "nil": 0,
+      "miss_rate_pct": 0,
+      "max_streak": 0
+    },
+    "Jim All-in-One PC": {
+      "address": "80756DB8674D0D8F08843626B18051236979E7E8",
+      "moniker": "jim-pc-validator-1",
+      "signed": 1000,
+      "absent": 0,
+      "nil": 0,
+      "miss_rate_pct": 0,
+      "max_streak": 0
+    },
+    "New York": {
+      "address": "8872611711A0542169FABC1E44574A4F6EA62BF9",
+      "moniker": "hosteons-validator-ny-1",
+      "signed": 1000,
+      "absent": 0,
+      "nil": 0,
+      "miss_rate_pct": 0,
+      "max_streak": 0
+    },
+    "HP Tower": {
+      "address": "FADB813BD6A969C0BCF70E9FFA75957C6CDE63AE",
+      "moniker": "jim-tower-validator-4",
+      "signed": 1000,
+      "absent": 0,
+      "nil": 0,
+      "miss_rate_pct": 0,
+      "max_streak": 0
+    }
+  },
+  "rounds_gt_zero_count": 23,
+  "blocks_missing_ge_2_count": 0,
+  "blocks_missing_1_count": 14,
+  "slc_nil_matches": 14,
+  "round_details": [
+    {
+      "height": 368298,
+      "time": "2026-11-19T22:01:29.776947484Z",
+      "round": 1,
+      "round0_expected_proposer": "Namecheap",
+      "committed_proposer": "Namecheap",
+      "slc_vote": "Nil (Flag 3)",
+      "flags": [
+        3,
+        2,
+        2,
+        2,
+        2
+      ]
+    },
+    {
+      "height": 368310,
+      "time": "2026-11-19T22:03:50.258072244Z",
+      "round": 1,
+      "round0_expected_proposer": "New York",
+      "committed_proposer": "New York",
+      "slc_vote": "Nil (Flag 3)",
+      "flags": [
+        3,
+        2,
+        2,
+        2,
+        2
+      ]
+    },
+    {
+      "height": 368313,
+      "time": "2026-11-19T22:04:28.4588114Z",
+      "round": 1,
+      "round0_expected_proposer": "Namecheap",
+      "committed_proposer": "Namecheap",
+      "slc_vote": "Commit (Flag 2)",
+      "flags": [
+        2,
+        2,
+        2,
+        2,
+        2
+      ]
+    },
+    {
+      "height": 368393,
+      "time": "2026-11-19T22:19:16.8637173Z",
+      "round": 1,
+      "round0_expected_proposer": "Namecheap",
+      "committed_proposer": "Namecheap",
+      "slc_vote": "Commit (Flag 2)",
+      "flags": [
+        2,
+        2,
+        2,
+        2,
+        2
+      ]
+    },
+    {
+      "height": 368403,
+      "time": "2026-11-19T22:21:13.389556659Z",
+      "round": 1,
+      "round0_expected_proposer": "Namecheap",
+      "committed_proposer": "Namecheap",
+      "slc_vote": "Commit (Flag 2)",
+      "flags": [
+        2,
+        2,
+        2,
+        2,
+        2
+      ]
+    },
+    {
+      "height": 368423,
+      "time": "2026-11-19T22:24:58.8458741Z",
+      "round": 1,
+      "round0_expected_proposer": "Namecheap",
+      "committed_proposer": "Namecheap",
+      "slc_vote": "Nil (Flag 3)",
+      "flags": [
+        3,
+        2,
+        2,
+        2,
+        2
+      ]
+    },
+    {
+      "height": 368443,
+      "time": "2026-11-19T22:28:43.0392469Z",
+      "round": 1,
+      "round0_expected_proposer": "Namecheap",
+      "committed_proposer": "Namecheap",
+      "slc_vote": "Nil (Flag 3)",
+      "flags": [
+        3,
+        2,
+        2,
+        2,
+        2
+      ]
+    },
+    {
+      "height": 368498,
+      "time": "2026-11-19T22:38:53.616637528Z",
+      "round": 1,
+      "round0_expected_proposer": "Namecheap",
+      "committed_proposer": "Namecheap",
+      "slc_vote": "Nil (Flag 3)",
+      "flags": [
+        3,
+        2,
+        2,
+        2,
+        2
+      ]
+    },
+    {
+      "height": 368538,
+      "time": "2026-11-19T22:46:17.125261629Z",
+      "round": 1,
+      "round0_expected_proposer": "Namecheap",
+      "committed_proposer": "Namecheap",
+      "slc_vote": "Commit (Flag 2)",
+      "flags": [
+        2,
+        2,
+        2,
+        2,
+        2
+      ]
+    },
+    {
+      "height": 368543,
+      "time": "2026-11-19T22:47:17.2403208Z",
+      "round": 1,
+      "round0_expected_proposer": "Namecheap",
+      "committed_proposer": "Namecheap",
+      "slc_vote": "Commit (Flag 2)",
+      "flags": [
+        2,
+        2,
+        2,
+        2,
+        2
+      ]
+    },
+    {
+      "height": 368548,
+      "time": "2026-11-19T22:48:17.9469598Z",
+      "round": 1,
+      "round0_expected_proposer": "Namecheap",
+      "committed_proposer": "Namecheap",
+      "slc_vote": "Nil (Flag 3)",
+      "flags": [
+        3,
+        2,
+        2,
+        2,
+        2
+      ]
+    },
+    {
+      "height": 368633,
+      "time": "2026-11-19T23:03:58.4260477Z",
+      "round": 1,
+      "round0_expected_proposer": "Namecheap",
+      "committed_proposer": "Namecheap",
+      "slc_vote": "Commit (Flag 2)",
+      "flags": [
+        2,
+        2,
+        2,
+        2,
+        2
+      ]
+    },
+    {
+      "height": 368648,
+      "time": "2026-11-19T23:06:47.453912Z",
+      "round": 1,
+      "round0_expected_proposer": "Namecheap",
+      "committed_proposer": "Namecheap",
+      "slc_vote": "Nil (Flag 3)",
+      "flags": [
+        3,
+        2,
+        2,
+        2,
+        2
+      ]
+    },
+    {
+      "height": 368698,
+      "time": "2026-11-19T23:16:02.367489689Z",
+      "round": 1,
+      "round0_expected_proposer": "Namecheap",
+      "committed_proposer": "Namecheap",
+      "slc_vote": "Nil (Flag 3)",
+      "flags": [
+        3,
+        2,
+        2,
+        2,
+        2
+      ]
+    },
+    {
+      "height": 368718,
+      "time": "2026-11-19T23:19:48.964710371Z",
+      "round": 1,
+      "round0_expected_proposer": "Namecheap",
+      "committed_proposer": "Namecheap",
+      "slc_vote": "Nil (Flag 3)",
+      "flags": [
+        3,
+        2,
+        2,
+        2,
+        2
+      ]
+    },
+    {
+      "height": 368878,
+      "time": "2026-11-19T23:49:18.1120275Z",
+      "round": 1,
+      "round0_expected_proposer": "Namecheap",
+      "committed_proposer": "Namecheap",
+      "slc_vote": "Commit (Flag 2)",
+      "flags": [
+        2,
+        2,
+        2,
+        2,
+        2
+      ]
+    },
+    {
+      "height": 368918,
+      "time": "2026-11-19T23:56:42.036753024Z",
+      "round": 1,
+      "round0_expected_proposer": "Namecheap",
+      "committed_proposer": "Namecheap",
+      "slc_vote": "Nil (Flag 3)",
+      "flags": [
+        3,
+        2,
+        2,
+        2,
+        2
+      ]
+    },
+    {
+      "height": 368928,
+      "time": "2026-11-19T23:58:34.755938689Z",
+      "round": 1,
+      "round0_expected_proposer": "Namecheap",
+      "committed_proposer": "Namecheap",
+      "slc_vote": "Nil (Flag 3)",
+      "flags": [
+        3,
+        2,
+        2,
+        2,
+        2
+      ]
+    },
+    {
+      "height": 368983,
+      "time": "2026-11-20T00:08:48.141575296Z",
+      "round": 1,
+      "round0_expected_proposer": "Namecheap",
+      "committed_proposer": "Namecheap",
+      "slc_vote": "Commit (Flag 2)",
+      "flags": [
+        2,
+        2,
+        2,
+        2,
+        2
+      ]
+    },
+    {
+      "height": 368993,
+      "time": "2026-11-20T00:10:41.981027018Z",
+      "round": 1,
+      "round0_expected_proposer": "Namecheap",
+      "committed_proposer": "Namecheap",
+      "slc_vote": "Nil (Flag 3)",
+      "flags": [
+        3,
+        2,
+        2,
+        2,
+        2
+      ]
+    },
+    {
+      "height": 369058,
+      "time": "2026-11-20T00:22:47.24387635Z",
+      "round": 1,
+      "round0_expected_proposer": "Namecheap",
+      "committed_proposer": "Namecheap",
+      "slc_vote": "Nil (Flag 3)",
+      "flags": [
+        3,
+        2,
+        2,
+        2,
+        2
+      ]
+    },
+    {
+      "height": 369153,
+      "time": "2026-11-20T00:40:17.336167379Z",
+      "round": 1,
+      "round0_expected_proposer": "Namecheap",
+      "committed_proposer": "Namecheap",
+      "slc_vote": "Commit (Flag 2)",
+      "flags": [
+        2,
+        2,
+        2,
+        2,
+        2
+      ]
+    },
+    {
+      "height": 369178,
+      "time": "2026-11-20T00:45:01.8459474Z",
+      "round": 1,
+      "round0_expected_proposer": "Namecheap",
+      "committed_proposer": "Namecheap",
+      "slc_vote": "Nil (Flag 3)",
+      "flags": [
+        3,
+        2,
+        2,
+        2,
+        2
+      ]
+    }
+  ]
+}
