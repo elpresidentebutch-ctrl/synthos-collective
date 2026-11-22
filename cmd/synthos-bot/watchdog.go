@@ -47,17 +47,27 @@ func (w *Watchdog) KnownOutside() []string {
 	return out
 }
 
-// IsOutside reports whether a registry node belongs to someone other than Jim.
-func (c WatchdogConfig) IsOutside(n Node) bool {
+func (c WatchdogConfig) isInternalByConfig(n Node) bool {
 	for _, cl := range c.FleetClouds {
-		if n.Cloud == cl {
-			return false
+		if cl != "" && n.Cloud == cl {
+			return true
 		}
 	}
 	for _, p := range c.FleetPrefixes {
-		if strings.HasPrefix(n.Name, p) {
-			return false
+		if p != "" && strings.HasPrefix(n.Name, p) {
+			return true
 		}
+	}
+	return false
+}
+
+// IsOutside reports whether a registry node belongs to someone other than the operator.
+func (c WatchdogConfig) IsOutside(n Node) bool {
+	if c.isInternalByConfig(n) {
+		return false
+	}
+	if n.Outside {
+		return true
 	}
 	if strings.HasPrefix(n.IP, "127.") || n.IP == "" {
 		return false

@@ -18,8 +18,8 @@ var t0 = time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC)
 func testCfg() WatchdogConfig {
 	return WatchdogConfig{
 		HaltAfter: 3 * time.Minute, MissFor: 5 * time.Minute, MinHeartbeats: 20,
-		FleetClouds: []string{"fleet", "hosteons"}, FleetPrefixes: []string{"synthos-", "syn-fleet-"},
-		HomeIPs: []string{"76.158.149.182"},
+		FleetClouds: []string{"fleet", "hosteons"},
+		HomeIPs:     []string{"203.0.113.10"},
 	}
 }
 
@@ -92,7 +92,7 @@ func TestOutsideNodeAnnouncedOnceAfterRealUptime(t *testing.T) {
 	nodes := []Node{
 		{Name: "synthos-hosteons-validator-2", Cloud: "hosteons", IP: "127.0.0.1:1", ValidHeartbeats: 900},
 		{Name: "syn-fleet-1", Cloud: "fleet", IP: "127.0.0.1:2", ValidHeartbeats: 900},
-		{Name: "syn-71d34cadab77", Cloud: "operator", IP: "76.158.149.182", ValidHeartbeats: 9000}, // Jim's home
+		{Name: "syn-71d34cadab77", Cloud: "operator", IP: "203.0.113.10", ValidHeartbeats: 9000}, // configured home IP
 		{Name: "syn-bot", Cloud: "operator", IP: "34.53.168.88", ValidHeartbeats: 2},               // a crawler
 		{Name: "syn-real", Cloud: "operator", IP: "203.0.113.7", ValidHeartbeats: 25, RegisteredAt: t0},
 	}
@@ -111,6 +111,68 @@ func TestOutsideNodeAnnouncedOnceAfterRealUptime(t *testing.T) {
 	w2 := NewWatchdog(testCfg(), w.KnownOutside())
 	if a := w2.Observe(t0, s); len(a) != 0 {
 		t.Fatalf("remembered nodes must not be re-announced, got %v", a)
+	}
+}
+
+func TestOutsideNodeUsesRegistryOutsideFlagWithoutIP(t *testing.T) {
+	w := NewWatchdog(testCfg(), nil)
+	// Server-side registry computed Outside flag; no household_ip is published.
+	nodes := []Node{
+		{Name: "synthos-slc-validator", Cloud: "hosteons", Outside: false, ValidHeartbeats: 500},
+		{Name: "desktop-home-1", Cloud: "operator", IP: "203.0.113.10", Outside: false, ValidHeartbeats: 500},
+		{Name: "syn-crawler", Cloud: "operator", Outside: true, ValidHeartbeats: 2},
+		{Name: "syn-outside-peer", Cloud: "operator", Outside: true, ValidHeartbeats: 25, RegisteredAt: t0},
+	}
+	s := snap(100, t0, "AAAA1111", "BBBB2222")
+	s.Nodes = nodes
+	a := w.Observe(t0, s)
+	if len(a) != 1 || !strings.Contains(a[0], "syn-outside-peer") {
+		t.Fatalf("want only syn-outside-peer announced using Outside flag, got %v", a)
+	}
+
+	// Repeat check: should not announce again
+	s2 := snap(101, t0.Add(time.Minute), "AAAA1111", "BBBB2222")
+	s2.Nodes = nodes
+	if a := w.Observe(t0.Add(time.Minute), s2); len(a) != 0 {
+		t.Fatalf("outside node should not repeat alert, got %v", a)
+	}
+}
+
+func TestOutsideNodeAllowsDesktopAndSynthosPrefixesFromUnknownIP(t *testing.T) {
+	cfg := testCfg()
+	w := NewWatchdog(cfg, nil)
+	nodes := []Node{
+		// Internal nodes (matched by FleetClouds or HomeIPs, not name prefix):
+		{Name: "synthos-slc-validator", Cloud: "hosteons", Outside: false, ValidHeartbeats: 500},
+		{Name: "desktop-home-1", Cloud: "operator", IP: "203.0.113.10", Outside: false, ValidHeartbeats: 500},
+		// External operator nodes whose names start with desktop- or synthos-:
+		{Name: "desktop-9a8b7c", Cloud: "operator", IP: "198.51.100.42", Outside: true, ValidHeartbeats: 25, RegisteredAt: t0},
+		{Name: "desktop-4f3e2d", Cloud: "operator", IP: "198.51.100.43", Outside: false, ValidHeartbeats: 25, RegisteredAt: t0},
+		{Name: "synthos-operator-1", Cloud: "operator", Outside: true, ValidHeartbeats: 25, RegisteredAt: t0},
+	}
+
+	for _, n := range nodes[:2] {
+		if cfg.IsOutside(n) {
+			t.Fatalf("expected internal node %q to have IsOutside=false", n.Name)
+		}
+	}
+	for _, n := range nodes[2:] {
+		if !cfg.IsOutside(n) {
+			t.Fatalf("expected external node %q from unknown IP to have IsOutside=true", n.Name)
+		}
+	}
+
+	s := snap(100, t0, "AAAA1111", "BBBB2222")
+	s.Nodes = nodes
+	a := w.Observe(t0, s)
+	if len(a) != 3 {
+		t.Fatalf("want 3 outside node announcements (desktop-9a8b7c, desktop-4f3e2d, synthos-operator-1), got %d: %v", len(a), a)
+	}
+	joined := strings.Join(a, "\n")
+	for _, want := range []string{"desktop-9a8b7c", "desktop-4f3e2d", "synthos-operator-1"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("expected %q in outside announcements, got:\n%s", want, joined)
+		}
 	}
 }
 
@@ -140,7 +202,7 @@ func fakeNetwork(t *testing.T) *httptest.Server {
 				"proposer_id": "jim-tower-validator-4", "proposer_address": "0xfadb813bd6a969c0bcf70e9ffa75957c6cde63ae"}}}})
 		case "/api/nodes":
 			write(w, map[string]any{"peers": []map[string]any{
-				{"name": "syn-real", "cloud": "operator", "household_ip": "203.0.113.7", "valid_heartbeats": 30,
+				{"name": "syn-real", "cloud": "operator", "outside": true, "valid_heartbeats": 30,
 					"registered_at": t0.UnixMilli(), "last_seen": t0.UnixMilli()}}})
 		case "/api/nodes/syn-real/status":
 			write(w, map[string]any{"node": map[string]any{"node_id": "syn-real", "role": "validator_candidate",
@@ -171,7 +233,7 @@ func TestSnapshotReadsTheNetwork(t *testing.T) {
 	if s.Validators[1].Name != "jim-tower-validator-4" {
 		t.Fatalf("validator name not mapped: %+v", s.Validators[1])
 	}
-	if s.NodesErr != nil || len(s.Nodes) != 1 || s.Nodes[0].ValidHeartbeats != 30 {
+	if s.NodesErr != nil || len(s.Nodes) != 1 || s.Nodes[0].ValidHeartbeats != 30 || !s.Nodes[0].Outside {
 		t.Fatalf("nodes: %+v %v", s.Nodes, s.NodesErr)
 	}
 }

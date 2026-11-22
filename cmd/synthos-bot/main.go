@@ -18,7 +18,7 @@
 //
 // Example (on the Salt Lake City server):
 //
-//	synthos-bot -alert-chat 123456789 -home-ips 76.158.149.182
+//	synthos-bot -alert-chat 123456789 -home-ips 203.0.113.10
 package main
 
 import (
@@ -95,7 +95,7 @@ func main() {
 	minHB := flag.Int64("min-heartbeats", 20, "an outside node must send this many verified heartbeats before it's announced")
 	homeIPs := flag.String("home-ips", "", "comma-separated IP prefixes of your own machines (not 'outside')")
 	fleetClouds := flag.String("fleet-clouds", "fleet,hosteons,gitlab,lovable,render", "registry cloud values that are your own nodes")
-	fleetPrefixes := flag.String("fleet-prefixes", "synthos-,syn-fleet-,syn-gitlab-cloud-,desktop-", "node-name prefixes that are your own nodes")
+	fleetPrefixes := flag.String("fleet-prefixes", "", "optional comma-separated node-name prefixes of your own nodes (leave empty to classify by fleet clouds and IPs only)")
 	stateFile := flag.String("state", "synthos-bot-state.json", "where announced outside nodes are remembered")
 	flag.Parse()
 

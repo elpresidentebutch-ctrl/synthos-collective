@@ -36,6 +36,7 @@ type Node struct {
 	Name            string
 	Cloud           string
 	IP              string
+	Outside         bool
 	ValidHeartbeats int64
 	RegisteredAt    time.Time
 	LastSeen        time.Time
@@ -177,6 +178,7 @@ func (s *Sources) nodes(ctx context.Context) ([]Node, error) {
 			Name            string `json:"name"`
 			Cloud           string `json:"cloud"`
 			IP              string `json:"household_ip"`
+			Outside         bool   `json:"outside"`
 			ValidHeartbeats int64  `json:"valid_heartbeats"`
 			RegisteredAt    int64  `json:"registered_at"`
 			LastSeen        int64  `json:"last_seen"`
@@ -188,7 +190,7 @@ func (s *Sources) nodes(ctx context.Context) ([]Node, error) {
 	nodes := make([]Node, 0, len(out.Peers))
 	for _, p := range out.Peers {
 		nodes = append(nodes, Node{
-			Name: p.Name, Cloud: p.Cloud, IP: p.IP, ValidHeartbeats: p.ValidHeartbeats,
+			Name: p.Name, Cloud: p.Cloud, IP: p.IP, Outside: p.Outside, ValidHeartbeats: p.ValidHeartbeats,
 			RegisteredAt: time.UnixMilli(p.RegisteredAt), LastSeen: time.UnixMilli(p.LastSeen),
 		})
 	}
