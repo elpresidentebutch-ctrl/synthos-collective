@@ -160,9 +160,9 @@ func TestKeeperSkipsNodesThatHaventEarnedIt(t *testing.T) {
 
 func TestKeeperPaysOneNodePerHousehold(t *testing.T) {
 	a := rewardPeer("home-1", 40, addrA)
-	a.HouseholdIP = "76.158.149.182"
+	a.HouseholdIP = "203.0.113.10"
 	b := rewardPeer("home-2", 40, addrB)
-	b.HouseholdIP = "76.158.149.182"
+	b.HouseholdIP = "203.0.113.10"
 	s := keeperServer(a, b)
 	cfg := keeperConfig(t, map[string]string{"home-1": addrA, "home-2": addrB}, 100000)
 	ch := &fakeRewardChain{}

@@ -80,6 +80,7 @@ type peer struct {
 
 	HouseholdIP         string `json:"household_ip,omitempty"`
 	SharedHouseholdWith string `json:"shared_household_with,omitempty"`
+	Outside             bool   `json:"outside"`
 	PayoutAddress       string `json:"payout_address,omitempty"`
 	LastRewardPaidEpoch string `json:"last_reward_paid_epoch,omitempty"`
 	LastRewardPaidAt    int64  `json:"last_reward_paid_at,omitempty"`
@@ -167,14 +168,17 @@ type registryState struct {
 }
 
 type server struct {
-	mu          sync.RWMutex
-	persistMu   sync.Mutex
-	state       registryState
-	secret      string
-	insecureDev bool
-	stateFile   string
-	startedAt   time.Time
-	maxMailbox  int
+	mu           sync.RWMutex
+	persistMu    sync.Mutex
+	state        registryState
+	secret       string
+	insecureDev  bool
+	stateFile    string
+	startedAt    time.Time
+	maxMailbox   int
+	homeIPs      []string
+	fleetServers []string
+	fleetClouds  []string
 }
 
 type networkSnapshot struct {
@@ -204,6 +208,9 @@ func main() {
 	flag.StringVar(&secret, "secret", os.Getenv("REGISTRY_SECRET"), "registry admin/mailbox secret")
 	flag.BoolVar(&insecureDev, "insecure-dev", envBool("SYNTHOS_INSECURE_DEV", false), "allow unauthenticated admin access in local dev when REGISTRY_SECRET is unset")
 	newRewardKey := flag.String("new-reward-key", "", "create the reward keeper's own wallet key at this path, print its address, and exit")
+	homeIPs := flag.String("home-ips", env("SYNTHOS_HOME_IPS", ""), "comma-separated IP prefixes of operator home machines (read from env/config only)")
+	fleetServers := flag.String("fleet-servers", env("SYNTHOS_FLEET_SERVERS", ""), "comma-separated IPs of fleet servers (read from env/config only)")
+	fleetClouds := flag.String("fleet-clouds", env("SYNTHOS_FLEET_CLOUDS", "fleet,hosteons,gitlab,lovable,render"), "comma-separated cloud names of fleet nodes")
 	flag.Parse()
 	if *newRewardKey != "" {
 		addr, err := createRewardKeeperKey(*newRewardKey)
@@ -228,11 +235,14 @@ func main() {
 			Contacts:            []contactMessage{},
 			EarlyAccessPayments: map[string]earlyAccessPaymentIntent{},
 		},
-		secret:      secret,
-		insecureDev: insecureDev,
-		stateFile:   stateFile,
-		startedAt:   time.Now(),
-		maxMailbox:  100,
+		secret:       secret,
+		insecureDev:  insecureDev,
+		stateFile:    stateFile,
+		startedAt:    time.Now(),
+		maxMailbox:   100,
+		homeIPs:      splitCSV(*homeIPs),
+		fleetServers: splitCSV(*fleetServers),
+		fleetClouds:  splitCSV(*fleetClouds),
 	}
 	if err := s.load(); err != nil {
 		log.Printf("registry state load warning: %v", err)
@@ -520,7 +530,10 @@ func (s *server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	if err := s.persist(); err != nil {
 		log.Printf("persist warning: %v", err)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "peer": name, "message": "registered", "entry": entry})
+	publicEntry := entry
+	publicEntry.Outside = s.isOutside(entry)
+	publicEntry.HouseholdIP = ""
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "peer": name, "message": "registered", "entry": publicEntry})
 }
 
 func (s *server) handlePeers(w http.ResponseWriter, r *http.Request) {
@@ -632,7 +645,6 @@ func (s *server) handleMailbox(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) pruneInactivePeers(cutoff time.Duration) int {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	now := time.Now()
 	pruned := 0
 	for name, p := range s.state.Peers {
@@ -659,17 +671,30 @@ func (s *server) pruneInactivePeers(cutoff time.Duration) int {
 			pruned++
 		}
 	}
+	remaining := len(s.state.Peers)
+	// Release s.mu before persisting: persist takes s.mu.RLock to snapshot
+	// the state, and Go's RWMutex is not reentrant, so calling it while
+	// still holding the write lock deadlocks the whole registry.
+	s.mu.Unlock()
 	if pruned > 0 {
 		if err := s.persist(); err != nil {
 			log.Printf("persist warning after pruning %d peers: %v", pruned, err)
 		} else {
-			log.Printf("[registry] Pruned %d inactive peers; active peers remaining: %d", pruned, len(s.state.Peers))
+			log.Printf("[registry] Pruned %d inactive peers; active peers remaining: %d", pruned, remaining)
 		}
 	}
 	return pruned
 }
 
 func (s *server) handlePrunePeers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.authorized(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 	pruned := s.pruneInactivePeers(staleAfter)
 	s.mu.RLock()
 	remaining := len(s.state.Peers)
@@ -2603,6 +2628,37 @@ func (s *server) handleWindowsInstallerBat(w http.ResponseWriter, r *http.Reques
 	_, _ = w.Write([]byte(bat))
 }
 
+func (s *server) isOutside(p peer) bool {
+	clouds := s.fleetClouds
+	if len(clouds) == 0 {
+		clouds = splitCSV("fleet,hosteons,gitlab,lovable,render")
+	}
+	for _, cl := range clouds {
+		if cl != "" && p.Cloud == cl {
+			return false
+		}
+	}
+
+	ip := strings.TrimSpace(p.HouseholdIP)
+	if ip == "" || strings.HasPrefix(ip, "127.") || ip == "::1" || ip == "localhost" {
+		return false
+	}
+
+	for _, hip := range s.homeIPs {
+		if hip != "" && strings.HasPrefix(ip, hip) {
+			return false
+		}
+	}
+
+	for _, fip := range s.fleetServers {
+		if fip != "" && strings.HasPrefix(ip, fip) {
+			return false
+		}
+	}
+
+	return true
+}
+
 func (s *server) writePeerList(w http.ResponseWriter, activeOnly bool) {
 	now := time.Now()
 	s.mu.RLock()
@@ -2631,6 +2687,10 @@ func (s *server) writePeerList(w http.ResponseWriter, activeOnly bool) {
 			urls = append(urls, peers[i].URL)
 		}
 		order = append(order, peers[i].Name)
+		// Compute outside flag before stripping HouseholdIP
+		peers[i].Outside = s.isOutside(peers[i])
+		// Privacy: strip home IP addresses before emitting peer list publicly.
+		peers[i].HouseholdIP = ""
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"peers":           peers,
