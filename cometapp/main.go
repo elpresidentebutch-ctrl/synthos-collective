@@ -384,6 +384,7 @@ func runEVMDevnet(args []string) {
 	fmt.Printf("Data Home:         %s\n", *home)
 	fmt.Printf("RPC Address:       %s\n", *rpc)
 	fmt.Printf("P2P Address:       %s\n", *p2p)
+	fmt.Printf("Faucet Address:    %s (Hardhat/Anvil #0 - publicly known private key; LOCAL DEVNET ONLY, NEVER send real SYN/ETH)\n", evmdevnet.DefaultFaucetAddress)
 
 	cfg := evmdevnet.Config{
 		HomeDir:       *home,

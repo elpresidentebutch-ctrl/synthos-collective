@@ -29,6 +29,7 @@ Write-Host "RPC Listen:         $RPC"
 Write-Host "P2P Listen:         $P2P"
 Write-Host "Block Pace:         $BlockTime"
 Write-Host "Pre-funded Faucet:  0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266 (5,000,000,000 SYN)"
+Write-Host "Faucet Key Note:    Hardhat/Anvil test account #0 (publicly known private key) - LOCAL DEVNET ONLY; NEVER send real SYN/ETH!" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 Push-Location "$RepoRoot\cometapp"

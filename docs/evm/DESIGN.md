@@ -28,25 +28,26 @@ To preserve validator safety and network stability, this transition follows a st
 
 ### Decision 1: EVM Execution Engine — `go-ethereum` (`core/vm`)
 
-**Decision:** Assume and embed **`go-ethereum` (`core/vm`)**.
+**Decision:** Embed **`github.com/ethereum/go-ethereum` (`core/vm`) v1.15.11** (Cancun + Prague / Pectra).
 
 | Attribute | Specification |
 | :--- | :--- |
-| **Engine Package** | `github.com/ethereum/go-ethereum/core/vm` (along with `core/types` and `params`) |
+| **Engine Package** | `github.com/ethereum/go-ethereum v1.15.11` (`core/vm`, `core/types`, `params`) |
+| **EVM Fork Level** | **Cancun + Prague (Pectra)** — verified finalized instruction set in `v1.15.11` |
 | **Language** | Pure Go (native compilation, no CGO required: `CGO_ENABLED=0` preserved) |
-| **License** | **LGPL-3.0** (with internal boundary isolation) |
+| **License** | **LGPL-3.0 vs. Apache-2.0 — PENDING LAWYER REVIEW (Hard Merge Gate)** |
 | **Determinism** | 100% deterministic bytecode execution verified against Ethereum execution specs |
 
-#### Technical Evaluation & Architecture:
+#### Technical Evaluation & Prague Verification:
 - `go-ethereum` (`core/vm`) is the battle-tested standard powering Ethereum mainnet, Polygon PoS, Arbitrum, Optimism, and BNB Chain.
+- **Prague Verification (`v1.14.13` -> `v1.15.11`):** An earlier prototype pinned `v1.14.13`, in which `core/vm/jump_table_export.go` still returned `"prague-fork not defined yet"`. Upgrading to **`v1.15.11`** provides the finalized Ethereum Prague/Pectra instruction set, including EIP-7702 (`0x04` SetCode), EIP-2537 (BLS12-381 precompiles), EIP-7623 (calldata floor gas), and EIP-2935 (historical block hashes), verified via `vm.LookupInstructionSet` and `CGO_ENABLED=0` builds.
 - Native Go avoids CGO (`cgo`), maintaining SYNTHOS's reproducible cross-compilation pipeline across Linux amd64/arm64 and Windows.
 - Alternative engines like `evmone` (C++) or `revm` (Rust) require CGO/FFI bindings, breaking static linking and increasing binary surface area. Cosmos/Ethermint would require discarding SYNTHOS's clean, lightweight custom Go state machine (`cometapp`).
 
-#### Licensing & Boundary Isolation Strategy:
-- Synthos Collective is licensed under Apache-2.0. To comply with LGPL-3.0 requirements without compromising project licensing:
-  1. The EVM execution runtime is encapsulated in an isolated internal package (`internal/evm/executor`), interfacing only through clean Go interfaces (`StateDB`, `BlockContext`, `TxContext`).
-  2. The go-ethereum dependency is linked as an unmodified external Go module.
-  3. All source code and build instructions remain public under Apache-2.0, fulfilling LGPL-3.0 source availability and object-relinking provisions.
+#### Licensing Status — PENDING LAWYER REVIEW (Merge Gate):
+- Synthos Collective is licensed under **Apache-2.0**, whereas `go-ethereum` is licensed under **LGPL-3.0** (and GPL-3.0 for certain auxiliary packages). Because Go compiles packages statically into a single binary, importing `github.com/ethereum/go-ethereum` creates potential LGPL-3.0 Section 4 ("Combined Work") relinking and license-compatibility obligations even behind an internal adapter boundary (`internal/evm/executor`).
+- **Status:** Boundary isolation and unmodified external Go module linkage are implemented as engineering hygiene, **NOT** as a claim of legal compliance.
+- **Hard Merge Gate:** **Nothing on `feature/evm-foundation` (or any code importing `go-ethereum`) may merge to `main` until qualified legal counsel has reviewed the static-linking LGPL-3.0 question and explicitly approved the licensing posture.**
 
 ---
 
@@ -83,18 +84,34 @@ To preserve validator safety and network stability, this transition follows a st
 
 ---
 
-### Decision 4: Gas Metering and Block Fees
+### Decision 4: Gas Metering, Starting Gas Limit, and Per-Gas Fee Model
 
-**Decision:** Canonical EVM gas schedule integrated with **SYNTHOS Fee Model V3**.
+**Decision:** Conservative **`10,000,000`** starting block gas limit paired with canonical Cancun/Prague opcodes and **explicit wei/gas conversion from SYNTHOS Fee Model V3**.
 
-* **Block Gas Limit:** $30,000,000$ gas per CometBFT block.
-* **Opcode Gas Schedule:** Inherit canonical Ethereum Cancun/Prague gas costs (e.g. 21,000 base gas for standard transfer, dynamic memory and storage expansion gas).
-* **Fee Model V3 Integration:**
-  - For native transactions: base fee per transaction dynamically adjusts with block congestion.
-  - For EVM transactions:
-    $$\text{Effective Gas Price} = \text{base\_fee\_per\_gas} + \text{priority\_fee}$$
-  - $\text{base\_fee\_per\_gas}$ is derived directly from the Fee Model V3 congestion tracker.
-  - Fee split: 50% burned, remainder distributed to block proposer and validator fee epoch pool according to existing consensus rules.
+* **Starting Block Gas Limit:** **`10,000,000` gas** per CometBFT block (EIP-1559 50% utilization target: **`5,000,000` gas**). Starting conservatively at 10M caps per-block execution latency during CometBFT rounds and may be raised in a future coordinated hard fork after public testnet soak testing.
+* **Opcode Gas Schedule:** Inherit canonical Ethereum Cancun + Prague gas costs from `go-ethereum v1.15.11` (e.g., 21,000 gas base transfer, dynamic memory/storage costs, EIP-7623 calldata floor gas).
+* **Explicit Fee Units:**
+
+| Quantity | Unit | Notes |
+| :--- | :--- | :--- |
+| `gas_limit`, `gas_used` | dimensionless gas units | Standard EVM opcode & intrinsic gas metering |
+| `chain.State.FeeModelV3BaseFee` | whole `SYN` per native tx | Existing native base fee (minimum floor: `10 SYN`) |
+| `base_fee_per_gas` | `wei / gas` | Derived deterministically from native base fee (`1 SYN = 10^{18} wei`) |
+| `max_fee_per_gas`, `max_priority_fee_per_gas` | `wei / gas` | Signed by wallet in EIP-1559 / EIP-7702 tx fields |
+| `effective_gas_price` | `wei / gas` | `min(max_fee_per_gas, base_fee_per_gas + max_priority_fee_per_gas)` |
+| Total tx fee (`gas_used * effective_gas_price`) | `wei` | Deducted from EVM balance in 18-decimal wei |
+
+* **Per-Gas Fee Formula (`BaseFeePerGasFromNativeSYN`):**
+  - Native Fee Model V3 prices a plain native transfer at a base fee floor of `10 SYN` (`FeeModelV3MinBaseFee`). Dividing cleanly over the canonical `21,000`-gas plain EVM transfer gives exact cross-ledger economic parity using strict integer arithmetic:
+    $$\text{base\_fee\_per\_gas\_wei} = \left\lfloor \frac{\max(\text{FeeModelV3BaseFee}, 10) \times 10^{18}}{21{,}000} \right\rfloor$$
+  - Standard EIP-1559 pricing determines what the sender pays per unit of gas:
+    $$\text{priority\_fee\_per\_gas} = \min(\text{max\_priority\_fee\_per\_gas},\; \max(0,\; \text{max\_fee\_per\_gas} - \text{base\_fee\_per\_gas\_wei}))$$
+    $$\text{effective\_gas\_price} = \text{base\_fee\_per\_gas\_wei} + \text{priority\_fee\_per\_gas}$$
+  - **Worked Examples at the `10 SYN` Base-Fee Floor (`base_fee_per_gas = 476,190,476,190,476 wei/gas`):**
+    - Plain EVM transfer (`21,000` gas, 0 tip): `9,999,999,999,999,996,000 wei` ($\approx 10\text{ SYN}$, matching native transfer floor within $4 \times 10^{-15}\text{ SYN}$).
+    - Typical contract call (`100,000` gas, 0 tip): $\approx 47.62\text{ SYN}$.
+    - Full `10,000,000`-gas block at base floor: $\approx 4,761.90\text{ SYN}$ base fees across all txs.
+* **Fee Split:** Base fee revenue (`gas_used * base_fee_per_gas_wei`) is split **50% burned / 50% treasury** (consistent with Fee Model V3); priority tips (`gas_used * priority_fee_per_gas`) go **100% to the block proposer**. (Converting fractional wei fee revenue into whole-SYN native treasury/proposer accounts uses an explicit accumulator so no wei dust is created or destroyed.)
 
 ---
 
@@ -113,7 +130,7 @@ To preserve validator safety and network stability, this transition follows a st
 
 ---
 
-### Decision 6: Chain ID and RPC Interface
+### Decision 6: Chain ID, RPC Interface, and Devnet Safety Guards
 
 **Decision:** Mainnet EVM Chain ID **`20260702`**, isolated Devnet Chain ID **`20260799`**, with standard JSON-RPC on port 8545.
 
@@ -122,7 +139,11 @@ To preserve validator safety and network stability, this transition follows a st
   - EVM Chain ID: **`20260702`** (Checked against Chainlist / `ethereum-lists/chains`; verified unallocated).
 * **Devnet Chain ID (Isolated):**
   - CometBFT Chain ID: `synthos-evm-devnet-1`
-  - EVM Chain ID: **`20260799`** (Never 20260702, never mainnet).
+  - EVM Chain ID: **`20260799`** (Never `20260702`, never mainnet).
+* **Devnet Home-Folder Guard (`ValidateHomeDir`):**
+  - `evmdevnet.SetupGenesis` and `evmdevnet.StartNode` refuse to run in any directory containing a non-devnet `config/genesis.json` (such as `synthos-mainnet-1` or `tx_chain_id = 20260702`), any existing `priv_validator_key.json`, `priv_validator_state.json`, or `synthos-app-state.json`, or any non-empty directory lacking `.evm-devnet-marker`.
+* **Devnet Faucet Key Security Note:**
+  - The devnet pre-funds `0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266` — the **well-known public Hardhat/Anvil test account #0** whose private key is publicly known worldwide. It is strictly for local isolated devnet (`20260799`) testing only: **NEVER send real SYN/ETH to this address and NEVER include it in mainnet or public testnet genesis.**
 * **Embedded JSON-RPC Layer:**
   - Implements standard `eth_*`, `net_*`, and `web3_*` endpoints over HTTP/WebSocket (default port `8545`).
   - Supports MetaMask, Hardhat, Foundry, Remix, and standard Ethereum block explorers without proprietary modifications.
@@ -143,9 +164,9 @@ A transaction submitted to CometBFT can be either:
 flowchart TD
     TxRaw["Incoming Raw Transaction Bytes"] --> CheckType{"Prefix / Magic Byte Check"}
     CheckType -- "0x7b ('{') JSON" --> NativeTx["Native SYNTHOS Tx<br>(chain.Tx JSON)"]
-    CheckType -- "Prefix 0x04 or EIP-2718 Type" --> EVMTx["EVM Transaction<br>(TxTypeEVM Wrapper)"]
+    CheckType -- "EIP-2718 Type or RLP List" --> EVMTx["EVM Transaction<br>(TxTypeEVM Wrapper)"]
     
-    EVMTx --> DecodeRLP["Decode RLP Envelope<br>(Legacy, EIP-2930, EIP-1559)"]
+    EVMTx --> DecodeRLP["Decode RLP Envelope<br>(Legacy, EIP-2930, EIP-1559, EIP-7702)"]
     DecodeRLP --> VerifySig["Recover Signer via ecrecover<br>(secp256k1)"]
     VerifySig --> CheckReplay["Validate EVM Chain ID<br>(20260702 or 20260799)"]
     CheckReplay --> CheckNonce["Check Nonce & Gas Prepayment<br>(in EVM StateDB)"]
@@ -158,11 +179,12 @@ The EVM transaction wrapper supports:
 * **Legacy Transactions (Type 0x00):** Standard RLP `[nonce, gasPrice, gasLimit, to, value, data, v, r, s]` with EIP-155 replay protection.
 * **EIP-2930 Transactions (Type 0x01):** Optional access list transactions.
 * **EIP-1559 Transactions (Type 0x02):** Dynamic fee transactions `[chainId, nonce, maxPriorityFeePerGas, maxFeePerGas, gasLimit, to, value, data, accessList, v, r, s]`.
+* **EIP-7702 Transactions (Type 0x04):** Prague/Pectra EOA code-delegation transactions (`SetCodeTx`).
 
 ```go
 // EVMTxEnvelope wraps a standard Ethereum transaction for CometBFT inclusion.
 type EVMTxEnvelope struct {
-    Type     byte   `json:"type"`      // EIP-2718 transaction type (0x00, 0x01, 0x02)
+    Type     byte   `json:"type"`      // EIP-2718 transaction type (0x00, 0x01, 0x02, 0x04)
     RawRLP   []byte `json:"raw_rlp"`   // Raw canonical RLP bytes
     TxHash   string `json:"tx_hash"`   // Keccak-256 hash (0x-prefixed)
     Sender   string `json:"sender"`    // Recovered checksummed Ethereum address
@@ -180,7 +202,7 @@ type EVMTxEnvelope struct {
 2. **`FinalizeBlock` (Deterministic Execution):**
    - Instantiate `core/vm.EVM` configured with block header parameters (block number, timestamp, base fee, block gas limit).
    - Execute EVM message call or contract creation.
-   - Deduct gas consumed; burn 50% of base fee; credit priority tip to block proposer.
+   - Deduct gas consumed; burn 50% of base fee and route 50% to treasury; credit priority tip to block proposer.
    - Store transaction receipt (status, gas used, logs/bloom filter) in the local index.
    - Update EVM StateDB root.
 
@@ -204,17 +226,21 @@ timeline
                                      : JSON-RPC port 8545 live
 ```
 
-### 4.1 Activation Parameters
+### 4.1 Compiled-In Consensus Parameters (Never Per-Node Config)
 
-In `internal/chain` and `cometapp/app`:
+EVM activation height is **strictly compiled into the node binary per CometBFT chain ID** (matching `FeeModelV2ActivationHeight` and `FeeModelV3ActivationHeight` in `internal/chain`). **It MUST NEVER be exposed as a CLI flag, environment variable, or per-node configuration setting**, because differing node values across validators at the switch height would cause immediate consensus divergence / chain halt.
+
+In `internal/evm/config.go`:
 ```go
-// EVMActivationHeight defines the block height at which EVM execution
-// activates on the network. A value of 0 disables EVM execution indefinitely.
-const EVMActivationHeight uint64 = 450000 // Planned target block height
+// Compiled-in EVM activation heights per CometBFT chain ID (never per-node config).
+const (
+    MainnetEVMActivationHeight uint64 = 0 // Disabled on Phase 1 branch; set only in Phase 5 hard-fork release
+    DevnetEVMActivationHeight  uint64 = 1 // Enabled from block 1 on isolated devnet (synthos-evm-devnet-1)
+)
 ```
 
-### 4.2 Pre-Activation Rules (Height $< \text{EVMActivationHeight}$)
-- Any transaction of type `TxTypeEVM` is rejected in `CheckTx` with error: `EVM not active until height <EVMActivationHeight>`.
+### 4.2 Pre-Activation Rules (Height $< \text{EVMActivationHeight}$ or Disabled)
+- While `MainnetEVMActivationHeight == 0` or `Height < EVMActivationHeight`, any `TxTypeEVM` transaction is rejected in `CheckTx` with error: `EVM not active on synthos-mainnet-1`.
 - Block building (`PrepareProposal` / `ProcessProposal`) forbids inclusion of EVM transactions.
 - State root calculation is 100% identical to legacy formula.
 
@@ -224,9 +250,9 @@ const EVMActivationHeight uint64 = 450000 // Planned target block height
   - Bridge contract or system precompiles are registered.
 - An ABCI event `evm_hardfork_activated` is emitted to block receipts.
 
-### 4.4 Rollback & Emergency Invariant
-- If an issue is discovered on testnet before mainnet activation, the activation height can be deferred by node configuration without breaking historical blocks.
-- Node binaries refuse to run if their compiled or configured activation height disagrees with network genesis/consensus parameters.
+### 4.4 Deferral & Emergency Rollback Invariant
+- Because activation height is compiled into the binary rather than configured per node, deferring or updating a planned activation height can **only** occur by building and uniformly deploying an updated validator release prior to the previously compiled target height.
+- All validators must run the identical binary release before reaching a scheduled hard-fork height; no split validator builds are permitted.
 
 ---
 
@@ -289,6 +315,8 @@ Under the current architecture, every block serializes the entire state tree to 
 
 ## 7. Immediate Safety Invariants
 
-1. **Zero Consensus Mutations on Mainnet:** All development is isolated to `feature/evm-foundation`; mainnet binary remains strictly `v1.2.0`.
-2. **Validator Benchmark Isolation:** Benchmarks are run exclusively on offline local state copies—never on running validator processes.
-3. **Audit Gate:** No code merges into `main` without Claude's comprehensive review and user approval.
+1. **Zero Consensus Mutations on Mainnet:** All development is isolated to `feature/evm-foundation` (`MainnetEVMActivationHeight == 0`); mainnet binary remains strictly `v1.2.0`.
+2. **Devnet Home-Folder Isolation:** `evmdevnet` validates `home` before touching disk and refuses mainnet genesis dirs, validator key/state dirs, or non-empty unrelated folders.
+3. **Validator Benchmark Isolation:** Benchmarks are run exclusively on offline local state copies—never on running validator processes.
+4. **LGPL-3.0 Legal Merge Gate:** Because `go-ethereum` (`v1.15.11`) is statically linked and licensed under LGPL-3.0, **nothing on `feature/evm-foundation` merges to `main` until qualified legal counsel reviews the LGPL-3.0 question.**
+5. **Audit Gate:** No code merges into `main` without Claude's comprehensive review, legal sign-off, and user approval.

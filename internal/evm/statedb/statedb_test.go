@@ -47,7 +47,7 @@ func TestStateDBAccountAndBalance(t *testing.T) {
 	}
 
 	// Nonce
-	db.SetNonce(addr, 5)
+	db.SetNonce(addr, 5, tracing.NonceChangeUnspecified)
 	if nonce := db.GetNonce(addr); nonce != 5 {
 		t.Fatalf("nonce = %d, want 5", nonce)
 	}
@@ -98,7 +98,7 @@ func TestStateDBSnapshotAndRevert(t *testing.T) {
 
 	initBal := uint256.NewInt(100)
 	db.AddBalance(addr, initBal, tracing.BalanceChangeUnspecified)
-	db.SetNonce(addr, 1)
+	db.SetNonce(addr, 1, tracing.NonceChangeUnspecified)
 	slot := common.HexToHash("0xaa")
 	db.SetState(addr, slot, common.HexToHash("0x11"))
 	db.SetTransientState(addr, slot, common.HexToHash("0x22"))
@@ -108,7 +108,7 @@ func TestStateDBSnapshotAndRevert(t *testing.T) {
 
 	// Make modifications in inner call
 	db.AddBalance(addr, uint256.NewInt(50), tracing.BalanceChangeUnspecified)
-	db.SetNonce(addr, 2)
+	db.SetNonce(addr, 2, tracing.NonceChangeUnspecified)
 	db.SetState(addr, slot, common.HexToHash("0x99"))
 	db.SetTransientState(addr, slot, common.HexToHash("0x88"))
 	db.AddLog(&types.Log{Address: addr})

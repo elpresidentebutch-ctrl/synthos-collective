@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/stateless"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -142,7 +143,7 @@ func (s *StateDB) GetNonce(addr common.Address) uint64 {
 }
 
 // SetNonce sets the transaction nonce of addr.
-func (s *StateDB) SetNonce(addr common.Address, nonce uint64) {
+func (s *StateDB) SetNonce(addr common.Address, nonce uint64, reason tracing.NonceChangeReason) {
 	acc := s.getOrCreateAccount(addr)
 	s.journal = append(s.journal, nonceChange{account: addr, prev: acc.Nonce})
 	acc.Nonce = nonce
@@ -164,16 +165,18 @@ func (s *StateDB) GetCode(addr common.Address) []byte {
 	return nil
 }
 
-// SetCode updates addr's contract bytecode and recalculates its CodeHash.
-func (s *StateDB) SetCode(addr common.Address, code []byte) {
+// SetCode updates addr's contract bytecode, recalculates its CodeHash, and returns previous code.
+func (s *StateDB) SetCode(addr common.Address, code []byte) []byte {
 	acc := s.getOrCreateAccount(addr)
-	s.journal = append(s.journal, codeChange{account: addr, prevCode: acc.Code, prevHash: acc.CodeHash})
+	prevCode := acc.Code
+	s.journal = append(s.journal, codeChange{account: addr, prevCode: prevCode, prevHash: acc.CodeHash})
 	acc.Code = code
 	if len(code) > 0 {
 		acc.CodeHash = crypto.Keccak256Hash(code)
 	} else {
 		acc.CodeHash = EmptyCodeHash
 	}
+	return prevCode
 }
 
 // GetCodeSize returns the length of addr's contract bytecode.
@@ -427,6 +430,11 @@ func (s *StateDB) AddPreimage(hash common.Hash, preimage []byte) {
 
 // Witness returns the stateless execution witness, if any.
 func (s *StateDB) Witness() *stateless.Witness {
+	return nil
+}
+
+// AccessEvents returns nil because EIP-4762/Verkle access events are inactive.
+func (s *StateDB) AccessEvents() *state.AccessEvents {
 	return nil
 }
 

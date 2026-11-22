@@ -96,11 +96,9 @@ func (e *EVMExecutor) ApplyMessage(
 		Random:      &randomHash,
 	}
 
-	vmTxCtx := core.NewEVMTxContext(msg)
-	evmInst := vm.NewEVM(vmBlockCtx, vmTxCtx, db, e.chainConfig, vm.Config{})
+	evmInst := vm.NewEVM(vmBlockCtx, db, e.chainConfig, vm.Config{})
 
 	rules := e.chainConfig.Rules(blockCtx.BlockNumber, true, blockCtx.Time)
-	db.Prepare(rules, msg.From, blockCtx.Coinbase, msg.To, vm.ActivePrecompiles(rules), msg.AccessList)
 
 	gasPool := new(core.GasPool).AddGas(txGasLimit)
 	res, err := core.ApplyMessage(evmInst, msg, gasPool)
@@ -121,7 +119,9 @@ func (e *EVMExecutor) ApplyMessage(
 
 	if res != nil {
 		out.UsedGas = res.UsedGas
-		out.RefundedGas = res.RefundedGas
+		if res.MaxUsedGas >= res.UsedGas {
+			out.RefundedGas = res.MaxUsedGas - res.UsedGas
+		}
 		out.ReturnData = res.ReturnData
 		if res.Failed() {
 			out.Status = 0

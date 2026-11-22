@@ -24,8 +24,8 @@ func IsEVMTx(raw []byte) bool {
 	if len(raw) == 0 {
 		return false
 	}
-	// Check for standard EIP-2718 typed transaction envelopes (0x01 = EIP-2930, 0x02 = EIP-1559, 0x03 = Blob)
-	if raw[0] == 0x01 || raw[0] == 0x02 || raw[0] == 0x03 {
+	// Check for standard EIP-2718 typed transaction envelopes (0x01 = EIP-2930, 0x02 = EIP-1559, 0x03 = Blob, 0x04 = SetCode)
+	if raw[0] == 0x01 || raw[0] == 0x02 || raw[0] == 0x03 || raw[0] == 0x04 {
 		return true
 	}
 	// Check for legacy RLP list (0xc0 - 0xfe)
