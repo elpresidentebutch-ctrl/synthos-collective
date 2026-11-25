@@ -11,7 +11,10 @@ STATE_DIR="$WORK_DIR/state"
 RELEASES_WEB_DIR="/var/www/synthos/website/downloads/releases"
 REPO_SLUG="elpresidentebutch-ctrl/synthos-collective"
 REPO_URL="https://github.com/${REPO_SLUG}.git"
-TOKEN_FILE="${GITHUB_TOKEN_FILE:-/etc/synthos-ci/github.token}"
+TOKEN_FILE="${GITHUB_TOKEN_FILE:-/etc/synthos-ci/github-token}"
+if [ ! -e "$TOKEN_FILE" ] && [ -e /etc/synthos-ci/github.token ]; then
+    TOKEN_FILE=/etc/synthos-ci/github.token
+fi
 
 mkdir -p "$WORK_DIR" "$STATE_DIR" "$RELEASES_WEB_DIR" "$GOPATH" "$GOCACHE"
 

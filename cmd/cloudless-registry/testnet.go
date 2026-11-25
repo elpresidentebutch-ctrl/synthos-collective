@@ -52,7 +52,7 @@ var testnet = &testnetRelay{check: checkTestnetNode}
 
 // testnetConfig reads website/assets/testnet.json.
 func testnetConfig() (map[string]any, error) {
-	for _, p := range []string{"/website/assets/testnet.json", "website/assets/testnet.json"} {
+	for _, p := range []string{"website/assets/testnet.json", "/website/assets/testnet.json"} {
 		raw, err := os.ReadFile(p)
 		if err != nil {
 			continue
