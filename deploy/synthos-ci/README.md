@@ -69,3 +69,15 @@ journalctl -u synthos-ci -f
 ```bash
 systemctl list-timers synthos-ci-cleanup.timer
 ```
+
+---
+
+## GitHub Commit Status Reporting (Green Checkmarks Without GitHub Actions)
+
+`deploy/synthos-ci/synthos-ci` (running via `synthos-ci.timer` on HostEons Salt Lake City) posts `pending`, `success`, and `failure` commit statuses (`synthos-ci/salt-lake-city`) back to GitHub when `/etc/synthos-ci/github.token` is present on the server:
+
+```bash
+sudo install -d -m 700 /etc/synthos-ci
+# Store a fine-grained PAT with "Commit statuses: Read and write" only (never commit this file):
+sudo sh -c 'umask 077 && printf "%s\n" "<GITHUB_PAT>" > /etc/synthos-ci/github.token'
+```

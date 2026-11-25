@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export PATH="/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin"
+export GOPATH="/var/lib/synthos-ci/gopath"
+export GOCACHE="/var/lib/synthos-ci/gocache"
+
+WORK_DIR="/var/lib/synthos-ci"
+REPO_DIR="$WORK_DIR/repo"
+STATE_DIR="$WORK_DIR/state"
+RELEASES_WEB_DIR="/var/www/synthos/website/downloads/releases"
+REPO_SLUG="elpresidentebutch-ctrl/synthos-collective"
+REPO_URL="https://github.com/${REPO_SLUG}.git"
+TOKEN_FILE="${GITHUB_TOKEN_FILE:-/etc/synthos-ci/github.token}"
+
+mkdir -p "$WORK_DIR" "$STATE_DIR" "$RELEASES_WEB_DIR" "$GOPATH" "$GOCACHE"
+
+report_github_status() {
+    local sha="$1"
+    local state="$2"
+    local description="$3"
+    local token="${GITHUB_STATUS_TOKEN:-}"
+
+    if [ -z "$token" ] && [ -r "$TOKEN_FILE" ]; then
+        token="$(tr -d '[:space:]' < "$TOKEN_FILE")"
+    fi
+    if [ -z "$token" ]; then
+        return 0
+    fi
+
+    curl -fsS -X POST \
+        -H "Authorization: Bearer ${token}" \
+        -H "Accept: application/vnd.github+json" \
+        -H "User-Agent: synthos-ci-slc" \
+        "https://api.github.com/repos/${REPO_SLUG}/statuses/${sha}" \
+        -d "$(printf '{"state":"%s","context":"synthos-ci/salt-lake-city","description":"%s"}' "$state" "$description")" \
+        >/dev/null 2>&1 || echo "[synthos-ci] Warning: failed to post GitHub status ($state) for $sha"
+}
+
+if [ ! -d "$REPO_DIR/.git" ]; then
+    echo "[synthos-ci] Cloning $REPO_URL ..."
+    git clone "$REPO_URL" "$REPO_DIR"
+fi
+
+cd "$REPO_DIR"
+git fetch --all --tags --force --prune
+
+build_release_tag() {
+    local tag="$1"
+    local out_dir="$RELEASES_WEB_DIR/$tag"
+    mkdir -p "$out_dir"
+    echo "[synthos-ci] Building release binaries for tag $tag ..."
+    git checkout -f "$tag"
+
+    for pair in "linux amd64" "linux arm64" "darwin arm64" "darwin amd64" "windows amd64 .exe"; do
+        set -- $pair
+        local goos="$1"
+        local goarch="$2"
+        local ext="${3:-}"
+        local suffix="${goos}-${goarch}${ext}"
+
+        CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags="-s -w" \
+            -o "$out_dir/synthos-node-$suffix" ./cmd/silentnode
+        (cd cometapp && CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags="-s -w" \
+            -o "$out_dir/synthos-comet-$suffix" .)
+        CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags="-s -w" \
+            -o "$out_dir/synthosd-$suffix" ./cmd/synthosd
+    done
+
+    (cd "$out_dir" && sha256sum synthos-* > SHA256SUMS)
+    ln -sfn "$out_dir" "$RELEASES_WEB_DIR/latest"
+    echo "[synthos-ci] Release $tag published to $out_dir"
+    cat "$out_dir/SHA256SUMS"
+}
+
+if [ "${1:-}" = "build" ] && [ -n "${2:-}" ]; then
+    build_release_tag "$2"
+    exit 0
+fi
+
+# 1. Check latest main commit and run unit tests on new commits
+MAIN_SHA="$(git rev-parse origin/main)"
+LAST_TESTED_SHA="$(cat "$STATE_DIR/last_main_sha" 2>/dev/null || true)"
+
+if [ "$MAIN_SHA" != "$LAST_TESTED_SHA" ]; then
+    echo "[synthos-ci] New commit on main: $MAIN_SHA (previous: ${LAST_TESTED_SHA:-none})"
+    git checkout -f "$MAIN_SHA"
+    report_github_status "$MAIN_SHA" "pending" "Running go test -short ./... on HostEons SLC"
+    if go test -short ./...; then
+        echo "[synthos-ci] PASS: go test -short ./... succeeded on $MAIN_SHA"
+        report_github_status "$MAIN_SHA" "success" "SYNTHOS Sovereign CI (HostEons SLC) passed"
+    else
+        echo "[synthos-ci] FAIL: go test -short ./... failed on $MAIN_SHA"
+        report_github_status "$MAIN_SHA" "failure" "SYNTHOS Sovereign CI (HostEons SLC) failed"
+    fi
+    echo "$MAIN_SHA" > "$STATE_DIR/last_main_sha"
+fi
+
+# 2. Check latest v* tag and build release assets if not yet built
+LATEST_TAG="$(git tag -l 'v*.*.*' --sort=-v:refname | head -n 1)"
+if [ -n "$LATEST_TAG" ] && [ ! -f "$RELEASES_WEB_DIR/$LATEST_TAG/SHA256SUMS" ]; then
+    build_release_tag "$LATEST_TAG"
+fi
