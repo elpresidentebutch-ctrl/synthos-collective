@@ -1,15 +1,17 @@
 [Unit]
-Description=SYNTHOS CI (Continuous Integration Test & Build Runner)
+Description=SYNTHOS Sovereign CI & Release Builder
 After=network-online.target synthos-comet.service
 Wants=network-online.target
 
 [Service]
+Type=oneshot
+
 # 1. Unprivileged user isolation (never run as root)
 User=synthos-ci
 Group=synthos-ci
 WorkingDirectory=/var/lib/synthos-ci
 
-# 2. Strict filesystem isolation: prevent any access to node data or validator keys
+# 2. Strict filesystem isolation: prevent any access to node data, validator keys, or live secrets
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
@@ -18,7 +20,7 @@ PrivateTmp=true
 # /etc/synthos holds live secrets (e.g. the reward-keeper wallet key), so CI
 # code and tests must never be able to read it.
 InaccessiblePaths=-/var/lib/synthos -/var/lib/synthos-comet -/etc/synthos -/root -/home
-ReadWritePaths=/var/lib/synthos-ci -/tmp
+ReadWritePaths=/var/lib/synthos-ci /var/www/synthos/website/downloads/releases -/tmp
 
 # 3. Lowest CPU & I/O priority: synthos-comet always gets the machine first
 Nice=19
@@ -34,15 +36,13 @@ OOMScoreAdjust=1000
 
 # 5. Environment
 Environment=HOME=/var/lib/synthos-ci
-Environment=GOPATH=/var/lib/synthos-ci/go
-Environment=GOCACHE=/var/lib/synthos-ci/.cache/go-build
+Environment=GOPATH=/var/lib/synthos-ci/gopath
+Environment=GOCACHE=/var/lib/synthos-ci/gocache
 Environment=TMPDIR=/var/lib/synthos-ci/tmp
 Environment=PATH=/usr/local/go/bin:/usr/bin:/bin
 
-# 6. Service lifecycle
-ExecStart=/usr/local/bin/synthos-ci-run
-Restart=always
-RestartSec=60
+# 6. Service lifecycle (triggered by synthos-ci.timer)
+ExecStart=/usr/local/bin/synthos-ci
 
 [Install]
 WantedBy=multi-user.target

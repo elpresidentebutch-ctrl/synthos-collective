@@ -50,9 +50,13 @@ type testnetRelay struct {
 
 var testnet = &testnetRelay{check: checkTestnetNode}
 
-// testnetConfig reads website/assets/testnet.json.
+// testnetConfig reads website/assets/testnet.json (or SYNTHOS_TESTNET_JSON if set).
 func testnetConfig() (map[string]any, error) {
-	for _, p := range []string{"website/assets/testnet.json", "/website/assets/testnet.json"} {
+	paths := []string{"/website/assets/testnet.json", "website/assets/testnet.json"}
+	if p := strings.TrimSpace(os.Getenv("SYNTHOS_TESTNET_JSON")); p != "" {
+		paths = []string{p}
+	}
+	for _, p := range paths {
 		raw, err := os.ReadFile(p)
 		if err != nil {
 			continue

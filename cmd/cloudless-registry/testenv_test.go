@@ -25,6 +25,7 @@ func TestMain(m *testing.M) {
 		"SYNTHOS_REWARD_KEEPER_KEY_FILE":    filepath.Join(missing, "reward-keeper.key"),
 		"SYNTHOS_REWARD_APPROVED_FILE":      filepath.Join(missing, "reward-approved.json"),
 		"SYNTHOS_REWARD_MONTHLY_CAP_SYN":    "",
+		"SYNTHOS_TESTNET_JSON":              "website/assets/testnet.json",
 	} {
 		os.Setenv(k, v)
 	}
