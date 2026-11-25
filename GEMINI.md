@@ -12,3 +12,15 @@
 
 3. **Secret Storage**:
    - **NEVER** store private keys, validator keys, or operator secrets in OneDrive-synced directories. Keep offline keys strictly in non-synced, designated local storage (`C:\Users\elpre\Desktop\CC KEYS`).
+
+## Brand & Trademark Naming Standards
+
+4. **Mandatory `™` Attribution on Creator Works**:
+   - From November 22, 2026 forward, always append `™` after every brand, product, system, and original creation by **James Isham Williams Sr.™**, including:
+     - **SYNTHOS Collective™**
+     - **www.IshamWilliamsBlockchains™**
+     - **James Isham Williams Sr.™**
+     - **Immortal Anchor™** *(replaces retired Legacy Anchor)*
+     - **TitanWeave™**
+     - **Gemini MegaChain™**
+   - Never use `®` until an official USPTO Certificate of Registration is issued.
