@@ -15,7 +15,9 @@ ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
 # Prefix with '-' so systemd ignores paths if not present, preventing 226/NAMESPACE startup failures
-InaccessiblePaths=-/var/lib/synthos -/var/lib/synthos-comet -/root -/home
+# /etc/synthos holds live secrets (e.g. the reward-keeper wallet key), so CI
+# code and tests must never be able to read it.
+InaccessiblePaths=-/var/lib/synthos -/var/lib/synthos-comet -/etc/synthos -/root -/home
 ReadWritePaths=/var/lib/synthos-ci -/tmp
 
 # 3. Lowest CPU & I/O priority: synthos-comet always gets the machine first
