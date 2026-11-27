@@ -21,6 +21,4 @@
      - **www.IshamWilliamsBlockchains™**
      - **James Isham Williams Sr.™**
      - **Immortal Anchor™** *(replaces retired Legacy Anchor)*
-     - **TitanWeave™**
-     - **Gemini MegaChain™**
    - Never use `®` until an official USPTO Certificate of Registration is issued.

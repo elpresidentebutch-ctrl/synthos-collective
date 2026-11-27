@@ -6,7 +6,7 @@
 
 ## Ownership
 
-**SYNTHOS Collective™**, **SYNTHOS™**, **www.IshamWilliamsBlockchains™**, **Immortal Anchor™**, **TitanWeave™**, **Gemini MegaChain™**, **James Isham Williams Sr.™**, associated logos, names, documentation, specifications, source code, white papers, and related technical and creative materials are the property of James G. Isham Williams, Sr. (**James Isham Williams Sr.™**).
+**SYNTHOS Collective™**, **SYNTHOS™**, **www.IshamWilliamsBlockchains™**, **Immortal Anchor™**, **James Isham Williams Sr.™**, associated logos, names, documentation, specifications, source code, white papers, and related technical and creative materials are the property of James G. Isham Williams, Sr. (**James Isham Williams Sr.™**).
 
 Source code and repository materials covered by the root `LICENSE` file are made available under the **Apache License, Version 2.0**. No license to use **SYNTHOS Collective™** names, logos, trademarks, service marks, or product names is granted except as permitted by that license for describing the origin of the work. Rights not expressly granted are reserved.
 
@@ -41,7 +41,7 @@ Use this block at the end of README files, `docs/*.md`, and internal white paper
 
 ## Legal notice
 
-SYNTHOS Collective™ source code and repository materials covered by the root `LICENSE` file are licensed under the **Apache License, Version 2.0**. SYNTHOS Collective™, SYNTHOS™, www.IshamWilliamsBlockchains™, Immortal Anchor™, TitanWeave™, Gemini MegaChain™, James Isham Williams Sr.™, and related names, marks, and logos remain reserved except as permitted by that license for describing the origin of the work.
+SYNTHOS Collective™ source code and repository materials covered by the root `LICENSE` file are licensed under the **Apache License, Version 2.0**. SYNTHOS Collective™, SYNTHOS™, www.IshamWilliamsBlockchains™, Immortal Anchor™, James Isham Williams Sr.™, and related names, marks, and logos remain reserved except as permitted by that license for describing the origin of the work.
 
 This document is informational only and is not legal, financial, or investment advice. The canonical legal notice is in **docs/LEGAL_NOTICE.md** in the SYNTHOS Collective™ repository.
 ```

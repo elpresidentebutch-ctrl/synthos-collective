@@ -214,3 +214,6 @@ android/*.keystore
 dist/
 
 android/local.properties
+
+# Private Immortal Anchor archival workspace (never commit or push)
+/The Life of James Isham Williams/
